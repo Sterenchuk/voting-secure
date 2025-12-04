@@ -1,0 +1,114 @@
+// prisma/schema.prisma
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum GroupRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model User {
+  id             String   @id @default(uuid()) 
+  role           Role   @default(USER)
+  email          String   @unique
+  password       String
+  name           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  groups         UserGroup[]
+  createdGroups  Group[]  @relation("GroupCreator")
+  votes          Vote[]
+  refreshTokens  RefreshToken[] // optional relation
+}
+
+model Group {
+  id        String      @id @default(uuid())
+  name      String
+  creatorId String      
+  createdAt DateTime    @default(now())
+
+  creator   User        @relation("GroupCreator", fields: [creatorId], references: [id])
+  users     UserGroup[]
+  votings   Voting[]
+}
+
+model UserGroup {
+  id       String    @id @default(uuid())
+  userId   String
+  groupId  String
+  role     GroupRole @default(MEMBER)
+
+  user     User   @relation(fields: [userId], references: [id])
+  group    Group  @relation(fields: [groupId], references: [id])
+
+  @@unique([userId, groupId])
+}
+
+model Voting {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  createdAt   DateTime   @default(now())
+  startAt     DateTime?
+  endAt       DateTime?
+  groupId     String
+
+  group       Group      @relation(fields: [groupId], references: [id])
+  options     Option[]
+}
+
+model Option {
+  id        String   @id @default(uuid())
+  text      String
+  votingId  String
+
+  voting    Voting   @relation(fields: [votingId], references: [id])
+  votes     Vote[]
+}
+
+model Vote {
+  id        String   @id @default(uuid())
+  userId    String
+  optionId  String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+  option    Option   @relation(fields: [optionId], references: [id])
+
+  @@unique([userId, optionId]) // prevent double-voting
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid())
+  token       String   @unique
+  userId      String
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+//ADMIN stuff 
+
+model AdminSecret { 
+  id        String   @id @default(uuid()) 
+  secret_hashed    String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime @default(dbgenerated("now() + interval '30 days'"))
+  active    Boolean  @default(true)
+} 
