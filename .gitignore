@@ -1,0 +1,5 @@
+.env 
+node_modules
+TODO.txt
+./frontend/package-lock.json
+

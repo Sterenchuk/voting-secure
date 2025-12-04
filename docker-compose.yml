@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: voting-db
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "5433:5432" # host:container
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    container_name: voting-backend
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  frontend:
+    build: ./frontend
+    container_name: voting-frontend
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      VITE_API_URL: "http://localhost:3000"
+
+volumes:
+  postgres_data:
