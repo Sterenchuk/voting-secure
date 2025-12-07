@@ -101,3 +101,5 @@ frontend/*.tsbuildinfo
 *.zip
 *.tmp
 *.swp
+
+/src/generated/prisma
