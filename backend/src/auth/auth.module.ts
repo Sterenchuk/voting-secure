@@ -8,14 +8,13 @@ import { JwtStrategy } from './auth.jwt.stratedy';
 
 config();
 const env = process.env;
-console.log('JWT Secret:', env.JWT_SECRET);
 @Module({
   imports: [
     UsersModule,
     JwtModule.register({
       global: true,
       secret: env.JWT_SECRET,
-      signOptions: { expiresIn: '60s' },
+      signOptions: { expiresIn: env.JWT_EXPIRES_IN as '1h' },
     }),
   ],
   providers: [AuthService, JwtStrategy],
