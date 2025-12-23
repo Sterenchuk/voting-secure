@@ -2,8 +2,8 @@
 // Docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
+ // output   = "../generated/prisma"
 }
 
 datasource db {
@@ -22,21 +22,39 @@ enum GroupRole {
   MEMBER 
 }
 
-// Models
-model User {
-  id            String        @id @default(uuid())
-  role          Role          @default(USER)
-  email         String        @unique
-  password      String
-  name          String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  groups        UserGroup[]
-  createdGroups Group[]       @relation("GroupCreator")
-  votes         Vote[]
-  refreshTokens RefreshToken[]
+enum VotingType {
+  STANDARD
+  FRIENDLY
+  MULTIPLE_CHOICE
+  SURVEY
 }
 
+enum RandomizerType {
+  NONE
+  COIN_FLIP
+  ROULETTE
+  PLINKO
+  SPINNER
+  DICE_ROLL
+}
+
+// Models
+model User {
+  id              String            @id @default(uuid())
+  role            Role              @default(USER)
+  email           String            @unique
+  password        String
+  name            String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  groups          UserGroup[]
+  createdGroups   Group[]           @relation("GroupCreator")
+  votes           Vote[]
+  refreshTokens   RefreshToken[]
+  addedOptions    Option[]          // Options they added in friendly voting
+  questionAnswers QuestionAnswer[]
+}
 model Group {
   id        String       @id @default(uuid())
   name      String
@@ -59,40 +77,116 @@ model UserGroup {
 }
 
 model Voting {
-  id        String     @id @default(uuid())
-  title     String
-  description String?
-  createdAt DateTime   @default(now())
-  startAt   DateTime?
-  endAt     DateTime?
-  groupId   String
-  group     Group      @relation(fields: [groupId], references: [id])
-  options   Option[]
+  id              String          @id @default(uuid())
+  title           String
+  type            VotingType      @default(STANDARD)
+  randomizerType  RandomizerType  @default(NONE)
+  isOpen          Boolean         @default(false)
+  description     String?
+  // Friendly voting settings
+  allowUserOptions Boolean        @default(false)
+  optionsLockAt   DateTime?
+  
+  // Multiple choice settings
+  allowMultiple   Boolean         @default(false)
+  minChoices      Int             @default(1)
+  maxChoices      Int?
+  
+  // Survey settings
+  isSurvey             Boolean    @default(false)
+  showAggregateResults Boolean    @default(true)
+  allowAnonymous       Boolean    @default(false)
+  
+  createdAt       DateTime        @default(now())
+  startAt         DateTime?
+  endAt           DateTime?
+  
+  groupId         String
+  group           Group           @relation(fields: [groupId], references: [id])
+  
+  options         Option[]
+  questions       Question[]      // For survey type
 }
 
 model Option {
-  id       String   @id @default(uuid())
-  text     String
-  votingId String
-  voting   Voting   @relation(fields: [votingId], references: [id])
-  votes    Vote[]
+  id          String    @id @default(uuid())
+  text        String
+  votingId    String
+  voting      Voting    @relation(fields: [votingId], references: [id], onDelete: Cascade)
+  
+  addedBy     String?   // Who added this option (for friendly voting)
+  addedByUser User?     @relation(fields: [addedBy], references: [id])
+  createdAt   DateTime  @default(now())
+  
+  votes       Vote[]
+  
+  @@index([votingId])
 }
 
 model Vote {
-  id       String   @id @default(uuid())
-  userId   String
-  optionId String
+  id        String   @id @default(uuid())
+  userId    String
+  optionId  String
   createdAt DateTime @default(now())
-  user     User      @relation(fields: [userId], references: [id])
-  option   Option    @relation(fields: [optionId], references: [id])
+  
+  user      User     @relation(fields: [userId], references: [id])
+  option    Option   @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  
+  @@index([optionId])
+  @@index([userId, optionId])
+}
 
-  @@unique([userId, optionId])
+// For multi-question surveys
+model Question {
+  id          String   @id @default(uuid())
+  votingId    String
+  voting      Voting   @relation(fields: [votingId], references: [id], onDelete: Cascade)
+  
+  text        String
+  description String?
+  order       Int      @default(0)
+  
+  allowMultiple Boolean @default(false) // Can this question have multiple answers?
+  
+  options     QuestionOption[]
+  answers     QuestionAnswer[]
+  
+  @@index([votingId])
+}
+
+model QuestionOption {
+  id          String   @id @default(uuid())
+  questionId  String
+  question    Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  
+  text        String
+  
+  answers     QuestionAnswer[]
+  
+  @@index([questionId])
+}
+
+model QuestionAnswer {
+  id        String         @id @default(uuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id])
+  
+  questionId String
+  question   Question      @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  
+  optionId   String
+  option     QuestionOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  
+  createdAt  DateTime      @default(now())
+  
+  @@index([questionId])
+  @@index([userId, questionId])
 }
 
 model RefreshToken {
   id        String   @id @default(uuid())
   token     String   @unique
-  userId    String
+  userId    String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id])

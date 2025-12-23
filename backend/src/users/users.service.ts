@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { DatabaseService } from 'src/database/database.service';
 import { Prisma, User } from '@prisma/client';
+
 import {
   InternalServerErrorException,
   NotFoundException,
@@ -19,18 +20,17 @@ import { Role } from 'src/common/enums/role';
 //DTOS
 import { UserCreateDto } from './dto/user.create.dto';
 import { UserUpdateDto } from './dto/user.update.dto';
-import { USER_SELECT_FUILDS } from 'src/common/constants/user.select.fields';
+import { UserResponseDto, SELECT_USER_FIELDS } from './dto/user.response.dto';
 import { error } from 'console';
-import { UserDto } from './dto/user.dto';
 
 @Injectable()
 export class UsersService {
   constructor(private readonly databaseService: DatabaseService) {}
 
-  async findAll(): Promise<UserDto[]> {
+  async findAll(): Promise<UserResponseDto[]> {
     try {
       const users = await this.databaseService.user.findMany({
-        select: USER_SELECT_FUILDS,
+        select: SELECT_USER_FIELDS,
       });
 
       return users;
@@ -39,14 +39,11 @@ export class UsersService {
     }
   }
 
-  async findOne(id: string): Promise<UserDto> {
-    console.log('Finding user with ID:', id);
-    console.log('Finding user with ID:', id);
-
+  async findOne(id: string): Promise<UserResponseDto> {
     try {
       const user = await this.databaseService.user.findUnique({
         where: { id },
-        select: USER_SELECT_FUILDS,
+        select: SELECT_USER_FIELDS,
       });
 
       if (!user) {
@@ -76,16 +73,19 @@ export class UsersService {
     }
   }
 
-  async create(userCreateDto: UserCreateDto, role?: Role): Promise<UserDto> {
+  async create(
+    userCreateDto: UserCreateDto,
+    role?: Role,
+  ): Promise<UserResponseDto> {
     const hashedPassword = await hashPassword(userCreateDto.password);
     try {
-      const newUser: UserDto = await this.databaseService.user.create({
+      const newUser = await this.databaseService.user.create({
         data: {
           ...userCreateDto,
           password: hashedPassword,
           role: role,
         },
-        select: USER_SELECT_FUILDS,
+        select: SELECT_USER_FIELDS,
       });
 
       return newUser;
@@ -94,11 +94,14 @@ export class UsersService {
     }
   }
 
-  async update(id: string, userUpdateDto: UserUpdateDto): Promise<UserDto> {
+  async update(
+    id: string,
+    userUpdateDto: UserUpdateDto,
+  ): Promise<UserResponseDto> {
     try {
       const prevUser = await this.databaseService.user.findUnique({
         where: { id },
-        select: USER_SELECT_FUILDS,
+        select: SELECT_USER_FIELDS,
       });
 
       if (!prevUser) {
@@ -112,7 +115,7 @@ export class UsersService {
       const user = await this.databaseService.user.update({
         where: { id },
         data: userUpdateDto,
-        select: USER_SELECT_FUILDS,
+        select: SELECT_USER_FIELDS,
       });
 
       return user;
@@ -134,11 +137,12 @@ export class UsersService {
     }
   }
 
-  async upgradeToAdmin(id: string): Promise<User> {
+  async upgradeToAdmin(id: string): Promise<UserResponseDto> {
     try {
       const user = await this.databaseService.user.update({
         where: { id },
         data: { role: Role.ADMIN },
+        select: SELECT_USER_FIELDS,
       });
       return user;
     } catch (e) {

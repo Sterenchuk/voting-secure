@@ -4,6 +4,7 @@ import {
   IsArray,
   ArrayMinSize,
   IsUUID,
+  IsEmail,
   IsOptional,
 } from 'class-validator';
 
@@ -12,10 +13,12 @@ export class GroupCreateDto {
   @MinLength(3, { message: 'Name must be at least 3 characters long.' })
   name: string;
 
-  @IsArray()
-  @ArrayMinSize(1, { message: 'Provide at least one user ID.' })
-  @IsUUID(4, { each: true, message: 'Each user ID must be a valid UUID.' })
-  userIds: string[];
+  @ArrayMinSize(1, { message: 'Provide at least one user email.' })
+  @IsEmail(
+    {},
+    { each: true, message: 'Each user email must be a valid email address.' },
+  )
+  userEmails: string[];
 
   @IsOptional()
   @IsArray()

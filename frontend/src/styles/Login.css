@@ -1,9 +1,79 @@
-/* src/pages/Login.css */
+/* --- 1. Theme Variables Definition --- */
+
+/* Light Theme (Default) */
+:root {
+  /* Global */
+  --bg-primary: #f8fafc;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+
+  /* Login Box */
+  --login-box-background: #ffffff;
+  --login-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --login-title-color: #475569;
+
+  /* Form & Inputs */
+  --input-background: rgb(223, 223, 223);
+  --input-text-color: #333;
+  --input-border: #e2e8f0;
+  --input-focus-border: #818cf8;
+
+  /* Button/Accent */
+  --button-background: #818cf8;
+  --button-hover-background: #6366f1;
+  --link-color: #818cf8;
+
+  /* Error */
+  --error-background: #fff0f0;
+  --error-text: #d8000c;
+  --error-border: #d8000c;
+}
+
+/* Dark Theme Overrides */
+[data-theme="dark"] {
+  /* Global */
+  --bg-primary: #0f172a;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+
+  /* Login Box */
+  --login-box-background: #1e293b;
+  --login-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --login-title-color: #f1f5f9;
+
+  /* Form & Inputs */
+  --input-background: #334155;
+  --input-text-color: #f1f5f9;
+  --input-border: #475569;
+  --input-focus-border: #a78bfa; /* Lighter purple for dark contrast */
+
+  /* Button/Accent */
+  --button-background: #a78bfa;
+  --button-hover-background: #8b5cf6;
+  --link-color: #a78bfa;
+
+  /* Error */
+  --error-background: #450a0a;
+  --error-text: #fecaca;
+  --error-border: #7f1d1d;
+}
+
+/* --- 2. Global Structure and Layout --- */
+
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   padding: 0;
   display: block;
   overflow: auto;
+  /* Apply global theme background and text color */
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  transition: background-color 0.3s, color 0.3s;
 }
 
 .login-container {
@@ -12,54 +82,64 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f8fafc;
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  /* Background color inherits from body/global styles */
 }
+
+/* --- 3. Login Box and Content Styling --- */
+
 .login-box {
-  background: white;
+  background: var(--login-box-background);
   padding: 60px 50px;
   border-radius: 16px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--login-box-shadow);
   width: 100%;
   max-width: 550px;
   text-align: center;
+  position: relative; /* Needed for theme toggle positioning */
+  transition: background 0.3s, box-shadow 0.3s;
 }
+
 .login-title {
   font-size: 36px;
   font-weight: bold;
-  color: #475569;
+  color: var(--login-title-color);
   margin-bottom: 32px;
 }
+
 form {
   display: flex;
   flex-direction: column;
   gap: 20px;
   text-align: left;
 }
+
 label {
   font-size: 16px;
-  color: #64748b;
+  color: var(--text-secondary);
   font-weight: 500;
 }
+
 input {
   padding: 14px 16px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--input-border);
   border-radius: 10px;
   font-size: 16px;
   outline: none;
-  transition: border-color 0.2s ease;
+  transition: border-color 0.2s ease, background-color 0.2s;
   width: 100%;
   box-sizing: border-box;
-  background-color: rgb(223, 223, 223);
-  color: #333;
+  background-color: var(--input-background);
+  color: var(--input-text-color);
 }
+
 input:focus {
-  border-color: #818cf8;
+  border-color: var(--input-focus-border);
 }
+
 button {
   margin-top: 14px;
   padding: 14px;
-  background-color: #818cf8;
+  background-color: var(--button-background);
   color: white;
   font-weight: bold;
   font-size: 16px;
@@ -68,19 +148,55 @@ button {
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
-button:hover {
-  background-color: #6366f1;
+
+button:hover:not(:disabled) {
+  background-color: var(--button-hover-background);
 }
+button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 .signup-link {
   margin-top: 24px;
   font-size: 15px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 .signup-link a {
-  color: #818cf8;
+  color: var(--link-color);
   text-decoration: none;
   font-weight: bold;
+  transition: color 0.2s;
 }
 .signup-link a:hover {
   text-decoration: underline;
+}
+
+/* --- 4. Theme Toggle & Error Message (from previous steps) --- */
+
+.theme-toggle-standalone {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  padding: 8px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.2rem;
+  line-height: 1;
+  background-color: var(--login-box-background); /* Uses the box background */
+  color: var(--text-primary);
+  box-shadow: var(--login-box-shadow);
+  transition: background-color 0.3s, box-shadow 0.3s;
+}
+
+.auth-error {
+  padding: 12px;
+  background-color: var(--error-background);
+  color: var(--error-text);
+  border: 1px solid var(--error-border);
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-weight: 500;
+  text-align: center;
 }

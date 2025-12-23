@@ -1,7 +1,10 @@
-import { IsArray, IsOptional, IsUUID } from 'class-validator';
+import { IsArray, IsEmail } from 'class-validator';
 
 export class AddUsersDto {
   @IsArray()
-  @IsUUID(4, { each: true, message: 'Each voting ID must be a valid UUID.' })
-  userIds: string[];
+  @IsEmail(
+    {},
+    { each: true, message: 'Each user email must be a valid email address.' },
+  )
+  userEmails: string[];
 }

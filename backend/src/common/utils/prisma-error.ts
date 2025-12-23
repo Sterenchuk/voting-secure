@@ -6,33 +6,31 @@ import { Prisma } from '@prisma/client';
 
 export function handlePrismaError(error: unknown, context: string): never {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    // Unique constraint violation
-    // --- Rewritten error handler for use directly in the service ---
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      // Unique constraint violation
-      if (error.code === 'P2002') {
-        const targets = Array.isArray(error.meta?.target)
-          ? error.meta?.target
-          : [error.meta?.target].filter(Boolean);
+    // Unique constraint violation (P2002)
+    if (error.code === 'P2002') {
+      const targets = Array.isArray(error.meta?.target)
+        ? error.meta.target
+        : error.meta?.target
+          ? [error.meta.target]
+          : [];
 
-        if (targets.includes('email')) {
-          throw new ConflictException(`Email in ${context} is already taken.`);
-        }
+      const fields = targets.length > 0 ? targets.join(', ') : 'unknown field';
 
-        throw new ConflictException(`Unique constraint violated in ${context}`);
+      if (targets.includes('email')) {
+        throw new ConflictException(`Email in ${context} is already taken.`);
       }
 
-      // Add more specific Prisma error handling as needed using error.code...
-
-      console.error(`Prisma error in ${context}:`, error);
-      throw new InternalServerErrorException(`Could not complete ${context}`);
+      throw new ConflictException(
+        `Unique constraint violated in ${context}: ${fields}`,
+      );
     }
 
-    throw error as any;
-
-    console.error(`Prisma error in ${context}:`, error);
+    // Other known Prisma errors
+    console.error(`Prisma error (${error.code}) in ${context}:`, error);
     throw new InternalServerErrorException(`Could not complete ${context}`);
   }
 
-  throw error as any;
+  // Non-Prisma or unknown errors
+  console.error(`Unexpected error in ${context}:`, error);
+  throw new InternalServerErrorException(`Could not complete ${context}`);
 }

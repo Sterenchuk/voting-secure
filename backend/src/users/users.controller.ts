@@ -10,7 +10,7 @@ import {
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -20,12 +20,11 @@ import { Role } from '../common/enums/role';
 import { UsersService } from './users.service';
 import { UserCreateDto } from './dto/user.create.dto';
 import { UserUpdateDto } from './dto/user.update.dto';
+import { UserResponseDto } from './dto/user.response.dto';
 import { UuidDto } from 'src/common/utils/uuid.dto';
-import { User } from '@prisma/client';
 import { UserPayloadDto } from 'src/auth/dto/payload.dto';
 
 import { JwtService } from '@nestjs/jwt';
-import { UserDto } from './dto/user.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -39,7 +38,7 @@ export class UsersController {
   @Get('me')
   async getMe(
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
-  ): Promise<UserDto> {
+  ): Promise<UserResponseDto> {
     return this.usersService.findOne(userId);
   }
 
@@ -48,11 +47,8 @@ export class UsersController {
   async update(
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
     @Body() userUpdateDto: UserUpdateDto,
-  ): Promise<{ user: UserDto; access_token: string }> {
-    const updatedUser: UserDto = await this.usersService.update(
-      userId,
-      userUpdateDto,
-    );
+  ): Promise<{ user: UserResponseDto; access_token: string }> {
+    const updatedUser = await this.usersService.update(userId, userUpdateDto);
 
     const payload = {
       sub: updatedUser.id,
@@ -76,13 +72,13 @@ export class UsersController {
   // ADMIN ONLY
   @Get()
   @Roles(Role.ADMIN)
-  async findAll(): Promise<UserDto[]> {
+  async findAll(): Promise<UserResponseDto[]> {
     return this.usersService.findAll();
   }
 
   @Get(':id')
   @Roles(Role.ADMIN)
-  async findOne(@Param('id') id: UuidDto['id']): Promise<UserDto> {
+  async findOne(@Param('id') id: UuidDto['id']): Promise<UserResponseDto> {
     return this.usersService.findOne(id);
   }
 
@@ -91,7 +87,7 @@ export class UsersController {
   async adminUpdate(
     @Param('id') userId: UuidDto['id'],
     @Body() userUpdateDto: UserUpdateDto,
-  ): Promise<UserDto> {
+  ): Promise<UserResponseDto> {
     return this.usersService.update(userId, userUpdateDto);
   }
 
@@ -106,13 +102,15 @@ export class UsersController {
   @Roles(Role.ADMIN)
   async registerAdmin(
     @Body('id') userCreateDto: UserCreateDto,
-  ): Promise<UserDto> {
+  ): Promise<UserResponseDto> {
     return this.usersService.create(userCreateDto, Role.ADMIN);
   }
 
   @Patch('promote/:id')
   @Roles(Role.ADMIN)
-  async promoteToAdmin(@Param('id') id: UuidDto['id']): Promise<UserDto> {
+  async promoteToAdmin(
+    @Param('id') id: UuidDto['id'],
+  ): Promise<UserResponseDto> {
     return this.usersService.upgradeToAdmin(id);
   }
 }

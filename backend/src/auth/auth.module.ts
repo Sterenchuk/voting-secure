@@ -5,12 +5,13 @@ import { AuthController } from './auth.controller';
 import { config } from 'dotenv';
 import { UsersModule } from 'src/users/users.module';
 import { JwtStrategy } from './auth.jwt.stratedy';
-
+import { DatabaseModule } from 'src/database/database.module';
 config();
 const env = process.env;
 @Module({
   imports: [
     UsersModule,
+    DatabaseModule,
     JwtModule.register({
       global: true,
       secret: env.JWT_SECRET,

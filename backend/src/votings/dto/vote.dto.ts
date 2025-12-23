@@ -1,9 +1,11 @@
-import { IsUUID } from 'class-validator';
+import { IsUUID, IsArray, ArrayMinSize } from 'class-validator';
 
 export class VoteDto {
   @IsUUID()
   votingId: string;
 
-  @IsUUID()
-  optionId: string;
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  @ArrayMinSize(1)
+  optionIds: string[];
 }

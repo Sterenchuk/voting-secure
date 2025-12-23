@@ -1,10 +1,10 @@
 import { GroupRole } from 'src/common/enums/group-role';
-import { IsUUID, IsEnum } from 'class-validator';
+import { IsEmail, IsEnum } from 'class-validator';
 
 export class ChangeRoleDto {
-  @IsUUID(4, { message: 'User ID must be a valid UUID.' })
-  userId: string;
+  @IsEmail({}, { message: 'User email must be a valid email address.' })
+  userEmail: string;
 
   @IsEnum(GroupRole)
-  role?: GroupRole;
+  role: GroupRole;
 }

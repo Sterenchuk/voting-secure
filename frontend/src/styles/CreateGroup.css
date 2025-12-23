@@ -1,0 +1,183 @@
+/* --- Theme Variables Definition (Light Theme Default) --- */
+
+/* Defines light theme variables for all elements by default */
+:root {
+  /* Inherited from your global body styles: */
+  /* --bg-primary: #f8fafc; */
+  /* --text-primary: #1e293b; */
+  /* --text-secondary: #64748b; */
+
+  /* Card/Section Colors */
+  --card-background: #ffffff;
+  --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+
+  /* Input Colors */
+  --input-background: #ffffff;
+  --border-color: #d1d5db; /* Light gray border */
+
+  /* Accent/Button Colors */
+  --accent-color: #007bff; /* Blue */
+  --accent-color-hover: #0056b3;
+
+  /* Chip Colors */
+  --chip-background: #e6f7ff;
+  --chip-text-color: #0050b3;
+
+  /* Error Colors */
+  --error-background: #fff0f0;
+  --error-text: #d8000c;
+  --error-border: #d8000c;
+}
+
+/* --- Dark Theme Overrides --- */
+
+/* Apply dark theme variables when the data-theme attribute is set to "dark" */
+[data-theme="dark"] {
+  /* Inherited from your global body styles: */
+  /* --bg-primary: #0f172a; */
+  /* --text-primary: #f1f5f9; */
+  /* --text-secondary: #94a3b8; */
+
+  /* Card/Section Colors */
+  --card-background: #374151;
+  --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+
+  /* Input Colors */
+  --input-background: #4b5563;
+  --border-color: #4b5563; /* Darker border */
+
+  /* Accent/Button Colors */
+  --accent-color: #3b82f6;
+  --accent-color-hover: #2563eb;
+
+  /* Chip Colors */
+  --chip-background: #1e3a8a;
+  --chip-text-color: #bfdbfe;
+
+  /* Error Colors */
+  --error-background: #450a0a;
+  --error-text: #fecaca;
+  --error-border: #7f1d1d;
+}
+
+/* ------------------------------------------------ */
+/* --- Form and Element Styling (Now references the variables above) --- */
+/* ------------------------------------------------ */
+
+.create-group-form-container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 20px;
+  background: var(--card-background);
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+}
+
+.form-field {
+  margin-bottom: 20px;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--text-primary); /* Using the global text variable */
+  font-size: 16px;
+}
+
+/* --- Input Styling --- */
+.form-field input[type="text"],
+.form-field input[type="email"] {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 16px;
+  background-color: var(--input-background);
+  color: var(--text-primary);
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.form-field input:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-color) 40;
+  outline: none;
+}
+
+/* Small text below input */
+.form-field small {
+  color: var(--text-secondary); /* Using the global text variable */
+  margin-top: 5px;
+  display: block;
+  font-size: 14px;
+}
+
+/* --- Email Chip Styling --- */
+
+.email-chip-list {
+  margin-bottom: 10px;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.email-chip {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--chip-background);
+  color: var(--chip-text-color);
+  padding: 5px 10px;
+  border-radius: 16px;
+  margin-right: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  cursor: default;
+  user-select: none;
+}
+
+.email-chip button {
+  margin-left: 8px;
+  background: none;
+  border: none;
+  color: var(--chip-text-color);
+  cursor: pointer;
+  font-weight: bold;
+  padding: 0;
+  line-height: 1;
+  font-size: 16px;
+}
+
+/* --- Submission Button --- */
+
+.create-group-submit-button {
+  padding: 12px 20px;
+  border-radius: 8px;
+  background-color: var(--accent-color);
+  color: white;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: bold;
+  margin-top: 10px;
+  transition: background-color 0.3s, opacity 0.3s;
+}
+
+.create-group-submit-button:hover:not(:disabled) {
+  background-color: var(--accent-color-hover);
+}
+
+.create-group-submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* --- Error Message --- */
+
+.form-error {
+  padding: 12px;
+  background-color: var(--error-background);
+  color: var(--error-text);
+  border: 1px solid var(--error-border);
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-weight: 500;
+}

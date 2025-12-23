@@ -1,0 +1,213 @@
+/* --- 1. General Layout and Theme Consistency --- */
+
+.groups-container,
+.create-group-container {
+  padding: 30px 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+  /* Inherits background and text colors from body */
+}
+
+.page-title {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0 0 25px 0;
+}
+
+/* --- 2. Header and Creation Button --- */
+
+.groups-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 25px;
+}
+
+.create-button {
+  background-color: var(--button-background);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: background-color 0.2s;
+}
+
+.create-button:hover {
+  background-color: var(--button-hover-background);
+}
+
+/* --- 3. Search Form --- */
+
+.search-form {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 30px;
+}
+
+.search-form input[type="text"] {
+  flex-grow: 1;
+  padding: 10px 15px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  font-size: 1rem;
+  background-color: var(--input-background);
+  color: var(--input-text-color);
+  transition: border-color 0.2s;
+}
+
+.search-form input[type="text"]:focus {
+  border-color: var(--input-focus-border);
+  outline: none;
+}
+
+.search-form button {
+  padding: 10px 20px;
+  background-color: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.search-form button:hover {
+  background-color: var(--button-hover-background);
+}
+
+/* --- 4. Group List and Card Styling --- */
+
+.groups-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 25px;
+}
+
+.group-card {
+  background: var(--card-background);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 25px;
+  box-shadow: var(--card-shadow);
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.group-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent-color);
+}
+
+.group-name {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 10px 0;
+}
+
+.group-meta {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+}
+
+.group-actions {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px dashed var(--card-border);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.view-link {
+  color: var(--accent-color);
+  text-decoration: none;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+
+.view-link:hover {
+  background-color: var(--accent-light);
+}
+
+.no-groups,
+.loading {
+  grid-column: 1 / -1; /* Span across all columns */
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+  font-style: italic;
+  font-size: 1.1rem;
+}
+
+/* --- 5. Create Group Form Styling --- */
+
+.create-form {
+  background: var(--card-background);
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.create-form label {
+  display: block;
+  font-size: 1rem;
+  color: var(--text-primary);
+  font-weight: 600;
+  margin-top: 15px;
+  margin-bottom: 5px;
+}
+
+.create-form input[type="text"],
+.create-form textarea {
+  width: 100%;
+  padding: 12px 15px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  font-size: 1rem;
+  background-color: var(--input-background);
+  color: var(--input-text-color);
+  resize: vertical;
+  transition: border-color 0.2s;
+}
+
+.create-form input[type="text"]:focus,
+.create-form textarea:focus {
+  border-color: var(--input-focus-border);
+  outline: none;
+}
+
+.create-form button[type="submit"] {
+  width: 100%;
+  margin-top: 25px;
+  padding: 12px;
+  background-color: var(--button-background);
+  color: white;
+  font-weight: bold;
+  font-size: 1.1rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.create-form button[type="submit"]:hover:not(:disabled) {
+  background-color: var(--button-hover-background);
+}
+
+.error-message {
+  padding: 12px;
+  background-color: var(--error-background);
+  color: var(--error-text);
+  border: 1px solid var(--error-border);
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-weight: 500;
+  text-align: center;
+}

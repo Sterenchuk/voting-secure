@@ -13,7 +13,7 @@ import {
   Patch,
 } from '@nestjs/common';
 
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -24,10 +24,12 @@ import { UuidDto } from 'src/common/utils/uuid.dto';
 import { UserPayloadDto } from 'src/auth/dto/payload.dto';
 import { GroupUpdateDto } from './dto/group.update.dto';
 import { GroupCreateDto } from './dto/group.create.dto';
+import { GroupResponseDto } from './dto/group.response.dto';
 
 import { GroupsService } from './groups.service';
 import { AddUsersDto } from './dto/add.users.dto';
 import { ChangeRoleDto } from './dto/change.role.dto';
+import { FindAllGroupsDto } from './dto/find.all.dto';
 
 @Controller('groups')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -39,48 +41,53 @@ export class GroupsController {
   create(
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
     @Body() groupCreateDto: GroupCreateDto,
-  ) {
+  ): Promise<GroupResponseDto> {
     return this.groupsService.create(userId, groupCreateDto);
   }
 
   @Get()
   findAll(
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
-    @Query('name') name?: string,
-  ) {
+    @Query('name') name?: FindAllGroupsDto['name'],
+  ): Promise<GroupResponseDto[]> {
     return this.groupsService.findAll(userId, name);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: UuidDto['id']) {
+  findOne(@Param('id') id: UuidDto['id']): Promise<GroupResponseDto> {
     return this.groupsService.findOne(id);
+  }
+
+  @Post(':id/members')
+  async findGroupMembers(@Param('groupId') groupId: string): Promise<any[]> {
+    return this.groupsService.findMembers(groupId);
   }
 
   @Put(':id')
   update(
     @Param('id') id: UuidDto['id'],
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
-    @Body() groupCreateDto: GroupCreateDto,
-  ) {
-    return this.groupsService.update(userId, id, groupCreateDto);
+    @Body() groupUpdateDto: GroupUpdateDto,
+  ): Promise<GroupResponseDto> {
+    return this.groupsService.update(userId, id, groupUpdateDto);
   }
 
   @Patch(':id/add/users')
   addUsers(
     @Param('id') id: UuidDto['id'],
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
-    @Body('userIds') userIds: AddUsersDto['userIds'],
-  ) {
-    return this.groupsService.addUsers(userId, id, userIds);
+    @Body() addUsersDto: AddUsersDto,
+  ): Promise<GroupResponseDto> {
+    return this.groupsService.addUsers(userId, id, addUsersDto.userEmails);
   }
 
   @Patch(':id/remove/users')
   removeUsers(
     @Param('id') id: UuidDto['id'],
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
-    @Body('userIds') userIds: AddUsersDto['userIds'],
-  ) {
-    return this.groupsService.removeUsers(userId, id, userIds);
+    @Body() addUsersDto: AddUsersDto,
+  ): Promise<GroupResponseDto> {
+    return this.groupsService.removeUsers(userId, id, addUsersDto.userEmails);
   }
 
   @Patch(':id/change/role')
@@ -88,7 +95,7 @@ export class GroupsController {
     @Param('id') id: UuidDto['id'],
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
     @Body() changeRoleDto: ChangeRoleDto,
-  ) {
+  ): Promise<GroupResponseDto> {
     return this.groupsService.changeUserRole(userId, id, changeRoleDto);
   }
 

@@ -1,0 +1,52 @@
+/* Container for the entire 404 page */
+.not-found-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: calc(100vh - var(--nav-height, 60px)); /* Adjust for your navigation bar */
+    padding: 40px;
+    background-color: var(--background-color-main); /* Use your theme variable */
+    color: var(--text-color); /* Use your theme variable */
+}
+
+/* Content block */
+.not-found-content {
+    text-align: center;
+    max-width: 500px;
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: var(--shadow-2); /* Use your theme shadow variable */
+    background-color: var(--background-color-card); /* Use your theme card background */
+}
+
+/* The "404" code styling */
+.not-found-code {
+    font-size: 6rem;
+    font-weight: 800;
+    color: var(--color-primary-dark); /* A distinct color */
+    margin-bottom: 0;
+}
+
+/* Page Title */
+.not-found-title {
+    font-size: 2rem;
+    font-weight: 600;
+    margin-top: 10px;
+    margin-bottom: 20px;
+}
+
+/* Message */
+.not-found-message {
+    font-size: 1.1rem;
+    margin-bottom: 30px;
+    opacity: 0.8;
+}
+
+/* Action buttons container */
+.not-found-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+}
+
+/* Note: Assuming 'action-button', 'primary', and 'secondary' styles are defined in Global.css */
