@@ -49,6 +49,7 @@ export default function VotingPage() {
     type: "success" | "error" | "info";
   } | null>(null);
   const [fetchedGroupName, setFetchedGroupName] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [showAddOptionModal, setShowAddOptionModal] = useState(false);
   const [newOptionText, setNewOptionText] = useState("");
   const [editingOptionId, setEditingOptionId] = useState<string | null>(null);
@@ -124,14 +125,29 @@ export default function VotingPage() {
     }
   }, [id, navigate]);
 
-  const fetchGroupName = useCallback(async (groupId: string) => {
-    try {
-      const groupData = await protectedFetch(`/groups/${groupId}`);
-      setFetchedGroupName(groupData.name);
-    } catch (error) {
-      console.error("Failed to fetch group name", error);
-    }
-  }, []);
+  const fetchGroupName = useCallback(
+    async (groupId: string) => {
+      try {
+        const groupData = await protectedFetch(`/groups/${groupId}`);
+        setFetchedGroupName(groupData.name);
+
+        const memberInfo = groupData.users?.find(
+          (u: any) => u.userId === currentUserId
+        );
+
+        if (memberInfo) {
+          setUserRole(memberInfo.role);
+        }
+      } catch (error) {
+        console.error("Failed to fetch group details", error);
+      }
+    },
+    [currentUserId]
+  );
+
+  const isGroupAdmin = useMemo(() => {
+    return userRole === "OWNER" || userRole === "ADMIN";
+  }, [userRole]);
 
   const fetchUserVote = useCallback(async () => {
     if (!id) return;
@@ -415,7 +431,7 @@ export default function VotingPage() {
         <button onClick={() => navigate(-1)} className="glass-back-button">
           ← Back
         </button>
-        {voting.createdBy === currentUserId && (
+        {isGroupAdmin && (
           <button
             onClick={() => setShowDeleteConfirm(true)}
             className="glass-delete-button"
@@ -486,7 +502,7 @@ export default function VotingPage() {
           )}
           <div className="section-header">
             <h2>{showResults ? "Live Results" : "Choices"}</h2>
-            {canAddOptions && !showResults && (
+            {canAddOptions && !showResults && !isVotingActive && (
               <button
                 onClick={() => setShowAddOptionModal(true)}
                 className="add-option-trigger"
@@ -522,10 +538,7 @@ export default function VotingPage() {
                 : 0;
               const isEditing = editingOptionId === option.id;
               const canModify =
-                option.addedBy === currentUserId &&
-                !isVotingActive &&
-                isCompleted;
-
+                option.addedBy === currentUserId && canAddOptions;
               return (
                 <div
                   key={option.id}

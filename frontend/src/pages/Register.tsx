@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useTheme } from "../contexts/ThemeContext"; // Assuming your context is here
+import { useTheme } from "../contexts/ThemeContext";
 import "../styles/Login.css";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
@@ -13,7 +13,6 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // Get theme context
   const { theme, toggleTheme } = useTheme();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -46,8 +45,16 @@ export default function Register() {
         return;
       }
 
-      alert("Registration successful! Please sign in now.");
-      navigate("/login");
+      // --- LOGIN LOGIC ADDED HERE ---
+      // 1. Store tokens and user info just like in the login page
+      localStorage.setItem("accessToken", data.accessToken);
+      localStorage.setItem("refreshToken", data.refreshToken);
+      localStorage.setItem("userRole", data.user.role);
+      localStorage.setItem("userName", data.user.name);
+      localStorage.setItem("userId", data.user.id);
+
+      // 2. Redirect directly to the main/home page
+      navigate("/");
     } catch (err) {
       console.error("Registration request failed:", err);
       setError("Network error or server unavailable.");
@@ -59,7 +66,6 @@ export default function Register() {
   return (
     <div className="login-container">
       <div className="login-box">
-        {/* Theme Switch Added Here */}
         <button
           className="theme-toggle-standalone"
           onClick={toggleTheme}
@@ -104,7 +110,7 @@ export default function Register() {
           />
 
           <button type="submit" disabled={loading}>
-            {loading ? "Signing Up..." : "Sign Up"}
+            {loading ? "Creating Account..." : "Sign Up"}
           </button>
         </form>
 

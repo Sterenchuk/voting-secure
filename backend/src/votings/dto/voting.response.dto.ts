@@ -13,8 +13,16 @@ export class VotingResponseDto {
   startAt?: Date | null;
   endAt?: Date | null;
   groupId: string;
+
+  group?: {
+    name: string;
+    users: {
+      userId: string;
+      role: string;
+    }[];
+  };
+
   options?: OptionResponseDto[];
-  questions?: any[];
 }
 export const SELECT_VOTING_FIELDS = {
   id: true,
@@ -27,6 +35,17 @@ export const SELECT_VOTING_FIELDS = {
   startAt: true,
   endAt: true,
   groupId: true,
+  group: {
+    select: {
+      name: true,
+      users: {
+        select: {
+          userId: true,
+          role: true,
+        },
+      },
+    },
+  },
 } as const;
 
 export const SELECT_VOTING_WITH_OPTIONS = {
@@ -35,14 +54,7 @@ export const SELECT_VOTING_WITH_OPTIONS = {
     select: {
       id: true,
       addedBy: true,
-      addedByUser: true,
       text: true,
-      votingId: true,
-    },
-  },
-  questions: {
-    include: {
-      options: true,
     },
   },
 } as const;

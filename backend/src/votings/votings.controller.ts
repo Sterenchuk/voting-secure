@@ -44,8 +44,7 @@ export class VotingsController {
   async findAll(
     @Query() query: FindVotingQueryDto,
   ): Promise<VotingResponseDto[]> {
-    const { groupId, title, startAt, endAt, isOpen } = query;
-    return this.votingsService.findAll(groupId, title, startAt, endAt, isOpen);
+    return this.votingsService.findAll(query);
   }
 
   @Get(':id')

@@ -1,10 +1,26 @@
 import {
+  BadRequestException,
   ConflictException,
+  ForbiddenException,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 export function handlePrismaError(error: unknown, context: string): never {
+  if (error instanceof NotFoundException) {
+    throw error;
+  }
+  if (error instanceof ConflictException) {
+    throw error;
+  }
+  if (error instanceof BadRequestException) {
+    throw error;
+  }
+  if (error instanceof ForbiddenException) {
+    throw error;
+  }
+
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
     // Unique constraint violation (P2002)
     if (error.code === 'P2002') {

@@ -1,16 +1,25 @@
 import { useEffect, useState, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { protectedFetch } from "../utils/api";
 import VotingSettingsModal from "../components/VotingSettingsModal";
 import "../styles/Home.css";
 import "../styles/Votings.css";
+
+interface GroupMember {
+  userId: string;
+  role: "OWNER" | "ADMIN" | "MEMBER";
+}
 
 interface Voting {
   id: string;
   title: string;
   description?: string;
   groupId: string;
-  groupName?: string;
+  // NEW: Nested group object from Prisma
+  group: {
+    name: string;
+    users: GroupMember[];
+  };
   startAt?: string;
   endAt?: string;
   optionCount?: number;
@@ -31,7 +40,6 @@ export default function Votings() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filter, setFilter] = useState("all");
-
   const userRole = localStorage.getItem("userRole");
   const isAppAdmin = userRole === "ADMIN" || userRole === "OWNER";
 
@@ -45,7 +53,7 @@ export default function Votings() {
       const data: Voting[] = await protectedFetch(`/votings`);
       const safeData: Voting[] = data.map((v) => ({
         ...v,
-        groupName: v.groupName || "Unknown Group",
+        groupName: v.group.name || "Unknown Group",
         optionCount: v.optionCount ?? 0,
         voteCount: v.voteCount ?? 0,
       }));
@@ -62,6 +70,32 @@ export default function Votings() {
   useEffect(() => {
     fetchVotings();
   }, []);
+
+  const handleDelete = async (
+    e: React.MouseEvent,
+    id: string,
+    title: string
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (
+      !window.confirm(`Are you sure you want to delete the voting: "${title}"?`)
+    ) {
+      return;
+    }
+
+    try {
+      await protectedFetch(`/votings/${id}`, {
+        method: "DELETE",
+      });
+
+      setAllVotings((prev) => prev.filter((v) => v.id !== id));
+    } catch (err: any) {
+      console.error("Failed to delete voting:", err);
+      alert(err.message || "An error occurred while deleting the voting.");
+    }
+  };
 
   const isVotingActive = (voting: Voting): boolean => {
     const now = new Date().getTime();
@@ -216,17 +250,28 @@ export default function Votings() {
                       <h3 className="voting-title">{voting.title}</h3>
                       <div className="voting-actions-container">
                         {isAppAdmin && (
-                          <button
-                            className="settings-button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleOpenSettings(voting);
-                            }}
-                            title="Manage Voting Dates"
-                          >
-                            ⚙️
-                          </button>
+                          <>
+                            <button
+                              className="settings-button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleOpenSettings(voting);
+                              }}
+                              title="Manage Voting Dates"
+                            >
+                              ⚙️
+                            </button>
+                            <button
+                              className="settings-button delete-action"
+                              onClick={(e) =>
+                                handleDelete(e, voting.id, voting.title)
+                              }
+                              title="Delete Voting"
+                            >
+                              🗑️
+                            </button>
+                          </>
                         )}
                         <span
                           className={`voting-badge ${getBadgeClass(voting)}`}
@@ -242,7 +287,7 @@ export default function Votings() {
 
                     <div className="voting-card-meta">
                       <span className="voting-group">
-                        Group: <strong>{voting.groupName}</strong>
+                        Group: <strong>{voting.group.name}</strong>
                       </span>
                       <div className="voting-card-stats">
                         <span className="stat-item">

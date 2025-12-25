@@ -3,10 +3,18 @@
 /* --- General Structure --- */
 .home-container {
   padding: 30px 20px;
-  max-width: 1200px;
+  width: 80%;
+  max-width: 80%;
   margin: 0 auto;
 }
-
+.home-section {
+  width: 100%;
+  margin: 0 auto;
+}
+.home-grid {
+  display: block; /* or width: 100% if using flex/grid */
+  width: 100%;
+}
 :root {
   --accent-color: #6366f1;
   --accent-color-hover: #4f46e5;

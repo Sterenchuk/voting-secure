@@ -14,6 +14,7 @@ import {
   SELECT_VOTING_FIELDS,
   SELECT_VOTING_WITH_OPTIONS,
 } from './dto/voting.response.dto';
+import { FindVotingQueryDto } from './dto/find.voting.query.dto';
 import {
   OptionResponseDto,
   SELECT_OPTION_FIELDS,
@@ -111,24 +112,29 @@ export class VotingsService {
   }
 
   // --- READ LOGIC ---
-  async findAll(
-    groupId?: string,
-    title?: string,
-    startAt?: Date,
-    endAt?: Date,
-    isOpen?: boolean,
-  ): Promise<VotingResponseDto[]> {
+  async findAll(forms: FindVotingQueryDto): Promise<VotingResponseDto[]> {
     try {
       const where: any = {};
-      if (groupId) where.groupId = groupId;
-      if (title) where.title = { contains: title, mode: 'insensitive' };
-      if (startAt) where.startAt = { gte: startAt };
-      if (endAt) where.endAt = { lte: endAt };
-      if (isOpen !== undefined) where.isOpen = isOpen;
+      if (forms.groupId) where.groupId = forms.groupId;
+      if (forms.title)
+        where.title = { contains: forms.title, mode: 'insensitive' };
+      if (forms.startAt) where.startAt = { gte: forms.startAt };
+      if (forms.endAt) where.endAt = { lte: forms.endAt };
+      if (forms.isOpen !== undefined) where.isOpen = forms.isOpen;
 
       return await this.databaseService.voting.findMany({
         where,
-        select: SELECT_VOTING_WITH_OPTIONS,
+        select: {
+          ...SELECT_VOTING_WITH_OPTIONS,
+          options: {
+            select: {
+              id: true,
+              text: true,
+              addedBy: true,
+              votingId: true,
+            },
+          },
+        },
         orderBy: { createdAt: 'desc' },
       });
     } catch (e) {
@@ -276,10 +282,8 @@ export class VotingsService {
     try {
       lockToken = await this.redisVotingService.acquireLock(lockKey, 15);
       if (!lockToken) {
-        throw new ForbiddenException(
-        );
+        throw new ForbiddenException();
       }
-  
 
       const alreadyVoted = await this.redisVotingService.hasUserVoted(
         votingId,
@@ -290,12 +294,11 @@ export class VotingsService {
       }
 
       const result = await this.databaseService.$transaction(async (tx) => {
-        // Fetch voting with necessary relations
         const voting = await tx.voting.findUnique({
           where: { id: votingId },
           include: {
             options: { select: { id: true } },
-            questions: { select: { id: true } },  
+            questions: { select: { id: true } },
           },
         });
 
@@ -396,7 +399,6 @@ export class VotingsService {
     } finally {
       if (lockToken) {
         await this.redisVotingService.releaseLock(lockKey, lockToken);
-
       }
     }
   }
