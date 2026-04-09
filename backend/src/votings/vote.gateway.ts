@@ -101,7 +101,6 @@ export class VoteGateway
     };
   }
 
-  // Emit individual vote cast event
   emitVoteCast(payload: {
     votingId: string;
     optionId: string;
@@ -114,21 +113,18 @@ export class VoteGateway
     );
   }
 
-  // Emit aggregated voting results
   emitVotingResults(votingId: string, results: any[]) {
     const room = `voting:${votingId}`;
     this.server.in(room).emit('voting.results', { votingId, results });
     this.logger.verbose(`Voting results emitted to room ${room}`);
   }
 
-  // Emit survey results (aggregate data only)
   emitSurveyResults(votingId: string, results: any) {
     const room = `voting:${votingId}`;
     this.server.in(room).emit('survey.results', { votingId, results });
     this.logger.verbose(`Survey results emitted to room ${room}`);
   }
 
-  // Emit when new option is added (friendly voting)
   emitOptionAdded(votingId: string, option: OptionResponseDto) {
     const room = `voting:${votingId}`;
     this.server.in(room).emit('option.added', { votingId, option });
@@ -142,21 +138,18 @@ export class VoteGateway
     this.logger.verbose(`Option updated emitted: ${option.text}`);
   }
 
-  // Emit when option is deleted
   emitOptionDeleted(votingId: string, optionId: string) {
     const room = `voting:${votingId}`;
     this.server.in(room).emit('option.deleted', { votingId, optionId });
     this.logger.verbose(`Option deleted emitted: ${optionId}`);
   }
 
-  // Emit when voting is deleted (notify all subscribers)
   emitVotingDeleted(votingId: string) {
     const room = `voting:${votingId}`;
     this.server.in(room).emit('voting.deleted', { votingId });
     this.logger.log(`Voting deleted notification sent to room ${room}`);
   }
 
-  // Emit when voting status changes (started/ended)
   emitVotingStatusChanged(votingId: string, status: 'started' | 'ended') {
     const room = `voting:${votingId}`;
     this.server.in(room).emit('voting.status', { votingId, status });

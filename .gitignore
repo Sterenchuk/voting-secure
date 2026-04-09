@@ -103,3 +103,4 @@ frontend/*.tsbuildinfo
 *.swp
 
 /src/generated/prisma
+.aider*
