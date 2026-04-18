@@ -24,7 +24,6 @@ export const wsAuthMiddleware =
         return next(new Error('User not found'));
       }
 
-      // ✅ Attach user directly to socket
       (socket as AuthenticatedSocket).user = user;
 
       next();

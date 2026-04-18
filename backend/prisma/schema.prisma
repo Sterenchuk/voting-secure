@@ -6,58 +6,121 @@ datasource db {
   provider = "postgresql"
 }
 
-// Enums
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
 enum Role {
   USER
   ADMIN
+  AUDITOR
 }
 
 enum GroupRole {
   OWNER
   ADMIN
+  MODERATOR
   MEMBER
 }
 
 enum VotingType {
-  STANDARD
+  SINGLE_CHOICE
   MULTIPLE_CHOICE
 }
 
-enum RandomizerType {
-  NONE
-  COIN_FLIP
-  ROULETTE
-  PLINKO
-  SPINNER
-  DICE_ROLL
+enum SurveyQuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  SCALE
+  FREEFORM
 }
 
-// Models
+// Rec(2004)11 §52 – all administrative actions must be classifiable and enumerated.
+enum AuditAction {
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  USER_LOGIN
+  USER_LOGOUT
+  TOKEN_REFRESH
+  // ── Account ───────────────────────────────────────────────────────────────
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_COMPLETED
+  EMAIL_VERIFY_REQUESTED
+  EMAIL_VERIFY_COMPLETED
+  // ── Voting lifecycle ──────────────────────────────────────────────────────
+  VOTING_CREATED
+  VOTING_OPENED
+  VOTING_CLOSED
+  VOTING_FINALIZED
+  VOTING_DELETED
+  OPTION_ADDED
+  OPTION_UPDATED
+  OPTION_REMOVED
+  // BALLOT_CAST: userId MUST be null in the AuditLog row — see model comment
+  BALLOT_CAST
+  VOTING_RESULT_SEALED
+  // ── Survey lifecycle ──────────────────────────────────────────────────────
+  SURVEY_CREATED
+  SURVEY_OPENED
+  SURVEY_CLOSED
+  SURVEY_FINALIZED
+  SURVEY_DELETED
+  SURVEY_TOKEN_ISSUED
+  // SURVEY_BALLOT_CAST: userId MUST be null in the AuditLog row
+  SURVEY_BALLOT_CAST
+  SURVEY_RESULT_SEALED
+  // ── Admin ─────────────────────────────────────────────────────────────────
+  USER_ROLE_CHANGED
+  GROUP_CREATED
+  GROUP_DELETED
+  MEMBER_ADDED
+  MEMBER_REMOVED
+}
+
+// ─── USER & GROUP ─────────────────────────────────────────────────────────────
+
 model User {
-  id              String           @id @default(uuid())
-  role            Role             @default(USER)
-  email           String           @unique
+  id              String    @id @default(uuid())
+  role            Role      @default(USER)
+  email           String    @unique
   password        String
   name            String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  
-  groups          UserGroup[]
-  createdGroups   Group[]          @relation("GroupCreator")
-  votes           Vote[]
-  surveyAnswers   SurveyAnswer[]
-  refreshTokens   RefreshToken[]
+  isActive        Boolean   @default(true)
+  isEmailVerified Boolean   @default(false)
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // ── Groups ────────────────────────────────────────────────────────────────
+  groups        UserGroup[]
+  createdGroups Group[]     @relation("GroupCreator")
+
+  // ── Voting ────────────────────────────────────────────────────────────────
+  createdVotings Voting[]            @relation("VotingCreator")
+  // Rec(2004)11 §26 – "who voted" stored separately from "what was voted"
+  votings        VoteParticipation[]
+
+  // ── Survey ────────────────────────────────────────────────────────────────
+  createdSurveys Survey[]             @relation("SurveyCreator")
+  surveys        SurveyParticipation[]
+
+  // ── Tokens ────────────────────────────────────────────────────────────────
+  refreshTokens           RefreshToken[]
+  votingTokens            VotingToken[]
+  surveyTokens            SurveyToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
 }
 
 model Group {
-  id        String      @id @default(uuid())
+  id        String    @id @default(uuid())
   name      String
   creatorId String
-  createdAt DateTime    @default(now())
-  creator   User        @relation("GroupCreator", fields: [creatorId], references: [id])
-  users     UserGroup[]
-  votings   Voting[]
-  surveys   Survey[]
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  creator User      @relation("GroupCreator", fields: [creatorId], references: [id])
+  users   UserGroup[]
+  votings Voting[]
+  surveys Survey[]
 }
 
 model UserGroup {
@@ -65,134 +128,340 @@ model UserGroup {
   userId  String
   groupId String
   role    GroupRole @default(MEMBER)
-  user    User      @relation(fields: [userId], references: [id])
-  group   Group     @relation(fields: [groupId], references: [id])
+  joinedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id])
+  group Group @relation(fields: [groupId], references: [id])
 
   @@unique([userId, groupId])
 }
 
+// ─── VOTING MODULE ────────────────────────────────────────────────────────────
+
 model Voting {
-  id             String         @id @default(uuid())
-  title          String
-  type           VotingType     @default(STANDARD)
-  randomizerType RandomizerType @default(NONE)
-  isOpen         Boolean        @default(false)
-  description    String?
-  
-  // Settings
-  allowMultiple  Boolean        @default(false)
-  minChoices     Int            @default(1)
-  maxChoices     Int?
-  
-  createdAt      DateTime       @default(now())
-  startAt        DateTime?
-  endAt          DateTime?
-  
-  groupId        String
-  group          Group          @relation(fields: [groupId], references: [id])
-  
-  options        Option[]
+  id          String     @id @default(uuid())
+  creatorId   String
+  creator     User       @relation("VotingCreator", fields: [creatorId], references: [id])
+  groupId     String
+  group       Group      @relation(fields: [groupId], references: [id])
+
+  title            String
+  description      String?
+  type             VotingType @default(SINGLE_CHOICE)
+  isFinalized      Boolean    @default(false)
+  isOpen           Boolean    @default(false)
+  deletedAt        DateTime?
+
+  allowOther       Boolean  @default(false)
+  minChoices       Int      @default(1)
+  maxChoices       Int?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  startAt     DateTime?
+  endAt       DateTime?
+  finalizedAt DateTime?
+
+  options         Option[]
+  ballots         Ballot[]
+  freeformBallots FreeformBallot[]
+  participations  VoteParticipation[]
+  votingTokens    VotingToken[]
+  auditLogs       AuditLog[]          @relation("VotingLogs")
+  result          VotingResult?
 }
 
 model Option {
   id       String @id @default(uuid())
   text     String
   votingId String
-  voting   Voting @relation(fields: [votingId], references: [id], onDelete: Cascade)
-  
-  votes    Vote[]
+
+  voting  Voting   @relation(fields: [votingId], references: [id], onDelete: Cascade)
+  ballots Ballot[]
 
   @@index([votingId])
 }
 
-model Vote {
+// Rec(2004)11 §26 – "The Who" for votings.
+model VoteParticipation {
   id        String   @id @default(uuid())
   userId    String
-  optionId  String
+  votingId  String
   createdAt DateTime @default(now())
-  
-  user      User     @relation(fields: [userId], references: [id])
-  option    Option   @relation(fields: [optionId], references: [id], onDelete: Cascade)
-  
-  @@index([optionId])
-  @@index([userId, optionId])
+
+  user   User   @relation(fields: [userId], references: [id])
+  voting Voting @relation(fields: [votingId], references: [id])
+
+  @@unique([userId, votingId])
+  @@index([votingId])
 }
+
+// Rec(2004)11 §47 – Single-use token that decouples authentication from ballot casting.
+model VotingToken {
+  id        String   @id @default(uuid())
+  votingId  String
+  userId    String
+  tokenHash String   @unique
+  used      Boolean  @default(false)
+  // Rec(2004)11 §50 – tokens must expire
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  voting Voting @relation(fields: [votingId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+  ballot Ballot?
+
+  @@unique([userId, votingId])
+}
+
+// Rec(2004)11 §26 – "The What" for votings. Permanently anonymous.
+model Ballot {
+  id         String   @id @default(uuid())
+  votingId   String
+  optionId   String
+  ballotHash String   @unique
+  // tokenId nullable only when VotingToken flow is bypassed for open votings
+  tokenId    String?  @unique
+
+  voting Voting       @relation(fields: [votingId], references: [id])
+  option Option       @relation(fields: [optionId], references: [id])
+  token  VotingToken? @relation(fields: [tokenId], references: [id])
+
+  @@index([votingId])
+}
+
+model FreeformBallot {
+  id         String @id @default(uuid())
+  votingId   String
+  text       String
+  ballotHash String @unique
+
+  voting Voting @relation(fields: [votingId], references: [id])
+
+  @@index([votingId])
+}
+
+model VotingResult {
+  id           String   @id @default(uuid())
+  votingId     String   @unique
+  tally        Json
+  totalBallots Int
+  tallyHash    String
+  sealedAt     DateTime @default(now())
+
+  voting Voting @relation(fields: [votingId], references: [id])
+}
+
+// ─── SURVEY MODULE ────────────────────────────────────────────────────────────
 
 model Survey {
-  id                   String    @id @default(uuid())
-  title                String
-  description          String?
-  isOpen               Boolean   @default(false)
-  showAggregateResults Boolean   @default(true)
-  allowAnonymous       Boolean   @default(false)
-  
-  createdAt            DateTime  @default(now())
-  startAt              DateTime?
-  endAt                DateTime?
-  
-  groupId              String
-  group                Group     @relation(fields: [groupId], references: [id])
-  
-  questions            Question[]
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  creatorId   String
+  creator     User      @relation("SurveyCreator", fields: [creatorId], references: [id])
+  groupId     String
+  group       Group     @relation(fields: [groupId], references: [id])
+
+  isOpen      Boolean   @default(false)
+  isFinalized Boolean   @default(false)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  startAt     DateTime?
+  endAt       DateTime?
+  finalizedAt DateTime?
+
+  questions      SurveyQuestion[]
+  participations SurveyParticipation[]
+  surveyTokens   SurveyToken[]
+  auditLogs      AuditLog[]            @relation("SurveyLogs")
+  result         SurveyResult?
 }
 
-model Question {
-  id            String   @id @default(uuid())
-  surveyId      String
-  survey        Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  
-  text          String
-  description   String?
-  order         Int      @default(0)
-  allowMultiple Boolean  @default(false)
-  
-  options       QuestionOption[]
-  answers       SurveyAnswer[]
+model SurveyQuestion {
+  id         String             @id @default(uuid())
+  surveyId   String
+  survey     Survey             @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  type       SurveyQuestionType
+  text       String
+  isRequired Boolean            @default(true)
+  order      Int                @default(0)
+
+  options      SurveyOption[]
+  ballots      SurveyBallot[]
+  freeforms    SurveyFreeformBallot[]
+  choiceConfig SurveyChoiceConfig?
+  scaleConfig  SurveyScaleConfig?
 
   @@index([surveyId])
 }
 
-model QuestionOption {
-  id         String   @id @default(uuid())
+model SurveyChoiceConfig {
+  id            String         @id @default(uuid())
+  questionId    String         @unique
+  question      SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  allowOther    Boolean        @default(false)
+  allowMultiple Boolean        @default(false)
+  minChoices    Int?
+  maxChoices    Int?
+}
+
+model SurveyScaleConfig {
+  id         String         @id @default(uuid())
+  questionId String         @unique
+  question   SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  scaleMin   Int
+  scaleMax   Int
+  step       Int            @default(1)
+}
+
+model SurveyOption {
+  id         String         @id @default(uuid())
   questionId String
-  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  
+  question   SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
   text       String
-  answers    SurveyAnswer[]
+  order      Int            @default(0)
+
+  ballots SurveyBallot[]
 
   @@index([questionId])
 }
 
-model SurveyAnswer {
-  id         String         @id @default(uuid())
-  userId     String
-  user       User           @relation(fields: [userId], references: [id])
-  
+// Rec(2004)11 §26 – "The Who" for surveys.
+model SurveyParticipation {
+  id        String   @id @default(uuid())
+  userId    String
+  surveyId  String
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  survey Survey @relation(fields: [surveyId], references: [id])
+
+  @@unique([userId, surveyId])
+}
+
+// Rec(2004)11 §47 – Single-use token that decouples authentication from ballot casting.
+model SurveyToken {
+  id        String   @id @default(uuid())
+  surveyId  String
+  userId    String
+  tokenHash String   @unique
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  survey Survey @relation(fields: [surveyId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  ballots         SurveyBallot[]
+  freeformBallots SurveyFreeformBallot[]
+
+  @@unique([userId, surveyId])
+}
+
+// ANONYMITY INVARIANTS:
+//   1. No userId field.
+//   2. No createdAt — timing-attack prevention (mirrors Ballot).
+//   3. ballotHash = SHA-256(surveyId ‖ questionId ‖ optionId ‖ clientNonce)
+model SurveyBallot {
+  id         String  @id @default(uuid())
   questionId String
-  question   Question       @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  
   optionId   String
-  option     QuestionOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
-  
-  createdAt  DateTime       @default(now())
-  
+  ballotHash String  @unique
+  tokenId    String?
+
+  question SurveyQuestion @relation(fields: [questionId], references: [id])
+  option   SurveyOption   @relation(fields: [optionId], references: [id])
+  token    SurveyToken?   @relation(fields: [tokenId], references: [id])
+
   @@index([questionId])
-  @@index([userId, questionId])
+  @@index([tokenId])
+}
+
+model SurveyFreeformBallot {
+  id         String  @id @default(uuid())
+  questionId String
+  text       String
+  ballotHash String  @unique
+  tokenId    String?
+
+  question SurveyQuestion @relation(fields: [questionId], references: [id])
+  token    SurveyToken?   @relation(fields: [tokenId], references: [id])
+
+  @@index([questionId])
+  @@index([tokenId])
+}
+
+model SurveyResult {
+  id             String   @id @default(uuid())
+  surveyId       String   @unique
+  tally          Json
+  totalResponses Int
+  tallyHash      String
+  sealedAt     DateTime @default(now())
+
+  survey Survey @relation(fields: [surveyId], references: [id])
+}
+
+// ─── SYSTEM UTILITIES ─────────────────────────────────────────────────────────
+
+model AuditLog {
+  id        String      @id @default(uuid())
+  action    AuditAction
+  payload   Json
+  userId    String?
+  createdAt DateTime    @default(now())
+
+  votingId String?
+  voting   Voting? @relation("VotingLogs", fields: [votingId], references: [id])
+
+  surveyId String?
+  survey   Survey? @relation("SurveyLogs", fields: [surveyId], references: [id])
+
+  @@index([action])
+  @@index([userId])
+  @@index([votingId])
+  @@index([surveyId])
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
-  token     String   @unique
-  userId    String   @unique
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
   expiresAt DateTime
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
 
-model AdminSecret {
-  id            String   @id @default(uuid())
-  secret_hashed String   @unique
-  createdAt     DateTime @default(now())
-  expiresAt     DateTime @default(dbgenerated("now() + interval '30 days'"))
-  active        Boolean  @default(true)
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

@@ -4,6 +4,7 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/utils/prisma-error';
 
 class RedisIoAdapter extends IoAdapter {
   private adapterConstructor: ReturnType<typeof createAdapter>;
@@ -15,7 +16,7 @@ class RedisIoAdapter extends IoAdapter {
     });
     const subClient = pubClient.duplicate();
 
-    await Promise.all([pubClient.connect, subClient.connect]);
+    await Promise.all([pubClient.connect(), subClient.connect()]);
     this.adapterConstructor = createAdapter(pubClient, subClient);
   }
 
@@ -47,6 +48,8 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   try {
     const redisIoAdapter = new RedisIoAdapter(app);

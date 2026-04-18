@@ -1,146 +1,67 @@
-// backend/src/votings/dto/voting.create.dto.ts
 import {
   IsString,
-  IsNotEmpty,
   IsOptional,
   IsBoolean,
+  IsInt,
   IsEnum,
+  IsDateString,
   IsArray,
   ArrayMinSize,
-  IsInt,
   Min,
-  ValidateNested,
-  IsUUID,
-  IsDateString,
+  MinLength,
+  MaxLength,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-
-export enum VotingType {
-  STANDARD = 'STANDARD', // Classic single-choice poll
-  FRIENDLY = 'FRIENDLY', // Friends deciding together - users can add options
-  MULTIPLE_CHOICE = 'MULTIPLE_CHOICE', // Multiple selections allowed
-  SURVEY = 'SURVEY', // Multiple questions, collect all responses
-}
-
-export enum RandomizerType {
-  NONE = 'NONE',
-  COIN_FLIP = 'COIN_FLIP', // For 2 options
-  ROULETTE = 'ROULETTE', // For 3+ options
-  PLINKO = 'PLINKO', // For 2 options (ball drop)
-  SPINNER = 'SPINNER', // Wheel of fortune
-  DICE_ROLL = 'DICE_ROLL', // For 2-6 options
-}
-
-export class QuestionOptionDto {
-  @IsString()
-  @IsNotEmpty()
-  text: string;
-}
-
-export class QuestionDto {
-  @IsString()
-  @IsNotEmpty()
-  text: string;
-
-  @IsInt()
-  @IsOptional()
-  order?: number;
-
-  @IsString()
-  @IsOptional()
-  description?: string; // Optional context for the question
-
-  @IsBoolean()
-  @IsOptional()
-  allowMultiple?: boolean; // Can select multiple options for this question
-
-  @IsArray()
-  @ArrayMinSize(2)
-  @ValidateNested({ each: true })
-  @Type(() => QuestionOptionDto)
-  options: QuestionOptionDto[];
-}
+import { Transform } from 'class-transformer';
+import { VotingType } from '../types/voting.types';
 
 export class VotingCreateDto {
   @IsString()
-  @IsNotEmpty()
+  @MinLength(1)
+  @MaxLength(200)
   title: string;
 
-  @IsString()
   @IsOptional()
+  @IsString()
+  @MaxLength(1000)
   description?: string;
 
-  @IsUUID()
-  @IsNotEmpty()
+  @IsString()
   groupId: string;
 
+  @IsOptional()
   @IsEnum(VotingType)
-  @IsOptional()
-  type?: VotingType = VotingType.STANDARD;
+  type?: VotingType;
 
-  @IsEnum(RandomizerType)
   @IsOptional()
-  randomizerType?: RandomizerType = RandomizerType.NONE;
-
   @IsBoolean()
-  @IsOptional()
-  isOpen?: boolean = false;
+  isOpen?: boolean;
 
-  @IsDateString()
-  @IsOptional()
-  startAt?: string;
-
-  @IsDateString()
-  @IsOptional()
-  endAt?: string;
-
-  @IsDateString()
-  @IsOptional()
-  optionsLockAt?: string; // For FRIENDLY type
-
-  // Standard voting options
   @IsArray()
   @ArrayMinSize(2)
   @IsString({ each: true })
-  @IsOptional()
-  options?: string[];
+  @MinLength(1, { each: true })
+  @Transform(({ value }) => (value as string[]).map((v) => v.trim()))
+  options: string[];
 
-  // FRIENDLY voting settings
+  @IsOptional()
   @IsBoolean()
-  @IsOptional()
-  allowUserOptions?: boolean = false;
+  allowOther?: boolean;
 
-  // MULTIPLE_CHOICE settings
-  @IsBoolean()
   @IsOptional()
-  allowMultiple?: boolean = false;
-
   @IsInt()
   @Min(1)
-  @IsOptional()
-  minChoices?: number = 1;
+  minChoices?: number;
 
+  @IsOptional()
   @IsInt()
   @Min(1)
-  @IsOptional()
   maxChoices?: number;
 
-  // SURVEY settings
-  @IsBoolean()
   @IsOptional()
-  isSurvey?: boolean = false;
+  @IsDateString()
+  startAt?: string;
 
-  @IsBoolean()
   @IsOptional()
-  showAggregateResults?: boolean = true; // Show how everyone answered
-
-  @IsBoolean()
-  @IsOptional()
-  allowAnonymous?: boolean = false; // Hide who answered what
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => QuestionDto)
-  @IsOptional()
-  questions?: QuestionDto[];
+  @IsDateString()
+  endAt?: string;
 }

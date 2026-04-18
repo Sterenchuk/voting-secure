@@ -10,7 +10,7 @@ import { RedisVotingService } from './redis.service';
       provide: 'REDIS_CLIENT',
       useFactory: () => {
         return new Redis({
-          host: process.env.REDIS_HOST || 'localhost',
+          host: process.env.REDIS_HOST || 'redis',
           port: parseInt(process.env.REDIS_PORT || '6379'),
         });
       },

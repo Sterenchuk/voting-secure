@@ -1,5 +1,5 @@
-import { IsOptional, IsString, IsISO8601 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsOptional, IsString, IsBoolean, IsDateString } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class FindVotingQueryDto {
   @IsOptional()
@@ -11,16 +11,19 @@ export class FindVotingQueryDto {
   title?: string;
 
   @IsOptional()
-  @IsISO8601()
-  @Type(() => Date)
-  startAt?: Date;
+  @IsDateString()
+  startAt?: string;
 
   @IsOptional()
-  @IsISO8601()
-  @Type(() => Date)
-  endAt?: Date;
+  @IsDateString()
+  endAt?: string;
 
   @IsOptional()
-  @Type(() => Boolean)
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
   isOpen?: boolean;
 }

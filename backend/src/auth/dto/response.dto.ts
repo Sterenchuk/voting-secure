@@ -6,5 +6,6 @@ export class ResponseDto {
     email: string;
     name?: string;
     role: string;
+    isEmailVerified: boolean;
   };
 }
