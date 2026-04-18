@@ -74,7 +74,12 @@ export class RedisVotingService {
     return await this.redis.hgetall(key);
   }
 
-  async performVote(votingId: string, optionIds: string[], userId: string, hasOther = false) {
+  async performVote(
+    votingId: string,
+    optionIds: string[],
+    userId: string,
+    hasOther = false,
+  ) {
     const lockKey = `vote_lock:${votingId}:${userId}`;
     const lockToken = await this.acquireLock(lockKey, 5);
 
@@ -94,12 +99,12 @@ export class RedisVotingService {
       const votersKey = `voting:${votingId}:voters`;
 
       const pipeline = this.redis.pipeline();
-      
+
       // Mark user as voted
       pipeline.sadd(votersKey, userId);
-      
+
       // Increment counts for options
-      optionIds.forEach(id => {
+      optionIds.forEach((id) => {
         pipeline.hincrby(resultsKey, id, 1);
       });
 
@@ -132,76 +137,108 @@ export class RedisVotingService {
   // ─── SURVEY METHODS ────────────────────────────────────────────────────────
 
   async hasUserSubmittedSurvey(
-    votingId: string,
+    surveyId: string,
     userId: string,
   ): Promise<boolean> {
-    const key = `survey:${votingId}:submitted`;
+    const key = `survey:${surveyId}:voters`;
     const result = await this.redis.sismember(key, userId);
     return result === 1;
   }
 
-  async markSurveySubmitted(votingId: string, userId: string): Promise<void> {
-    const key = `survey:${votingId}:submitted`;
+  async markSurveySubmitted(surveyId: string, userId: string): Promise<void> {
+    const key = `survey:${surveyId}:voters`;
     await this.redis.sadd(key, userId);
   }
 
-  /**
-   * Performs an anonymous survey answer update.
-   * Splits 'Who' (answeredKey) from 'What' (resultsKey).
-   */
-  async performSurveyAnswer(
-    votingId: string,
+  async incrementQuestionOptionCount(
     questionId: string,
-    optionIds: string[],
+    optionId: string,
+  ): Promise<void> {
+    const resultKey = `question:${questionId}:result`;
+    await this.redis.hincrby(resultKey, optionId, 1);
+  }
+
+  /**
+   * Performs an anonymous survey submission for multiple questions.
+   * Splits 'Who' (votersKey) from 'What' (resultsKey).
+   */
+  async performSurveySubmission(
+    surveyId: string,
     userId: string,
+    answers: { questionId: string; optionIds: string[]; hasOther?: boolean }[],
   ) {
-    const resultsKey = `survey:${votingId}:results:${questionId}`;
-    const answeredKey = `survey:${votingId}:answered:${questionId}`;
+    const lockKey = `survey_lock:${surveyId}:${userId}`;
+    const lockToken = await this.acquireLock(lockKey, 10);
+
+    if (!lockToken) {
+      throw new Error(
+        'Another submission is being processed for this user. Please try again.',
+      );
+    }
 
     try {
-      const pipeline = this.redis.multi();
-      optionIds.forEach((optionId) => {
-        pipeline.hincrby(resultsKey, optionId, 1);
+      const hasSubmitted = await this.hasUserSubmittedSurvey(surveyId, userId);
+      if (hasSubmitted) {
+        throw new Error('User has already submitted this survey');
+      }
+
+      const votersKey = `survey:${surveyId}:voters`;
+      const pipeline = this.redis.pipeline();
+
+      // Mark user as submitted
+      pipeline.sadd(votersKey, userId);
+
+      // Process each question's answers
+      answers.forEach(({ questionId, optionIds, hasOther }) => {
+        const resultsKey = `survey:${surveyId}:results:${questionId}`;
+        
+        optionIds.forEach((optionId) => {
+          pipeline.hincrby(resultsKey, optionId, 1);
+        });
+
+        if (hasOther) {
+          pipeline.hincrby(resultsKey, 'OTHER_COUNT', 1);
+        }
       });
-      // Track that this user answered this specific question
-      pipeline.sadd(answeredKey, userId);
+
       await pipeline.exec();
-    } catch (error) {
-      this.logger.error(`Redis survey answer update failed: ${error}`); // TODO
-      throw error;
+    } finally {
+      await this.releaseLock(lockKey, lockToken);
     }
   }
 
-  async hasUserAnsweredQuestion(
-    questionId: string,
-    userId: string,
-  ): Promise<boolean> {
-    // Note: Ensure this key matches the 'answeredKey' pattern used in performSurveyAnswer
-    const pattern = `survey:*:answered:${questionId}`;
-    // It's better to pass votingId to this method to be precise:
-    // const key = `survey:${votingId}:answered:${questionId}`;
-    const keys = await this.redis.keys(pattern);
-    if (keys.length === 0) return false;
-
-    // Check first found match for simplicity, or refactor to include votingId
-    const result = await this.redis.sismember(keys[0], userId);
-    return result === 1;
-  }
-
-  async getQuestionResults(votingId: string, questionId: string) {
-    const key = `survey:${votingId}:results:${questionId}`;
+  async getQuestionResults(surveyId: string, questionId: string): Promise<Record<string, string>> {
+    const key = `survey:${surveyId}:results:${questionId}`;
     return await this.redis.hgetall(key);
   }
 
-  async clearSurveyData(votingId: string) {
-    const pipeline = this.redis.pipeline();
-    pipeline.del(`survey:${votingId}:submitted`);
+  async clearSurveyData(surveyId: string) {
+    const votersKey = `survey:${surveyId}:voters`;
+    const pattern = `survey:${surveyId}:results:*`;
+    
+    // Using scanning for results keys instead of keys() for safety
+    const resultsKeys: string[] = [];
+    let cursor = '0';
+    do {
+      const [newCursor, foundKeys] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = newCursor;
+      resultsKeys.push(...foundKeys);
+    } while (cursor !== '0');
 
-    const pattern = `survey:${votingId}:*`;
-    const keys = await this.redis.keys(pattern);
-    if (keys.length > 0) {
-      pipeline.del(...keys);
-    }
+    const lockPattern = `survey_lock:${surveyId}:*`;
+    const lockKeys: string[] = [];
+    cursor = '0';
+    do {
+      const [newCursor, foundKeys] = await this.redis.scan(cursor, 'MATCH', lockPattern, 'COUNT', 100);
+      cursor = newCursor;
+      lockKeys.push(...foundKeys);
+    } while (cursor !== '0');
+
+    const pipeline = this.redis.pipeline();
+    pipeline.del(votersKey);
+    if (resultsKeys.length > 0) pipeline.del(...resultsKeys);
+    if (lockKeys.length > 0) pipeline.del(...lockKeys);
+    
     await pipeline.exec();
   }
 }
