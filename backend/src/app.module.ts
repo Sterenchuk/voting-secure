@@ -6,15 +6,16 @@ import { AuthModule } from './auth/auth.module';
 import { VotingsModule } from './votings/votings.module';
 import { GroupsModule } from './groups/groups.module';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { MailModule } from './mail/mail.module';
+import { SurveysModule } from './surveys/surveys.module';
 
 @Module({
   imports: [
-    DatabaseModule, // Prisma service
-    UsersModule, // User feature
-    AuthModule, // Auth feature
-    ConfigModule.forRoot({
-      isGlobal: true,
-    }),
+    DatabaseModule,
+    UsersModule,
+    AuthModule,
+    MailModule,
+    ConfigModule.forRoot({ isGlobal: true }),
     VotingsModule,
     GroupsModule,
     ThrottlerModule.forRoot([
@@ -34,6 +35,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
         limit: 100,
       },
     ]),
+    SurveysModule,
   ],
 })
 export class AppModule {}

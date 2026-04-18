@@ -2,136 +2,137 @@ import {
   Controller,
   Get,
   Post,
-  Put,
   Patch,
   Delete,
-  Param,
   Body,
-  HttpCode,
-  HttpStatus,
-  UseGuards,
+  Param,
   Query,
+  UseGuards,
+  Req,
 } from '@nestjs/common';
-import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { VotingsService } from './votings.service';
+import { VoteService } from './vote.service';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role';
-import { VotingsService } from './votings.service';
 import { VotingCreateDto } from './dto/voting.create.dto';
-import { VotingResponseDto } from './dto/voting.response.dto';
-import { OptionResponseDto } from './dto/option.response.dto';
 import { VotingUpdateDto } from './dto/voting.update.dto';
-import { VoteDto } from './dto/vote.dto';
-import { SurveyAnswerDto } from './dto/survey-answer.dto';
 import { FindVotingQueryDto } from './dto/find.voting.query.dto';
+import { CastVoteDto } from './dto/cast.vote.dto';
 
+@UseGuards(JwtAuthGuard)
 @Controller('votings')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.USER)
 export class VotingsController {
-  constructor(private readonly votingsService: VotingsService) {}
+  constructor(
+    private readonly votingsService: VotingsService,
+    private readonly voteService: VoteService,
+  ) {}
+
+  // ─── Voting CRUD ──────────────────────────────────────────────────────────────
 
   @Post()
-  async create(
-    @CurrentUser('sub') userId: string,
-    @Body() votingCreateDto: VotingCreateDto,
-  ): Promise<VotingResponseDto> {
-    return this.votingsService.create(votingCreateDto, userId);
+  create(@Body() dto: VotingCreateDto, @Req() req: any) {
+    return this.votingsService.create(req.user.id, dto);
   }
 
   @Get()
-  async findAll(
-    @Query() query: FindVotingQueryDto,
-  ): Promise<VotingResponseDto[]> {
-    return this.votingsService.findAll(query);
+  findAll(@Query() dto: FindVotingQueryDto) {
+    return this.votingsService.findAll(dto);
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string): Promise<any> {
+  findOne(@Param('id') id: string) {
     return this.votingsService.findOne(id);
   }
 
-  @Put(':id')
-  async update(
+  @Patch(':id')
+  update(
     @Param('id') id: string,
-    @Body() votingUpdateDto: VotingUpdateDto,
-  ): Promise<VotingResponseDto> {
-    return this.votingsService.update(id, votingUpdateDto);
+    @Body() dto: VotingUpdateDto,
+    @Req() req: any,
+  ) {
+    return this.votingsService.update(id, dto, req.user.id);
   }
 
   @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(@Param('id') id: string): Promise<void> {
-    await this.votingsService.delete(id);
+  delete(@Param('id') id: string, @Req() req: any) {
+    return this.votingsService.delete(id, req.user.id);
   }
 
-  @Post('vote')
-  async vote(
-    @Body() body: { votingId: string; optionId: string | string[] },
-    @CurrentUser('sub') userId: string,
+  // ─── Vote casting ─────────────────────────────────────────────────────────────
+
+  @Post(':id/vote')
+  vote(
+    @Param('id') votingId: string,
+    @Body() dto: CastVoteDto,
+    @Req() req: any,
   ) {
-    const optionIds = Array.isArray(body.optionId)
-      ? body.optionId
-      : [body.optionId];
-    return this.votingsService.vote(body.votingId, optionIds, userId);
+    return this.voteService.vote(
+      votingId,
+      dto.ballots,
+      req.user.id,
+      dto.otherText,
+      dto.freeformBallotHash,
+    );
   }
 
-  @Post(':id/options')
-  async addOption(
-    @Param('id') votingId: string,
-    @CurrentUser('sub') userId: string,
-    @Body('text') text: string,
-  ): Promise<OptionResponseDto> {
-    return this.votingsService.addOption(votingId, userId, text);
-  }
+  // ─── Results ──────────────────────────────────────────────────────────────────
 
-  @Patch(':id/options/:optionId')
-  async updateOption(
-    @Param('id') votingId: string,
-    @Param('optionId') optionId: string,
-    @CurrentUser('sub') userId: string,
-    @Body('text') text: string,
-  ): Promise<OptionResponseDto> {
-    return this.votingsService.updateOption(votingId, optionId, userId, text);
-  }
-
-  @Delete(':id/options/:optionId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async removeOption(
-    @Param('id') votingId: string,
-    @Param('optionId') optionId: string,
-    @CurrentUser('sub') userId: string,
-  ) {
-    return this.votingsService.deleteOption(votingId, optionId, userId);
-  }
-
+  /**
+   * GET /votings/:id/results
+   * Returns live (unsealed) aggregated results — visible to everyone.
+   */
   @Get(':id/results')
-  async getResults(
-    @Param('id') id: string,
-    @CurrentUser('sub') userId: string,
-  ) {
-    const voting = await this.votingsService.findOne(id);
-    if (voting?.isSurvey) {
-      return this.votingsService.getSurveyResults(id, userId);
-    }
-    return this.votingsService.getVotingResults(id);
+  getResults(@Param('id') votingId: string) {
+    return this.voteService.getResults(votingId);
   }
 
-  @Get(':id/user-vote')
-  async getUserVote(
-    @Param('id') votingId: string,
-    @CurrentUser('sub') userId: string,
-  ): Promise<{ optionId?: string }> {
-    return this.votingsService.getUserVote(votingId, userId);
+  /**
+   * GET /votings/:id/results/admin
+   * Returns live results including raw freeform answers.
+   * Restricted to ADMIN and AUDITOR roles.
+   */
+  @Get(':id/results/admin')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.AUDITOR)
+  getAdminResults(@Param('id') votingId: string) {
+    return this.voteService.getResults(votingId, true);
   }
 
-  @Post(':id/survey')
-  async submitSurvey(
-    @Param('id') id: string,
-    @Body() answers: { questionId: string; optionIds: string[] }[],
-    @CurrentUser('sub') userId: string,
-  ) {
-    return this.votingsService.submitSurveyAnswer(id, answers, userId);
+  /**
+   * GET /votings/:id/results/sealed
+   * Returns the immutable sealed tally (Rec §56).
+   * Only available after finalization.
+   */
+  @Get(':id/results/sealed')
+  getSealedResult(@Param('id') votingId: string) {
+    return this.voteService.getSealedResult(votingId);
+  }
+
+  // ─── Finalization (Rec §56) ───────────────────────────────────────────────────
+
+  /**
+   * POST /votings/:id/finalize
+   * Seals results into an immutable VotingResult row and closes the voting.
+   * Restricted to ADMIN role.
+   */
+  @Post(':id/finalize')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  finalize(@Param('id') votingId: string, @Req() req: any) {
+    return this.voteService.finalizeVoting(votingId, req.user.id);
+  }
+
+  // ─── User participation status ────────────────────────────────────────────────
+
+  /**
+   * GET /votings/:id/my-vote
+   * Returns whether the authenticated user has voted — never what they voted.
+   * Rec(2004)11: you must never reveal a user's choices after the fact.
+   */
+  @Get(':id/my-vote')
+  getUserVote(@Param('id') votingId: string, @Req() req: any) {
+    return this.voteService.getUserVote(votingId, req.user.id);
   }
 }

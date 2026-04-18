@@ -1,12 +1,19 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { UsersService } from 'src/users/users.service';
+import {
+  Injectable,
+  UnauthorizedException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
+import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
-import { verifyPassword } from 'src/common/utils/hash-password';
+import { verifyPassword, hashPassword } from '../common/utils/hash-password';
 import { RegisterDto } from './dto/register.dto';
-import { handlePrismaError } from 'src/common/utils/prisma-error';
-import { Role } from 'src/common/enums/role';
+import { handlePrismaError } from '../common/utils/prisma-error';
+import { Role } from '../common/enums/role';
 import { ResponseDto } from './dto/response.dto';
-import { DatabaseService } from 'src/database/database.service';
+import { DatabaseService } from '../database/database.service';
+import { MailService } from '../mail/mail.service';
+import { CryptoUtils } from '../common/utils/crypto-utils';
 
 @Injectable()
 export class AuthService {
@@ -14,9 +21,10 @@ export class AuthService {
     private usersService: UsersService,
     private jwtService: JwtService,
     private databaseService: DatabaseService,
+    private mailService: MailService,
   ) {}
 
-  private async generetaRefreshToken(userId: string): Promise<string> {
+  private async generateRefreshToken(userId: string): Promise<string> {
     const refreshToken = this.jwtService.sign(
       { sub: userId },
       { expiresIn: '30d' },
@@ -25,18 +33,19 @@ export class AuthService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30);
 
+    const tokenHash = CryptoUtils.hashToken(refreshToken);
+
     await this.databaseService.refreshToken.upsert({
-      where: { userId: userId },
+      where: { tokenHash: tokenHash },
       update: {
-        token: refreshToken,
         expiresAt: expiresAt,
       },
       create: {
-        token: refreshToken,
+        tokenHash: tokenHash,
         userId: userId,
         expiresAt: expiresAt,
       },
-    });
+    }).catch(e => handlePrismaError(e, 'Updating refresh token'));
 
     return refreshToken;
   }
@@ -45,15 +54,19 @@ export class AuthService {
     try {
       const payload = this.jwtService.verify(refreshToken);
       const userId = payload.sub;
+      const tokenHash = CryptoUtils.hashToken(refreshToken);
 
-      const savedToken = await this.databaseService.refreshToken.findFirst({
+      const savedToken = await this.databaseService.refreshToken.findUnique({
         where: {
-          token: refreshToken,
-          userId: userId,
+          tokenHash: tokenHash,
         },
       });
 
-      if (!savedToken || savedToken.expiresAt < new Date()) {
+      if (
+        !savedToken ||
+        savedToken.expiresAt < new Date() ||
+        savedToken.userId !== userId
+      ) {
         throw new UnauthorizedException('Invalid or expired refresh token');
       }
 
@@ -70,36 +83,48 @@ export class AuthService {
         accessToken: this.jwtService.sign(newPayload),
       };
     } catch (e) {
+      if (e instanceof UnauthorizedException) throw e;
       throw new UnauthorizedException('Refresh failed');
     }
   }
 
   async register(registerDto: RegisterDto, role?: Role): Promise<ResponseDto> {
-    try {
-      const user = await this.usersService.create(registerDto, role);
+    const user = await this.usersService.create(registerDto, role);
 
-      const payload = {
-        sub: user.id,
+    const token = CryptoUtils.generateRandomToken();
+    const tokenHash = CryptoUtils.hashToken(token);
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
+
+    await this.databaseService.emailVerificationToken.create({
+      data: {
+        tokenHash,
+        userId: user.id,
+        expiresAt,
+      },
+    }).catch(e => handlePrismaError(e, 'Creating verification token'));
+
+    await this.mailService.sendVerificationEmail(user.email, token);
+
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    };
+    const accessToken = this.jwtService.sign(payload);
+    
+    return {
+      accessToken,
+      refreshToken: await this.generateRefreshToken(user.id),
+      user: {
+        id: user.id,
         email: user.email,
-        name: user.name,
+        name: user.name ? user.name : undefined,
         role: user.role,
-      };
-      const accessToken = this.jwtService.sign(payload);
-      const response: ResponseDto = {
-        accessToken,
-        refreshToken: await this.generetaRefreshToken(user.id),
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name ? user.name : undefined,
-          role: user.role,
-        },
-      };
-
-      return response;
-    } catch (e) {
-      handlePrismaError(e, 'User registration');
-    }
+        isEmailVerified: user.isEmailVerified,
+      },
+    };
   }
 
   async signIn(email: string, password: string): Promise<ResponseDto> {
@@ -107,6 +132,10 @@ export class AuthService {
 
     if ((await verifyPassword(user.password, password)) === false) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!user.isEmailVerified) {
+      throw new UnauthorizedException('Email not verified');
     }
 
     const payload = {
@@ -117,17 +146,106 @@ export class AuthService {
     };
     const accessToken = this.jwtService.sign(payload);
 
-    const response: ResponseDto = {
+    return {
       accessToken,
-      refreshToken: await this.generetaRefreshToken(user.id),
+      refreshToken: await this.generateRefreshToken(user.id),
       user: {
         id: user.id,
         email: user.email,
         name: user.name ? user.name : undefined,
         role: user.role,
+        isEmailVerified: user.isEmailVerified,
       },
     };
+  }
 
-    return response;
+  async verifyEmail(token: string) {
+    const tokenHash = CryptoUtils.hashToken(token);
+
+    const verificationToken =
+      await this.databaseService.emailVerificationToken.findUnique({
+        where: { tokenHash },
+      });
+
+    if (
+      !verificationToken ||
+      verificationToken.expiresAt < new Date() ||
+      verificationToken.usedAt
+    ) {
+      throw new BadRequestException('Invalid or expired verification token');
+    }
+
+    await this.databaseService.$transaction([
+      this.databaseService.user.update({
+        where: { id: verificationToken.userId },
+        data: { isEmailVerified: true },
+      }),
+      this.databaseService.emailVerificationToken.update({
+        where: { id: verificationToken.id },
+        data: { usedAt: new Date() },
+      }),
+    ]).catch(e => handlePrismaError(e, 'Verifying email'));
+
+    return { message: 'Email verified successfully' };
+  }
+
+  async forgotPassword(email: string) {
+    let user;
+    try {
+      user = await this.usersService.findOneByEmail(email);
+    } catch (e) {
+      // For security reasons, don't reveal if user exists
+      return {
+        message: 'If a user with that email exists, a reset link has been sent',
+      };
+    }
+
+    const token = CryptoUtils.generateRandomToken();
+    const tokenHash = CryptoUtils.hashToken(token);
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1);
+
+    await this.databaseService.passwordResetToken.create({
+      data: {
+        tokenHash,
+        userId: user.id,
+        expiresAt,
+      },
+    }).catch(e => handlePrismaError(e, 'Creating reset token'));
+
+    await this.mailService.sendPasswordResetEmail(user.email, token);
+
+    return {
+      message: 'If a user with that email exists, a reset link has been sent',
+    };
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    const tokenHash = CryptoUtils.hashToken(token);
+
+    const resetToken = await this.databaseService.passwordResetToken.findUnique(
+      {
+        where: { tokenHash },
+      },
+    );
+
+    if (!resetToken || resetToken.expiresAt < new Date() || resetToken.usedAt) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    const hashedPassword = await hashPassword(newPassword);
+
+    await this.databaseService.$transaction([
+      this.databaseService.user.update({
+        where: { id: resetToken.userId },
+        data: { password: hashedPassword },
+      }),
+      this.databaseService.passwordResetToken.update({
+        where: { id: resetToken.id },
+        data: { usedAt: new Date() },
+      }),
+    ]).catch(e => handlePrismaError(e, 'Resetting password'));
+
+    return { message: 'Password reset successfully' };
   }
 }

@@ -19,17 +19,18 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role';
-
-import { UuidDto } from 'src/common/utils/uuid.dto';
-import { UserPayloadDto } from 'src/auth/dto/payload.dto';
-import { GroupUpdateDto } from './dto/group.update.dto';
-import { GroupCreateDto } from './dto/group.create.dto';
+import { UuidDto } from '../common/utils/uuid.dto';
+import { UserPayloadDto } from '../auth/dto/payload.dto';
+import {
+  GroupUpdateDto,
+  GroupCreateDto,
+  AddUsersDto,
+  ChangeRoleDto,
+} from './dto/group.input.dto';
 import { GroupResponseDto } from './dto/group.response.dto';
+import { FindAllGroupsDto } from './dto/group.query.dto';
 
 import { GroupsService } from './groups.service';
-import { AddUsersDto } from './dto/add.users.dto';
-import { ChangeRoleDto } from './dto/change.role.dto';
-import { FindAllGroupsDto } from './dto/find.all.dto';
 
 @Controller('groups')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -52,15 +53,13 @@ export class GroupsController {
   ): Promise<GroupResponseDto[]> {
     return this.groupsService.findAll(userId, name);
   }
-
+  @Get(':id/members')
+  async findGroupMembers(@Param('id') groupId: string): Promise<any[]> {
+    return this.groupsService.findMembers(groupId);
+  }
   @Get(':id')
   findOne(@Param('id') id: UuidDto['id']): Promise<GroupResponseDto> {
     return this.groupsService.findOne(id);
-  }
-
-  @Post(':id/members')
-  async findGroupMembers(@Param('groupId') groupId: string): Promise<any[]> {
-    return this.groupsService.findMembers(groupId);
   }
 
   @Put(':id')

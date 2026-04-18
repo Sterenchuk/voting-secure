@@ -21,8 +21,8 @@ import { UsersService } from './users.service';
 import { UserCreateDto } from './dto/user.create.dto';
 import { UserUpdateDto } from './dto/user.update.dto';
 import { UserResponseDto } from './dto/user.response.dto';
-import { UuidDto } from 'src/common/utils/uuid.dto';
-import { UserPayloadDto } from 'src/auth/dto/payload.dto';
+import { UuidDto } from '../common/utils/uuid.dto';
+import { UserPayloadDto } from '../auth/dto/payload.dto';
 
 import { JwtService } from '@nestjs/jwt';
 
