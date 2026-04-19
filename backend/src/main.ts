@@ -3,8 +3,9 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
+import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
-import { AllExceptionsFilter } from './common/utils/prisma-error';
+import { ExceptionsFilter } from './common/filters/exceptions.filter';
 
 class RedisIoAdapter extends IoAdapter {
   private adapterConstructor: ReturnType<typeof createAdapter>;
@@ -13,6 +14,7 @@ class RedisIoAdapter extends IoAdapter {
     const pubClient = new Redis({
       host: process.env.REDIS_HOST || 'redis',
       port: parseInt(process.env.REDIS_PORT || '6379'),
+      lazyConnect: true,
     });
     const subClient = pubClient.duplicate();
 
@@ -30,6 +32,8 @@ class RedisIoAdapter extends IoAdapter {
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
+
+  app.use(cookieParser());
 
   app.enableCors({
     origin: [
@@ -49,7 +53,7 @@ async function bootstrap() {
     }),
   );
 
-  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalFilters(new ExceptionsFilter());
 
   try {
     const redisIoAdapter = new RedisIoAdapter(app);

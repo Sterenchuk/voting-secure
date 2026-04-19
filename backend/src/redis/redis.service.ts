@@ -145,6 +145,11 @@ export class RedisVotingService {
     return result === 1;
   }
 
+  async getSurveyVoterCount(surveyId: string): Promise<number> {
+    const key = `survey:${surveyId}:voters`;
+    return await this.redis.scard(key);
+  }
+
   async markSurveySubmitted(surveyId: string, userId: string): Promise<void> {
     const key = `survey:${surveyId}:voters`;
     await this.redis.sadd(key, userId);
@@ -191,7 +196,7 @@ export class RedisVotingService {
       // Process each question's answers
       answers.forEach(({ questionId, optionIds, hasOther }) => {
         const resultsKey = `survey:${surveyId}:results:${questionId}`;
-        
+
         optionIds.forEach((optionId) => {
           pipeline.hincrby(resultsKey, optionId, 1);
         });
@@ -207,7 +212,10 @@ export class RedisVotingService {
     }
   }
 
-  async getQuestionResults(surveyId: string, questionId: string): Promise<Record<string, string>> {
+  async getQuestionResults(
+    surveyId: string,
+    questionId: string,
+  ): Promise<Record<string, string>> {
     const key = `survey:${surveyId}:results:${questionId}`;
     return await this.redis.hgetall(key);
   }
@@ -215,12 +223,18 @@ export class RedisVotingService {
   async clearSurveyData(surveyId: string) {
     const votersKey = `survey:${surveyId}:voters`;
     const pattern = `survey:${surveyId}:results:*`;
-    
+
     // Using scanning for results keys instead of keys() for safety
     const resultsKeys: string[] = [];
     let cursor = '0';
     do {
-      const [newCursor, foundKeys] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      const [newCursor, foundKeys] = await this.redis.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        100,
+      );
       cursor = newCursor;
       resultsKeys.push(...foundKeys);
     } while (cursor !== '0');
@@ -229,7 +243,13 @@ export class RedisVotingService {
     const lockKeys: string[] = [];
     cursor = '0';
     do {
-      const [newCursor, foundKeys] = await this.redis.scan(cursor, 'MATCH', lockPattern, 'COUNT', 100);
+      const [newCursor, foundKeys] = await this.redis.scan(
+        cursor,
+        'MATCH',
+        lockPattern,
+        'COUNT',
+        100,
+      );
       cursor = newCursor;
       lockKeys.push(...foundKeys);
     } while (cursor !== '0');
@@ -238,7 +258,7 @@ export class RedisVotingService {
     pipeline.del(votersKey);
     if (resultsKeys.length > 0) pipeline.del(...resultsKeys);
     if (lockKeys.length > 0) pipeline.del(...lockKeys);
-    
+
     await pipeline.exec();
   }
 }

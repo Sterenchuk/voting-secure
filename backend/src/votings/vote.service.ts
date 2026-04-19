@@ -10,7 +10,6 @@ import {
 import { VotingsRepository } from './votings.repository';
 import { RedisVotingService } from '../redis/redis.service';
 import { VoteGateway } from './vote.gateway';
-import { handlePrismaError } from '../common/utils/prisma-error';
 import {
   IBallotInput,
   IVotingResults,
@@ -132,8 +131,6 @@ export class VoteService {
       this.gateway.emitVotingResults(votingId, results);
 
       return { participated: true, freeform: result.freeform };
-    } catch (e) {
-      handlePrismaError(e, 'Casting vote');
     } finally {
       if (lockToken) await this.redis.releaseLock(lockKey, lockToken);
     }
@@ -143,53 +140,51 @@ export class VoteService {
     votingId: string,
     includeRawFreeform = false,
   ): Promise<IVotingResults> {
-    return (async () => {
-      const cached = await this.redis.getResults(votingId);
-      let options: IOptionResult[];
-      let otherCount = 0;
+    const cached = await this.redis.getResults(votingId);
+    let options: IOptionResult[];
+    let otherCount = 0;
 
-      if (cached && Object.keys(cached).length > 0) {
-        const raw = await this.repo.findOptionsByVoting(votingId);
-        options = raw.map((o) => ({
-          id: o.id,
-          text: o.text,
-          voteCount: parseInt(cached[o.id] ?? '0'),
-        }));
-        otherCount = parseInt(cached['OTHER_COUNT'] ?? '0');
-      } else {
-        const raw = await this.repo.findOptionsWithBallotCounts(votingId);
-        options = raw.map((o) => ({
-          id: o.id,
-          text: o.text,
-          voteCount: o._count.ballots,
-        }));
-        otherCount = await this.repo.countFreeformBallotsByVoting(votingId);
-      }
+    if (cached && Object.keys(cached).length > 0) {
+      const raw = await this.repo.findOptionsByVoting(votingId);
+      options = raw.map((o) => ({
+        id: o.id,
+        text: o.text,
+        voteCount: parseInt(cached[o.id] ?? '0'),
+      }));
+      otherCount = parseInt(cached['OTHER_COUNT'] ?? '0');
+    } else {
+      const raw = await this.repo.findOptionsWithBallotCounts(votingId);
+      options = raw.map((o) => ({
+        id: o.id,
+        text: o.text,
+        voteCount: o._count.ballots,
+      }));
+      otherCount = await this.repo.countFreeformBallotsByVoting(votingId);
+    }
 
-      const totalBallots =
-        options.reduce((sum, o) => sum + o.voteCount, 0) + otherCount;
+    const totalBallots =
+      options.reduce((sum, o) => sum + o.voteCount, 0) + otherCount;
 
-      const voting = await this.repo.findVotingRaw(votingId);
+    const voting = await this.repo.findVotingRaw(votingId);
 
-      if (voting?.allowOther && includeRawFreeform) {
-        const other = await this.repo.findFreeformBallotsByVoting(votingId);
-        return { options, totalBallots, other };
-      }
+    if (voting?.allowOther && includeRawFreeform) {
+      const other = await this.repo.findFreeformBallotsByVoting(votingId);
+      return { options, totalBallots, other };
+    }
 
-      if (voting?.allowOther) {
-        return {
-          options,
-          totalBallots,
-          otherCount,
-        };
-      }
+    if (voting?.allowOther) {
+      return {
+        options,
+        totalBallots,
+        otherCount,
+      };
+    }
 
-      return { options, totalBallots };
-    })().catch((e) => handlePrismaError(e, 'Getting results'));
+    return { options, totalBallots };
   }
 
   async getSealedResult(votingId: string) {
-    const result = await this.repo.findVotingResult(votingId).catch((e) => handlePrismaError(e, 'Getting sealed result'));
+    const result = await this.repo.findVotingResult(votingId);
     if (!result)
       throw new NotFoundException('This voting has not been finalized yet');
     return result;
@@ -198,7 +193,7 @@ export class VoteService {
   // ─── Finalize ─────────────────────────────────────────────────────────────────
 
   async finalizeVoting(votingId: string, userId: string) {
-    const voting = await this.repo.findVotingRaw(votingId).catch((e) => handlePrismaError(e, 'Finalizing voting'));
+    const voting = await this.repo.findVotingRaw(votingId);
     if (!voting) throw new NotFoundException('Voting not found');
     if (voting.isFinalized)
       throw new ConflictException('Voting is already finalized');
@@ -207,9 +202,7 @@ export class VoteService {
     const otherCount = await this.repo.countFreeformBallotsByVoting(votingId);
 
     const tally = {
-      options: Object.fromEntries(
-        options.map((o) => [o.id, o._count.ballots]),
-      ),
+      options: Object.fromEntries(options.map((o) => [o.id, o._count.ballots])),
       other: otherCount,
     };
 
@@ -219,7 +212,7 @@ export class VoteService {
 
     return this.repo.$transaction((tx) =>
       this.repo.finalizeVoting(tx, votingId, tally, totalBallots, tallyHash),
-    ).catch((e) => handlePrismaError(e, 'Finalizing voting'));
+    );
   }
 
   // ─── User participation status ────────────────────────────────────────────────
@@ -228,7 +221,7 @@ export class VoteService {
     votingId: string,
     userId: string,
   ): Promise<IUserVoteStatus> {
-    const participation = await this.repo.findParticipation(userId, votingId).catch((e) => handlePrismaError(e, 'Getting participation status'));
+    const participation = await this.repo.findParticipation(userId, votingId);
     return { participated: !!participation };
   }
 

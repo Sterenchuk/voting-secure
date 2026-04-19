@@ -4,19 +4,18 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { SurveyRepository } from './survey.repository';
+import { SurveysRepository } from './surveys.repository';
 import { GroupsService } from '../groups/groups.service';
 import {
   FindSurveyQueryDto,
   SurveyCreateDto,
   SurveyUpdateDto,
 } from './dto/survey.dto';
-import { handlePrismaError } from '../common/utils/prisma-error';
 import {
   SurveyQuestionType,
   ICreateSurveyData,
   ISurveyWhereInput,
-  SurveyQuestion,
+  ISurveyQuestion,
 } from './types/survey.types';
 import { UpdateSurveyQuestionDto } from './dto/question.dto';
 import { SurveyOptionDto, UpdateSurveyOptionDto } from './dto/option.dto';
@@ -24,7 +23,7 @@ import { SurveyOptionDto, UpdateSurveyOptionDto } from './dto/option.dto';
 @Injectable()
 export class SurveysService {
   constructor(
-    private readonly repo: SurveyRepository,
+    private readonly repo: SurveysRepository,
     private readonly groupsService: GroupsService,
   ) {}
 
@@ -90,7 +89,7 @@ export class SurveysService {
       }),
     };
 
-    return this.repo.createSurvey(userId, data).catch((e) => handlePrismaError(e, 'Creating survey'));
+    return this.repo.createSurvey(userId, data);
   }
 
   async findAll(dto: FindSurveyQueryDto) {
@@ -101,11 +100,11 @@ export class SurveysService {
     if (dto.isOpen !== undefined) where.isOpen = dto.isOpen;
     if (dto.isFinalized !== undefined) where.isFinalized = dto.isFinalized;
 
-    return this.repo.findSurveys(where).catch((e) => handlePrismaError(e, 'Finding surveys'));
+    return this.repo.findSurveys(where);
   }
 
   async findOne(id: string) {
-    const survey = await this.repo.findSurveyById(id).catch((e) => handlePrismaError(e, 'Finding survey'));
+    const survey = await this.repo.findSurveyById(id);
     if (!survey || (survey as any).deletedAt)
       throw new NotFoundException('Survey not found');
     return survey;
@@ -129,7 +128,7 @@ export class SurveysService {
       endAt: dto.endAt ? new Date(dto.endAt) : undefined,
     };
 
-    return this.repo.updateSurvey(surveyId, updateData).catch((e) => handlePrismaError(e, 'Updating survey'));
+    return this.repo.updateSurvey(surveyId, updateData);
   }
 
   async updateQuestions(
@@ -150,18 +149,18 @@ export class SurveysService {
     }
 
     return this.repo.$transaction(async (tx) => {
-      const results: SurveyQuestion[] = [];
+      const results: ISurveyQuestion[] = [];
       for (const q of questions) {
         const { id, ...data } = q;
         const updated = await this.repo.updateQuestion(id, data, tx);
         results.push(updated as any);
       }
       return results;
-    }).catch((e) => handlePrismaError(e, 'Updating survey questions'));
+    });
   }
 
   async addOption(questionId: string, data: SurveyOptionDto) {
-    if ((await this.repo.findOptionById(questionId)) === null) {
+    if ((await this.repo.findQuestionById(questionId)) === null) {
       throw new NotFoundException('Question not found');
     }
     return this.repo.addOption(questionId, data);
@@ -179,5 +178,15 @@ export class SurveysService {
       throw new NotFoundException('Option not found');
     }
     return this.repo.deleteOption(optionId);
+  }
+
+  async delete(userId: string, surveyId: string) {
+    const survey = await this.repo.findSurveyRawById(surveyId);
+    if (!survey || survey.deletedAt)
+      throw new NotFoundException('Survey not found');
+
+    await this.groupsService.checkAdminPermission(userId, survey.groupId);
+
+    return await this.repo.softDeleteSurvey(surveyId);
   }
 }
