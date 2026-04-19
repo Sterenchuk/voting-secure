@@ -5,7 +5,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { VotingsRepository } from './votings.repository';
-import { handlePrismaError } from '../common/utils/prisma-error';
 import {
   VotingType,
   ICreateVotingData,
@@ -55,7 +54,7 @@ export class VotingsService {
       options: dto.options,
     };
 
-    return this.repo.createVoting(userId, data).catch((e) => handlePrismaError(e, 'Creating voting'));
+    return this.repo.createVoting(userId, data);
   }
 
   async findAll(dto: FindVotingQueryDto) {
@@ -66,11 +65,11 @@ export class VotingsService {
     if (dto.endAt) where.endAt = { lte: new Date(dto.endAt) };
     if (dto.isOpen !== undefined) where.isOpen = dto.isOpen;
 
-    return this.repo.findVotings(where).catch((e) => handlePrismaError(e, 'Finding votings'));
+    return this.repo.findVotings(where);
   }
 
   async findOne(id: string) {
-    const voting = await this.repo.findVotingById(id).catch((e) => handlePrismaError(e, 'Finding voting'));
+    const voting = await this.repo.findVotingById(id);
     if (!voting || (voting as any).deletedAt)
       throw new NotFoundException('Voting not found');
 
@@ -84,7 +83,7 @@ export class VotingsService {
   }
 
   async update(id: string, dto: VotingUpdateDto, userId: string) {
-    const voting = await this.repo.findVotingRaw(id).catch((e) => handlePrismaError(e, 'Updating voting'));
+    const voting = await this.repo.findVotingRaw(id);
     if (!voting) throw new NotFoundException('Voting not found');
 
     await this.groupService.checkAdminPermission(userId, voting.groupId);
@@ -113,7 +112,7 @@ export class VotingsService {
       endAt: dto.endAt ? new Date(dto.endAt) : undefined,
     };
 
-    return this.repo.updateVoting(id, data).catch((e) => handlePrismaError(e, 'Updating voting'));
+    return this.repo.updateVoting(id, data);
   }
 
   async updateOption(
@@ -122,7 +121,7 @@ export class VotingsService {
     text: string,
     userId: string,
   ) {
-    const voting = await this.repo.findVotingRaw(votingId).catch((e) => handlePrismaError(e, 'Updating option'));
+    const voting = await this.repo.findVotingRaw(votingId);
     if (!voting) throw new NotFoundException('Voting not found');
 
     await this.groupService.checkAdminPermission(userId, voting.groupId);
@@ -141,9 +140,8 @@ export class VotingsService {
       );
     }
 
-    const updatedOption = await this.repo.updateOption(optionId, text).catch((e) => handlePrismaError(e, 'Updating option'));
+    const updatedOption = await this.repo.updateOption(optionId, text);
 
-    // Audit the change (Rec(2004)11 §52)
     await this.repo.createAuditLog({
       action: AuditAction.OPTION_UPDATED,
       userId,
@@ -155,14 +153,15 @@ export class VotingsService {
   }
 
   async delete(id: string, userId: string) {
-    const voting = await this.repo.findVotingRaw(id).catch((e) => handlePrismaError(e, 'Deleting voting'));
+    const voting = await this.repo.findVotingRaw(id);
     if (!voting) throw new NotFoundException('Voting not found');
 
     await this.groupService.checkAdminPermission(userId, voting.groupId);
 
-    if (voting.isFinalized)
+    if (voting.isFinalized) {
       throw new ForbiddenException('Cannot delete a finalized voting');
+    }
 
-    return this.repo.softDeleteVoting(id).catch((e) => handlePrismaError(e, 'Deleting voting'));
+    await this.repo.softDeleteVoting(id);
   }
 }

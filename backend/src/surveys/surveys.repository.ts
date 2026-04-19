@@ -15,7 +15,7 @@ import {
 import { PrismaTx } from '../database/database.service';
 
 @Injectable()
-export class SurveyRepository {
+export class SurveysRepository {
   constructor(private readonly db: DatabaseService) {}
 
   createSurvey(creatorId: string, data: ICreateSurveyData) {
@@ -77,6 +77,9 @@ export class SurveyRepository {
       where: { id: surveyId, deletedAt: null },
       include: {
         group: { include: { users: true } },
+        questions: {
+          include: { options: true, choiceConfig: true, scaleConfig: true },
+        },
       },
     });
   }
@@ -320,6 +323,18 @@ export class SurveyRepository {
   countBallotsByQuestion(questionId: string) {
     return this.db.surveyBallot.count({
       where: { questionId },
+    });
+  }
+
+  findFreeformBallotsByQuestion(questionId: string) {
+    return this.db.surveyFreeformBallot.findMany({
+      where: { questionId },
+    });
+  }
+
+  countBallotsByOption(optionId: string) {
+    return this.db.surveyBallot.count({
+      where: { optionId },
     });
   }
 
