@@ -2,6 +2,7 @@ export enum AuditAction {
   USER_LOGIN = 'USER_LOGIN',
   USER_LOGOUT = 'USER_LOGOUT',
   TOKEN_REFRESH = 'TOKEN_REFRESH',
+  USER_REGISTERED = 'USER_REGISTERED',
   // ── Account ───────────────────────────────────────────────────────────────
   PASSWORD_RESET_REQUESTED = 'PASSWORD_RESET_REQUESTED',
   PASSWORD_RESET_COMPLETED = 'PASSWORD_RESET_COMPLETED',

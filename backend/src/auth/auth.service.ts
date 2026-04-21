@@ -1,14 +1,12 @@
 import {
   Injectable,
   UnauthorizedException,
-  NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { verifyPassword, hashPassword } from '../common/utils/hash-password';
 import { RegisterDto } from './dto/register.dto';
-import { handlePrismaError } from '../common/utils/prisma-error';
 import { Role } from '../common/enums/role';
 import { ResponseDto } from './dto/response.dto';
 import { DatabaseService } from '../database/database.service';
@@ -45,7 +43,7 @@ export class AuthService {
         userId: userId,
         expiresAt: expiresAt,
       },
-    }).catch(e => handlePrismaError(e, 'Updating refresh token'));
+    });
 
     return refreshToken;
   }
@@ -102,7 +100,7 @@ export class AuthService {
         userId: user.id,
         expiresAt,
       },
-    }).catch(e => handlePrismaError(e, 'Creating verification token'));
+    });
 
     await this.mailService.sendVerificationEmail(user.email, token);
 
@@ -113,7 +111,7 @@ export class AuthService {
       role: user.role,
     };
     const accessToken = this.jwtService.sign(payload);
-    
+
     return {
       accessToken,
       refreshToken: await this.generateRefreshToken(user.id),
@@ -184,7 +182,7 @@ export class AuthService {
         where: { id: verificationToken.id },
         data: { usedAt: new Date() },
       }),
-    ]).catch(e => handlePrismaError(e, 'Verifying email'));
+    ]);
 
     return { message: 'Email verified successfully' };
   }
@@ -211,7 +209,7 @@ export class AuthService {
         userId: user.id,
         expiresAt,
       },
-    }).catch(e => handlePrismaError(e, 'Creating reset token'));
+    });
 
     await this.mailService.sendPasswordResetEmail(user.email, token);
 
@@ -244,7 +242,7 @@ export class AuthService {
         where: { id: resetToken.id },
         data: { usedAt: new Date() },
       }),
-    ]).catch(e => handlePrismaError(e, 'Resetting password'));
+    ]);
 
     return { message: 'Password reset successfully' };
   }

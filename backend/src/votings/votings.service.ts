@@ -142,13 +142,6 @@ export class VotingsService {
 
     const updatedOption = await this.repo.updateOption(optionId, text);
 
-    await this.repo.createAuditLog({
-      action: AuditAction.OPTION_UPDATED,
-      userId,
-      votingId,
-      payload: { optionId, newText: text },
-    });
-
     return updatedOption;
   }
 

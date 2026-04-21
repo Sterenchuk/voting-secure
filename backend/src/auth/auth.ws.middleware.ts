@@ -3,6 +3,7 @@ import { UsersService } from '../users/users.service';
 import { Socket } from 'socket.io';
 import { AuthenticatedSocket } from './authenticated-socket.interface';
 import * as cookie from 'cookie';
+import * as cookieParser from 'cookie-parser';
 
 export const wsAuthMiddleware =
   (jwtService: JwtService, usersService: UsersService) =>
@@ -12,10 +13,17 @@ export const wsAuthMiddleware =
 
       if (!token && socket.handshake.headers.cookie) {
         const cookies = cookie.parse(socket.handshake.headers.cookie);
-        token = cookies['accessToken'];
+        const signedToken = cookies['access_token'];
+        if (signedToken) {
+          // Unsign the cookie manually since we're in WS land
+          token = cookieParser.signedCookie(
+            signedToken,
+            process.env.JWT_SECRET as string,
+          ) as string;
+        }
       }
 
-      if (!token) {
+      if (!token || token === 'false') {
         return next(new Error('No token provided'));
       }
 

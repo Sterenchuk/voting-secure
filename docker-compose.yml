@@ -6,7 +6,6 @@ services:
     container_name: voting-db
     restart: always
     env_file: .env
-
     ports:
       - "5433:5432"
     volumes:
@@ -36,15 +35,22 @@ services:
     image: mongo:7
     container_name: voting-audit-db
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-root}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
       MONGO_INITDB_DATABASE: audit
+      MONGO_APP_USER: ${MONGO_APP_USER:-audit_app}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
     ports:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
-      - ./mongo-init/init.js:/docker-entrypoint-initdb.d/init.js:ro
+      - ./mongo-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test:
         ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
@@ -62,17 +68,15 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      mongo:
+        condition: service_healthy
     expose:
       - "3000"
-    # volumes:
-    #   - ./backend:/app
-    #   - /app/node_modules
     ulimits:
       nofile:
         soft: 65535
         hard: 65535
     deploy:
-      # replicas: 3 # Properly define replicas here
       restart_policy:
         condition: always
 
@@ -97,19 +101,7 @@ services:
     profiles:
       - migrate
 
-  # frontend:
-  #   build: ./frontend
-  #   container_name: voting-frontend
-  #   restart: always
-  #   env_file: .env
-  #   depends_on:
-  #     - nginx
-  #   ports:
-  #     - "5173:5173"
-  #   volumes:
-  #     - ./frontend:/app
-  #     - /app/node_modules
-
 volumes:
   postgres_data:
   redis_data:
+  mongo_data:

@@ -26,6 +26,7 @@ import {
 import { UpdateSurveyQuestionDto } from './dto/question.dto';
 import { SurveyOptionDto, UpdateSurveyOptionDto } from './dto/option.dto';
 import { SubmitSurveyResponseDto } from './dto/submit-response.dto';
+import { Audit, ChainAction } from '../audit/audit.decorator';
 
 @Controller('surveys')
 @UseGuards(JwtAuthGuard)
@@ -38,6 +39,13 @@ export class SurveysController {
   // ─── Survey Management (Creators/Admins) ───────────────────────────────────
 
   @Post()
+  @Audit({
+    action: ChainAction.SURVEY_CREATED,
+    extractPayload: (res: any) => ({
+      surveyId: res.id,
+      title: res.title,
+    }),
+  })
   async create(
     @CurrentUser() user: UserPayloadDto,
     @Body() dto: SurveyCreateDto,
@@ -56,6 +64,13 @@ export class SurveysController {
   }
 
   @Put(':id')
+  @Audit({
+    action: ChainAction.SURVEY_UPDATED,
+    extractPayload: (res: any) => ({
+      surveyId: res.id,
+      updatedFields: res,
+    }),
+  })
   async update(
     @CurrentUser() user: UserPayloadDto,
     @Param('id', ParseUUIDPipe) id: string,
@@ -66,6 +81,12 @@ export class SurveysController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Audit({
+    action: ChainAction.SURVEY_DELETED,
+    extractPayload: (_res, req: any) => ({
+      surveyId: req.params.id,
+    }),
+  })
   async delete(
     @CurrentUser() user: UserPayloadDto,
     @Param('id', ParseUUIDPipe) id: string,
@@ -76,6 +97,13 @@ export class SurveysController {
   // ─── Question & Option Management ──────────────────────────────────────────
 
   @Put(':id/questions')
+  @Audit({
+    action: ChainAction.SURVEY_UPDATED,
+    extractPayload: (_res, req: any) => ({
+      surveyId: req.params.id,
+      action: 'UPDATE_QUESTIONS',
+    }),
+  })
   async updateQuestions(
     @CurrentUser() user: UserPayloadDto,
     @Param('id', ParseUUIDPipe) id: string,
@@ -102,7 +130,7 @@ export class SurveysController {
 
   @Delete('options/:optionId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteOption(@Param('optionId', ParseUUIDPipe) optionId: string) {
+  async deleteOption(@Param('id', ParseUUIDPipe) optionId: string) {
     return this.surveysService.deleteOption(optionId);
   }
 
@@ -110,6 +138,13 @@ export class SurveysController {
 
   @Post(':id/submit')
   @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: ChainAction.SURVEY_BALLOT_CAST,
+    extractPayload: (_res, req: any) => ({
+      surveyId: req.params.id,
+      // choices are NOT logged
+    }),
+  })
   async submit(
     @CurrentUser() user: UserPayloadDto,
     @Param('id', ParseUUIDPipe) id: string,

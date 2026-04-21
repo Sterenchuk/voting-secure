@@ -188,15 +188,13 @@ export class GroupsService {
   async addUsers(
     userId: string,
     groupId: string,
-    userEmails: string[],
+    userIds: string[],
   ): Promise<GroupResponseDto> {
-    if (!userEmails.length) {
-      throw new BadRequestException('At least one user email is required');
+    if (!userIds.length) {
+      throw new BadRequestException('At least one user is required');
     }
 
     await this.checkAdminPermission(userId, groupId);
-
-    const userIds = await this.getUserIdsByEmails(userEmails);
 
     return this.databaseService.group.update({
       where: { id: groupId },
@@ -218,15 +216,13 @@ export class GroupsService {
   async removeUsers(
     userId: string,
     groupId: string,
-    userEmails: string[],
+    userIds: string[],
   ): Promise<GroupResponseDto> {
-    if (!userEmails.length) {
-      throw new BadRequestException('At least one user email is required');
+    if (!userIds.length) {
+      throw new BadRequestException('At least one user is required');
     }
 
     await this.checkAdminPermission(userId, groupId);
-
-    const userIds = await this.getUserIdsByEmails(userEmails);
 
     return this.databaseService.group.update({
       where: { id: groupId },
@@ -244,7 +240,7 @@ export class GroupsService {
   async changeUserRole(
     adminId: string,
     groupId: string,
-    changeRoleDto: ChangeRoleDto,
+    changeRoleDto: ChangeRoleDto & { targetUserId?: string },
   ): Promise<GroupResponseDto> {
     await this.checkAdminPermission(adminId, groupId);
 
@@ -254,15 +250,10 @@ export class GroupsService {
       );
     }
 
-    const targetUser = await this.databaseService.user.findUnique({
-      where: { email: changeRoleDto.userEmail },
-      select: { id: true },
-    });
+    const targetUserId = changeRoleDto.targetUserId;
 
-    if (!targetUser) {
-      throw new NotFoundException(
-        `User with email ${changeRoleDto.userEmail} not found`,
-      );
+    if (!targetUserId) {
+      throw new BadRequestException('Target user ID is required');
     }
 
     const group = await this.databaseService.group.findUnique({
@@ -274,14 +265,14 @@ export class GroupsService {
       throw new NotFoundException('Group not found');
     }
 
-    if (targetUser.id === group.creatorId) {
+    if (targetUserId === group.creatorId) {
       throw new BadRequestException('Cannot change role of the group owner');
     }
 
     await this.databaseService.userGroup.update({
       where: {
         userId_groupId: {
-          userId: targetUser.id,
+          userId: targetUserId,
           groupId,
         },
       },

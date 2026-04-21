@@ -20,6 +20,7 @@ import { VotingCreateDto } from './dto/voting.create.dto';
 import { VotingUpdateDto } from './dto/voting.update.dto';
 import { FindVotingQueryDto } from './dto/find.voting.query.dto';
 import { CastVoteDto } from './dto/cast.vote.dto';
+import { Audit, ChainAction } from '../audit/audit.decorator';
 
 @UseGuards(JwtAuthGuard)
 @Controller('votings')
@@ -32,6 +33,13 @@ export class VotingsController {
   // ─── Voting CRUD ──────────────────────────────────────────────────────────────
 
   @Post()
+  @Audit({
+    action: ChainAction.VOTING_CREATED,
+    extractPayload: (res: any) => ({
+      votingId: res.id,
+      title: res.title,
+    }),
+  })
   create(@Body() dto: VotingCreateDto, @Req() req: any) {
     return this.votingsService.create(req.user.id, dto);
   }
@@ -47,6 +55,13 @@ export class VotingsController {
   }
 
   @Patch(':id')
+  @Audit({
+    action: ChainAction.VOTING_UPDATED,
+    extractPayload: (res: any) => ({
+      votingId: res.id,
+      updatedFields: res,
+    }),
+  })
   update(
     @Param('id') id: string,
     @Body() dto: VotingUpdateDto,
@@ -56,6 +71,12 @@ export class VotingsController {
   }
 
   @Delete(':id')
+  @Audit({
+    action: ChainAction.VOTING_DELETED,
+    extractPayload: (_res, req: any) => ({
+      votingId: req.params.id,
+    }),
+  })
   delete(@Param('id') id: string, @Req() req: any) {
     return this.votingsService.delete(id, req.user.id);
   }
@@ -63,6 +84,13 @@ export class VotingsController {
   // ─── Vote casting ─────────────────────────────────────────────────────────────
 
   @Post(':id/vote')
+  @Audit({
+    action: ChainAction.BALLOT_CAST,
+    extractPayload: (_res, req: any) => ({
+      votingId: req.params.id,
+      // We do NOT log the choices (dto.ballots) to preserve ballot secrecy
+    }),
+  })
   vote(
     @Param('id') votingId: string,
     @Body() dto: CastVoteDto,
@@ -120,6 +148,12 @@ export class VotingsController {
   @Post(':id/finalize')
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)
+  @Audit({
+    action: ChainAction.VOTING_FINALIZED,
+    extractPayload: (_res, req: any) => ({
+      votingId: req.params.id,
+    }),
+  })
   finalize(@Param('id') votingId: string, @Req() req: any) {
     return this.voteService.finalizeVoting(votingId, req.user.id);
   }
