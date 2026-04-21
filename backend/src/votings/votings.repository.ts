@@ -259,8 +259,6 @@ export class VotingsRepository {
     });
   }
 
-  // ─── Voting tokens (Rec §47) ──────────────────────────────────────────────────
-
   async findVotingToken(tx: PrismaTx, userId: string, votingId: string) {
     return tx.votingToken.findUnique({
       where: { userId_votingId: { userId, votingId } },
@@ -288,8 +286,6 @@ export class VotingsRepository {
     });
   }
 
-  // ─── Sealed result (Rec §56) ──────────────────────────────────────────────────
-
   async findVotingResult(votingId: string) {
     return this.db.votingResult.findUnique({
       where: { votingId },
@@ -299,20 +295,6 @@ export class VotingsRepository {
         tallyHash: true,
         sealedAt: true,
       },
-    });
-  }
-
-  // ─── Audit log (Rec §52) ──────────────────────────────────────────────────────
-
-  async createAuditLog(data: {
-    action: AuditAction;
-    payload: object;
-    userId?: string;
-    votingId?: string;
-    surveyId?: string;
-  }) {
-    return this.db.auditLog.create({
-      data: { ...data, payload: data.payload as any },
     });
   }
 

@@ -12,8 +12,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly usersService: UsersService) {
     super({
       jwtFromRequest: (req) => {
-        if (req && req.cookies) {
-          return req.cookies['accessToken'];
+        if (req && req.signedCookies) {
+          return req.signedCookies['access_token'];
         }
         return null;
       },

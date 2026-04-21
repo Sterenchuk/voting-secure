@@ -167,7 +167,7 @@ model Voting {
   freeformBallots FreeformBallot[]
   participations  VoteParticipation[]
   votingTokens    VotingToken[]
-  auditLogs       AuditLog[]          @relation("VotingLogs")
+  // auditLogs       AuditLog[]          @relation("VotingLogs")
   result          VotingResult?
 }
 
@@ -275,7 +275,7 @@ model Survey {
   questions      SurveyQuestion[]
   participations SurveyParticipation[]
   surveyTokens   SurveyToken[]
-  auditLogs      AuditLog[]            @relation("SurveyLogs")
+  // auditLogs      AuditLog[]            @relation("SurveyLogs")
   result         SurveyResult?
 }
 
@@ -408,24 +408,25 @@ model SurveyResult {
 
 // ─── SYSTEM UTILITIES ─────────────────────────────────────────────────────────
 
-model AuditLog {
-  id        String      @id @default(uuid())
-  action    AuditAction
-  payload   Json
-  userId    String?
-  createdAt DateTime    @default(now())
+//MOVED TO MONGO 
+// model AuditLog {
+//   id        String      @id @default(uuid())
+//   action    AuditAction
+//   payload   Json
+//   userId    String?
+//   createdAt DateTime    @default(now())
 
-  votingId String?
-  voting   Voting? @relation("VotingLogs", fields: [votingId], references: [id])
+//   votingId String?
+//   voting   Voting? @relation("VotingLogs", fields: [votingId], references: [id])
 
-  surveyId String?
-  survey   Survey? @relation("SurveyLogs", fields: [surveyId], references: [id])
+//   surveyId String?
+//   survey   Survey? @relation("SurveyLogs", fields: [surveyId], references: [id])
 
-  @@index([action])
-  @@index([userId])
-  @@index([votingId])
-  @@index([surveyId])
-}
+//   @@index([action])
+//   @@index([userId])
+//   @@index([votingId])
+//   @@index([surveyId])
+// }
 
 model RefreshToken {
   id        String    @id @default(uuid())
