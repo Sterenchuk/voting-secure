@@ -1,0 +1,168 @@
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.liveButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  background-color: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.liveButton:hover {
+  border-color: var(--color-border-light);
+}
+
+.liveActive {
+  background-color: rgba(76, 175, 80, 0.1);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.liveDot {
+  width: 8px;
+  height: 8px;
+  background-color: currentColor;
+  border-radius: var(--radius-full);
+}
+
+.liveActive .liveDot {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.chart {
+  display: flex;
+  height: 200px;
+  margin-top: var(--space-md);
+}
+
+.yAxis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding-right: var(--space-sm);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-align: right;
+  min-width: 30px;
+}
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-xs);
+  flex: 1;
+  border-bottom: 1px solid var(--color-border);
+  border-left: 1px solid var(--color-border);
+  padding: var(--space-sm);
+  padding-bottom: 0;
+}
+
+.barContainer {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.bar {
+  width: 100%;
+  max-width: 24px;
+  background: linear-gradient(
+    180deg,
+    var(--color-accent-primary) 0%,
+    var(--color-accent-secondary) 100%
+  );
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  transition: height 0.3s ease-out;
+  position: relative;
+  cursor: pointer;
+}
+
+.bar:hover {
+  background: var(--color-accent-tertiary);
+}
+
+.barTooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--space-xs) var(--space-sm);
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: all var(--transition-fast);
+  z-index: 10;
+}
+
+.bar:hover .barTooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.xAxis {
+  display: flex;
+  justify-content: space-between;
+  padding-left: 40px;
+  padding-top: var(--space-xs);
+}
+
+.xLabel {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.legend {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.legendDot {
+  width: 12px;
+  height: 12px;
+  background: linear-gradient(
+    180deg,
+    var(--color-accent-primary) 0%,
+    var(--color-accent-secondary) 100%
+  );
+  border-radius: var(--radius-sm);
+}

@@ -92,10 +92,21 @@ export class VotingsRepository {
     });
   }
 
-  async findVotings(where: IVotingWhereInput) {
+  async findVotings(where: IVotingWhereInput, userId?: string) {
     return this.db.voting.findMany({
       where: { ...where, deletedAt: null },
-      select: SELECT_VOTING_WITH_OPTIONS,
+      select: {
+        ...SELECT_VOTING_WITH_OPTIONS,
+        _count: {
+          select: { ballots: true, participations: true },
+        },
+        participations: userId
+          ? {
+              where: { userId },
+              select: { id: true },
+            }
+          : undefined,
+      },
       orderBy: { createdAt: 'desc' },
     });
   }

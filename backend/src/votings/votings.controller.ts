@@ -21,6 +21,7 @@ import { VotingUpdateDto } from './dto/voting.update.dto';
 import { FindVotingQueryDto } from './dto/find.voting.query.dto';
 import { CastVoteDto } from './dto/cast.vote.dto';
 import { Audit, ChainAction } from '../audit/audit.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @UseGuards(JwtAuthGuard)
 @Controller('votings')
@@ -40,18 +41,18 @@ export class VotingsController {
       title: res.title,
     }),
   })
-  create(@Body() dto: VotingCreateDto, @Req() req: any) {
-    return this.votingsService.create(req.user.id, dto);
+  create(@Body() dto: VotingCreateDto, @CurrentUser('sub') userId: string) {
+    return this.votingsService.create(userId, dto);
   }
 
   @Get()
-  findAll(@Query() dto: FindVotingQueryDto) {
-    return this.votingsService.findAll(dto);
+  findAll(@Query() dto: FindVotingQueryDto, @CurrentUser('sub') userId?: string) {
+    return this.votingsService.findAll(dto, userId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.votingsService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser('sub') userId?: string) {
+    return this.votingsService.findOne(id, userId);
   }
 
   @Patch(':id')
@@ -65,9 +66,9 @@ export class VotingsController {
   update(
     @Param('id') id: string,
     @Body() dto: VotingUpdateDto,
-    @Req() req: any,
+    @CurrentUser('sub') userId: string,
   ) {
-    return this.votingsService.update(id, dto, req.user.id);
+    return this.votingsService.update(id, dto, userId);
   }
 
   @Delete(':id')
@@ -77,29 +78,29 @@ export class VotingsController {
       votingId: req.params.id,
     }),
   })
-  delete(@Param('id') id: string, @Req() req: any) {
-    return this.votingsService.delete(id, req.user.id);
+  delete(@Param('id') id: string, @CurrentUser('sub') userId: string) {
+    return this.votingsService.delete(id, userId);
   }
 
   // ─── Vote casting ─────────────────────────────────────────────────────────────
 
+  @UseGuards(JwtAuthGuard)
   @Post(':id/vote')
   @Audit({
     action: ChainAction.BALLOT_CAST,
     extractPayload: (_res, req: any) => ({
       votingId: req.params.id,
-      // We do NOT log the choices (dto.ballots) to preserve ballot secrecy
     }),
   })
   vote(
     @Param('id') votingId: string,
     @Body() dto: CastVoteDto,
-    @Req() req: any,
+    @CurrentUser('sub') userId: string,
   ) {
     return this.voteService.vote(
       votingId,
       dto.ballots,
-      req.user.id,
+      userId,
       dto.otherText,
       dto.freeformBallotHash,
     );
@@ -154,8 +155,8 @@ export class VotingsController {
       votingId: req.params.id,
     }),
   })
-  finalize(@Param('id') votingId: string, @Req() req: any) {
-    return this.voteService.finalizeVoting(votingId, req.user.id);
+  finalize(@Param('id') votingId: string, @CurrentUser('sub') userId: string) {
+    return this.voteService.finalizeVoting(votingId, userId);
   }
 
   // ─── User participation status ────────────────────────────────────────────────
@@ -166,7 +167,7 @@ export class VotingsController {
    * Rec(2004)11: you must never reveal a user's choices after the fact.
    */
   @Get(':id/my-vote')
-  getUserVote(@Param('id') votingId: string, @Req() req: any) {
-    return this.voteService.getUserVote(votingId, req.user.id);
+  getUserVote(@Param('id') votingId: string, @CurrentUser('sub') userId: string) {
+    return this.voteService.getUserVote(votingId, userId);
   }
 }

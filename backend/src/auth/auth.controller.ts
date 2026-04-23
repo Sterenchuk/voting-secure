@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Post,
+  Get,
   HttpCode,
   HttpStatus,
   Res,
@@ -31,6 +32,7 @@ export class AuthController {
     response: Response,
     accessToken: string,
     refreshToken: string,
+    rememberMe: boolean = false,
   ) {
     const isProd = this.configService.get<string>('NODE_ENV') === 'production';
 
@@ -43,14 +45,19 @@ export class AuthController {
       signed: true,
     });
 
-    response.cookie('refresh_token', refreshToken, {
+    const refreshCookieOptions: any = {
       httpOnly: true,
       secure: isProd,
       sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       path: '/',
       signed: true,
-    });
+    };
+
+    if (rememberMe) {
+      refreshCookieOptions.maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+    }
+
+    response.cookie('refresh_token', refreshToken, refreshCookieOptions);
   }
 
   @HttpCode(HttpStatus.OK)
@@ -69,7 +76,12 @@ export class AuthController {
       signInDto.email,
       signInDto.password,
     );
-    this.setAuthCookies(res, result.accessToken, result.refreshToken);
+    this.setAuthCookies(
+      res,
+      result.accessToken,
+      result.refreshToken,
+      signInDto.rememberMe,
+    );
 
     // Attach user for the AuditInterceptor
     req.user = { sub: result.user.id };
@@ -107,6 +119,13 @@ export class AuthController {
     };
   }
 
+  @HttpCode(HttpStatus.OK)
+  @Get('token')
+  async getToken(@Req() req: Request) {
+    const token = req.signedCookies['access_token'];
+    return { token: token || null };
+  }
+
   @Post('register')
   @Audit({
     action: SecurityAction.USER_REGISTERED,
@@ -120,7 +139,7 @@ export class AuthController {
     @Req() req: any,
   ) {
     const result = await this.authService.register(registerDto, Role.USER);
-    this.setAuthCookies(res, result.accessToken, result.refreshToken);
+    this.setAuthCookies(res, result.accessToken, result.refreshToken, true); // Always remember after registration
 
     // Attach user for the AuditInterceptor
     req.user = { sub: result.user.id };

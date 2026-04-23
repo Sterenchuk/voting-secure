@@ -3,6 +3,8 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { VotingsRepository } from './votings.repository';
 import {
@@ -16,12 +18,15 @@ import type { VotingCreateDto } from './dto/voting.create.dto';
 import type { VotingUpdateDto } from './dto/voting.update.dto';
 import type { FindVotingQueryDto } from './dto/find.voting.query.dto';
 import { GroupsService } from '../groups/groups.service';
+import { VoteService } from './vote.service';
 
 @Injectable()
 export class VotingsService {
   constructor(
     private readonly repo: VotingsRepository,
     private readonly groupService: GroupsService,
+    @Inject(forwardRef(() => VoteService))
+    private readonly voteService: VoteService,
   ) {}
 
   // ─── Voting CRUD ─────────────────────────────────────────────────────────────
@@ -40,6 +45,11 @@ export class VotingsService {
       throw new BadRequestException('minChoices cannot exceed maxChoices');
     }
 
+    let startAt = dto.startAt ? new Date(dto.startAt) : undefined;
+    if (dto.isOpen && (!startAt || startAt > new Date())) {
+      startAt = new Date();
+    }
+
     const data: ICreateVotingData = {
       title: dto.title,
       description: dto.description,
@@ -49,7 +59,7 @@ export class VotingsService {
       allowOther: dto.allowOther ?? false,
       minChoices: dto.minChoices ?? 1,
       maxChoices: dto.maxChoices,
-      startAt: dto.startAt ? new Date(dto.startAt) : undefined,
+      startAt,
       endAt: dto.endAt ? new Date(dto.endAt) : undefined,
       options: dto.options,
     };
@@ -57,7 +67,7 @@ export class VotingsService {
     return this.repo.createVoting(userId, data);
   }
 
-  async findAll(dto: FindVotingQueryDto) {
+  async findAll(dto: FindVotingQueryDto, userId?: string) {
     const where: IVotingWhereInput = { deletedAt: null };
     if (dto.groupId) where.groupId = dto.groupId;
     if (dto.title) where.title = { contains: dto.title, mode: 'insensitive' };
@@ -65,16 +75,27 @@ export class VotingsService {
     if (dto.endAt) where.endAt = { lte: new Date(dto.endAt) };
     if (dto.isOpen !== undefined) where.isOpen = dto.isOpen;
 
-    return this.repo.findVotings(where);
+    const votings = await this.repo.findVotings(where, userId);
+
+    return votings.map((v) => ({
+      ...v,
+      participantsCount: v._count.participations,
+      hasVoted: v.participations && v.participations.length > 0,
+    }));
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId?: string) {
     const voting = await this.repo.findVotingById(id);
     if (!voting || (voting as any).deletedAt)
       throw new NotFoundException('Voting not found');
 
+    const hasVoted = userId
+      ? await this.repo.findParticipation(userId, id)
+      : null;
+
     return {
       ...voting,
+      hasVoted: !!hasVoted,
       options: voting.options.map(({ _count, ...opt }) => ({
         ...opt,
         voteCount: _count.ballots,
@@ -101,6 +122,12 @@ export class VotingsService {
       throw new BadRequestException('minChoices cannot exceed maxChoices');
     }
 
+    let startAt = dto.startAt ? new Date(dto.startAt) : undefined;
+    if (dto.isOpen && (!startAt || startAt > new Date())) {
+      // If manually opening, ensure startAt is not blocking
+      startAt = new Date();
+    }
+
     const data: IUpdateVotingData = {
       title: dto.title,
       description: dto.description,
@@ -108,11 +135,17 @@ export class VotingsService {
       allowOther: dto.allowOther,
       minChoices: dto.minChoices,
       maxChoices: dto.maxChoices,
-      startAt: dto.startAt ? new Date(dto.startAt) : undefined,
+      startAt,
       endAt: dto.endAt ? new Date(dto.endAt) : undefined,
     };
 
-    return this.repo.updateVoting(id, data);
+    const updated = await this.repo.updateVoting(id, data);
+
+    // Notify clients about the change (e.g. title, isOpen, etc)
+    const results = await this.voteService.getResults(id);
+    this.voteService.broadcastResults(id, results);
+
+    return updated;
   }
 
   async updateOption(
@@ -141,6 +174,10 @@ export class VotingsService {
     }
 
     const updatedOption = await this.repo.updateOption(optionId, text);
+
+    // Notify clients
+    const results = await this.voteService.getResults(votingId);
+    this.voteService.broadcastResults(votingId, results);
 
     return updatedOption;
   }

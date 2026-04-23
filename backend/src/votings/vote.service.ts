@@ -225,6 +225,10 @@ export class VoteService {
     return { participated: !!participation };
   }
 
+  broadcastResults(votingId: string, results: IVotingResults) {
+    this.gateway.emitVotingResults(votingId, results);
+  }
+
   // ─── Private guards ───────────────────────────────────────────────────────────
 
   private assertTiming(voting: { startAt: Date | null; endAt: Date | null }) {

@@ -1,0 +1,97 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm);
+}
+
+.action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+
+.action:hover {
+  border-color: var(--color-border-light);
+  transform: translateY(-2px);
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+}
+
+.icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-align: center;
+}
+
+/* Color variants */
+.primary .icon {
+  background-color: rgba(64, 138, 113, 0.15);
+  color: var(--color-accent-primary);
+}
+
+.primary .label {
+  color: var(--color-accent-primary);
+}
+
+.primary:hover {
+  background-color: rgba(64, 138, 113, 0.1);
+}
+
+.secondary .icon {
+  background-color: rgba(176, 228, 204, 0.15);
+  color: var(--color-accent-tertiary);
+}
+
+.secondary .label {
+  color: var(--color-accent-tertiary);
+}
+
+.secondary:hover {
+  background-color: rgba(176, 228, 204, 0.1);
+}
+
+.tertiary .icon {
+  background-color: rgba(40, 90, 72, 0.2);
+  color: var(--color-accent-secondary);
+}
+
+.tertiary .label {
+  color: var(--color-text-secondary);
+}
+
+.tertiary:hover {
+  background-color: rgba(40, 90, 72, 0.15);
+}
+
+.default .icon {
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-muted);
+}
+
+.default .label {
+  color: var(--color-text-muted);
+}
+
+.default:hover {
+  background-color: var(--color-bg-tertiary);
+}

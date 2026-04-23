@@ -16,6 +16,7 @@ import { wsAuthMiddleware } from '../auth/auth.ws.middleware';
 import type { AuthenticatedSocket } from '../auth/authenticated-socket.interface';
 import { WsThrottlerGuard } from '../common/guards/ws.throttler.guard';
 import { ISurveyResults } from './types/survey.types';
+import { ConfigService } from '@nestjs/config';
 
 export const WS_EVENTS = {
   SURVEY_RESULTS: 'survey:results',
@@ -49,6 +50,7 @@ export class SubmitGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly submitService: SubmitService,
     private readonly jwtService: JwtService,
     private readonly usersService: UsersService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -56,21 +58,22 @@ export class SubmitGateway implements OnGatewayConnection, OnGatewayDisconnect {
    */
   async handleConnection(client: Socket) {
     try {
-      await wsAuthMiddleware(this.jwtService, this.usersService)(
-        client,
-        (err) => {
-          if (err) {
-            this.logger.warn(
-              `Auth failed for client ${client.id}: ${err.message}`,
-            );
-            client.disconnect();
-          } else {
-            this.logger.log(
-              `Client connected: ${client.id} (User: ${(client as any).user?.id})`,
-            );
-          }
-        },
-      );
+      await wsAuthMiddleware(
+        this.jwtService,
+        this.usersService,
+        this.configService,
+      )(client, (err) => {
+        if (err) {
+          this.logger.warn(
+            `Auth failed for client ${client.id}: ${err.message}`,
+          );
+          client.disconnect();
+        } else {
+          this.logger.log(
+            `Client connected: ${client.id} (User: ${(client as any).user?.id})`,
+          );
+        }
+      });
     } catch (e) {
       client.disconnect();
     }

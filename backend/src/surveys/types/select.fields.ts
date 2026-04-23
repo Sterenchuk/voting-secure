@@ -46,9 +46,15 @@ export const SELECT_SURVEY = {
   isFinalized: true,
   createdAt: true,
   updatedAt: true,
+  startAt: true,
   endAt: true,
   deletedAt: true,
   finalizedAt: true,
+  _count: {
+    select: {
+      participations: true,
+    },
+  },
 } as const;
 
 export const SELECT_SURVEY_WITH_QUESTIONS = {
@@ -90,6 +96,7 @@ export const SELECT_SURVEY_FOR_SUBMISSION = {
   description: true,
   isOpen: true,
   isFinalized: true,
+  startAt: true,
   endAt: true,
 
   questions: {

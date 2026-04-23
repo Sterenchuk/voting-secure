@@ -32,6 +32,7 @@ export interface ISurvey {
   groupId: string;
   isOpen: boolean;
   isFinalized: boolean;
+  startAt: Date | null;
   endAt: Date | null;
   finalizedAt: Date | null;
   createdAt: Date;
@@ -49,6 +50,7 @@ export interface ICreateSurveyData {
   groupId: string;
   isOpen?: boolean;
   isFinalized?: boolean;
+  startAt?: Date;
   endAt?: Date;
   surveyQuestions: ICreateSurveyQuestionData[];
 }
