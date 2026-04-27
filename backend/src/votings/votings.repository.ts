@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { AuditAction, VotingResult } from '@prisma/client';
 import { DatabaseService, PrismaTx } from '../database/database.service';
 import {
   ICreateVotingData,
@@ -13,6 +12,7 @@ export const SELECT_OPTION = {
   id: true,
   text: true,
   votingId: true,
+  isDynamic: true,
 } as const;
 
 export const SELECT_OPTION_WITH_VOTE_COUNT = {
@@ -44,6 +44,7 @@ export const SELECT_VOTING_WITH_OPTIONS = {
 
 export const SELECT_VOTING_FOR_VOTE = {
   id: true,
+  title: true,
   isOpen: true,
   isFinalized: true,
   groupId: true,
@@ -61,14 +62,6 @@ export const SELECT_BALLOT = {
   id: true,
   votingId: true,
   optionId: true,
-  ballotHash: true,
-} as const;
-
-// FreeformBallot has no createdAt — same anonymity invariant
-export const SELECT_FREEFORM = {
-  id: true,
-  votingId: true,
-  text: true,
   ballotHash: true,
 } as const;
 
@@ -96,7 +89,8 @@ export class VotingsRepository {
     return this.db.voting.findMany({
       where: { ...where, deletedAt: null },
       select: {
-        ...SELECT_VOTING_WITH_OPTIONS,
+        ...SELECT_VOTING,
+        options: { select: SELECT_OPTION_WITH_VOTE_COUNT },
         _count: {
           select: { ballots: true, participations: true },
         },
@@ -117,6 +111,9 @@ export class VotingsRepository {
       select: {
         ...SELECT_VOTING,
         options: { select: SELECT_OPTION_WITH_VOTE_COUNT },
+        _count: {
+          select: { participations: true },
+        },
       },
     });
   }
@@ -127,6 +124,13 @@ export class VotingsRepository {
       include: {
         group: { include: { users: true } },
       },
+    });
+  }
+
+  async findVotingAllowOther(id: string) {
+    return this.db.voting.findUnique({
+      where: { id, deletedAt: null },
+      select: { allowOther: true },
     });
   }
 
@@ -148,19 +152,11 @@ export class VotingsRepository {
   async softDeleteVoting(id: string) {
     return this.db.voting.update({
       where: { id },
-
       data: { deletedAt: new Date() },
     });
   }
 
   // ─── Options ──────────────────────────────────────────────────────────────────
-
-  async findOptionsByVoting(votingId: string) {
-    return this.db.option.findMany({
-      where: { votingId },
-      select: SELECT_OPTION,
-    });
-  }
 
   async findOptionsWithBallotCounts(votingId: string) {
     return this.db.option.findMany({
@@ -177,17 +173,17 @@ export class VotingsRepository {
     });
   }
 
-  // ─── Ballots ───────────────────────────────────────────────────────────────
+  // ─── Ballots ──────────────────────────────────────────────────────────────────
 
   async createBallotsTx(
     tx: PrismaTx,
     votingId: string,
-    ballots: { optionId: string; ballotHash: string }[],
+    ballots: { optionId: string; ballotHash: string; tokenHashed: string }[],
   ) {
     return Promise.all(
-      ballots.map(({ optionId, ballotHash }) =>
+      ballots.map(({ optionId, ballotHash, tokenHashed }) =>
         tx.ballot.create({
-          data: { votingId, optionId, ballotHash },
+          data: { votingId, optionId, ballotHash, tokenHashed },
           select: SELECT_BALLOT,
         }),
       ),
@@ -200,32 +196,7 @@ export class VotingsRepository {
     });
   }
 
-  // ─── Freeform ballots ─────────────────────────────────────────────────────────
-
-  async findFreeformBallotsByVoting(votingId: string) {
-    return this.db.freeformBallot.findMany({
-      where: { votingId },
-      select: SELECT_FREEFORM,
-    });
-  }
-
-  async countFreeformBallotsByVoting(votingId: string) {
-    return this.db.freeformBallot.count({
-      where: { votingId },
-    });
-  }
-
-  async createFreeformBallotTx(
-    tx: PrismaTx,
-    data: { votingId: string; text: string; ballotHash: string },
-  ) {
-    return tx.freeformBallot.create({
-      data,
-      select: SELECT_FREEFORM,
-    });
-  }
-
-  // ─── Participation ──────────────────────────────────────────────────────────
+  // ─── Participation ────────────────────────────────────────────────────────────
 
   async findParticipation(userId: string, votingId: string) {
     return this.db.voteParticipation.findUnique({
@@ -240,8 +211,6 @@ export class VotingsRepository {
       select: { id: true, createdAt: true },
     });
   }
-
-  // ─── Membership ─────────────────────────────────────────────────────────────
 
   // ─── Finalize ─────────────────────────────────────────────────────────────────
 
@@ -266,34 +235,13 @@ export class VotingsRepository {
         tallyHash,
         sealedAt: finalizedAt,
       },
-      select: { id: true, votingId: true, tallyHash: true, sealedAt: true },
-    });
-  }
-
-  async findVotingToken(tx: PrismaTx, userId: string, votingId: string) {
-    return tx.votingToken.findUnique({
-      where: { userId_votingId: { userId, votingId } },
-      select: { id: true, tokenHash: true, used: true, expiresAt: true },
-    });
-  }
-
-  async consumeVotingToken(tx: PrismaTx, tokenId: string) {
-    return tx.votingToken.update({
-      where: { id: tokenId },
-      data: { used: true },
-      select: { id: true },
-    });
-  }
-
-  async createVotingToken(data: {
-    userId: string;
-    votingId: string;
-    tokenHash: string;
-    expiresAt: Date;
-  }) {
-    return this.db.votingToken.create({
-      data,
-      select: { id: true, expiresAt: true },
+      select: {
+        id: true,
+        votingId: true,
+        tallyHash: true,
+        totalBallots: true,
+        sealedAt: true,
+      },
     });
   }
 

@@ -54,19 +54,13 @@ export class SurveysController {
   }
 
   @Get()
-  async findAll(
-    @Query() query: FindSurveyQueryDto,
-    @CurrentUser('sub') userId?: string,
-  ) {
-    return this.surveysService.findAll(query, userId);
+  async findAll(@Query() query: FindSurveyQueryDto) {
+    return this.surveysService.findAll(query);
   }
 
   @Get(':id')
-  async findOne(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser('sub') userId?: string,
-  ) {
-    return this.surveysService.findOne(id, userId);
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.surveysService.findOne(id);
   }
 
   @Put(':id')

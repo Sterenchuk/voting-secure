@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, VotingType, GroupRole } from '@prisma/client';
 import {
   USERS_DATA,
   GROUPS_DATA,
@@ -9,26 +9,29 @@ import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
+
+// ─── Prisma Setup ─────────────────────────────────────────────────────────────
+
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-function generateBallotHash(votingId: string, optionId: string): string {
-  const clientNonce = crypto.randomBytes(16).toString('hex');
-  return crypto
-    .createHash('sha256')
-    .update(votingId + optionId + clientNonce)
-    .digest('hex');
+function generateBallotReceipt(votingId: string, optionId: string, tokenId: string): string {
+  const secret = process.env.BALLOT_SECRET || 'dev-secret-do-not-use-in-prod';
+  const data = `${votingId}:${optionId}:${tokenId}`;
+  return crypto.createHmac('sha256', secret).update(data).digest('hex');
 }
 
 async function main() {
-  console.log('🌱 Starting database seed...');
+  console.log('🌱 Starting database seed (PostgreSQL only)...');
 
-  // 2. Create Users
+  // 1. Create Users
   console.log('Creating users...');
   const hashedPassword = await argon2.hash('Password123!');
+  const userMap = new Map<string, string>();
+
   for (const userData of USERS_DATA) {
-    await prisma.user.upsert({
+    const user = await prisma.user.upsert({
       where: { email: userData.email },
       update: {},
       create: {
@@ -37,64 +40,57 @@ async function main() {
         isEmailVerified: true,
       },
     });
+    userMap.set(userData.email, user.id);
   }
 
-  // 3. Create Groups
+  // 2. Create Groups
   console.log('Creating groups...');
+  const groupMap = new Map<string, string>();
   for (const groupData of GROUPS_DATA) {
-    const owner = await prisma.user.findUnique({
-      where: { email: groupData.ownerEmail },
-    });
-    if (!owner) continue;
+    const ownerId = userMap.get(groupData.ownerEmail);
+    if (!ownerId) continue;
 
-    await prisma.group.create({
+    const group = await prisma.group.create({
       data: {
         name: groupData.name,
-        creatorId: owner.id,
+        creatorId: ownerId,
       },
     });
+    groupMap.set(groupData.name, group.id);
   }
 
-  // 4. Create Memberships
+  // 3. Create Memberships
   console.log('Assigning memberships...');
   for (const membership of MEMBERSHIPS) {
-    const user = await prisma.user.findUnique({
-      where: { email: membership.email },
-    });
-    const group = await prisma.group.findFirst({
-      where: { name: membership.groupName },
-    });
-    if (!user || !group) continue;
+    const userId = userMap.get(membership.email);
+    const groupId = groupMap.get(membership.groupName);
+    if (!userId || !groupId) continue;
 
     await prisma.userGroup.upsert({
-      where: { userId_groupId: { userId: user.id, groupId: group.id } },
+      where: { userId_groupId: { userId: userId, groupId: groupId } },
       update: { role: membership.role },
       create: {
-        userId: user.id,
-        groupId: group.id,
+        userId: userId,
+        groupId: groupId,
         role: membership.role,
       },
     });
   }
 
-  // 5. Create Votings & Handle Finished ones
+  // 4. Create Votings & Handle Finished ones
   console.log('Creating votings and simulating ballots...');
   for (const votingData of VOTINGS_DATA) {
-    const creator = await prisma.user.findUnique({
-      where: { email: votingData.creatorEmail },
-    });
-    const group = await prisma.group.findFirst({
-      where: { name: votingData.groupName },
-    });
-    if (!creator || !group) continue;
+    const creatorId = userMap.get(votingData.creatorEmail);
+    const groupId = groupMap.get(votingData.groupName);
+    if (!creatorId || !groupId) continue;
 
     const { options, groupName, creatorEmail, ...votingFields } = votingData;
 
     const voting = await prisma.voting.create({
       data: {
         ...votingFields,
-        creatorId: creator.id,
-        groupId: group.id,
+        creatorId,
+        groupId,
         options: {
           create: options.map((text) => ({ text })),
         },
@@ -105,67 +101,68 @@ async function main() {
     if (voting.isFinalized || voting.title.includes('Completed')) {
       console.log(`Simulating ballots for: ${voting.title}`);
 
-      const users = await prisma.user.findMany({ take: 5 });
+      // Simulate a few users voting
+      const participantEmails = ['user1@example.com', 'user2@example.com', 'user3@example.com'];
       const optionIds = voting.options.map((o) => o.id);
 
-      for (const user of users) {
-        // Step 1: Record Participation (Who)
-        await prisma.voteParticipation.create({
-          data: { userId: user.id, votingId: voting.id },
+      for (const email of participantEmails) {
+        const userId = userMap.get(email);
+        if (!userId) continue;
+
+        // 1. Issue Token
+        const tokenId = crypto.randomUUID();
+        const tokenHash = crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex');
+        
+        await prisma.votingToken.create({
+            data: {
+                id: tokenId,
+                userId,
+                votingId: voting.id,
+                tokenHash,
+                expiresAt: new Date(Date.now() + 3600000),
+                used: true
+            }
         });
 
-        // Step 2: Record Ballot (What - Anonymous)
-        const randomOptionId =
-          optionIds[Math.floor(Math.random() * optionIds.length)];
+        // 2. Record Participation
+        await prisma.voteParticipation.create({
+          data: { userId, votingId: voting.id },
+        });
+
+        // 3. Cast Ballot
+        const randomOptionId = optionIds[Math.floor(Math.random() * optionIds.length)];
+        const receipt = generateBallotReceipt(voting.id, randomOptionId, tokenId);
+
         await prisma.ballot.create({
           data: {
             votingId: voting.id,
             optionId: randomOptionId,
-            ballotHash: generateBallotHash(voting.id, randomOptionId),
+            ballotHash: receipt,
+            tokenId: tokenId
           },
         });
       }
 
-      if (voting.title.includes('Retreat')) {
-        await prisma.freeformBallot.createMany({
-          data: [
-            {
-              votingId: voting.id,
-              text: '1a',
-              ballotHash: generateBallotHash(voting.id, 'OTHER_1A'),
-            },
-            {
-              votingId: voting.id,
-              text: '1b',
-              ballotHash: generateBallotHash(voting.id, 'OTHER_1B'),
-            },
-          ],
-        });
-      }
-
       if (voting.isFinalized) {
-        const ballotsCount = await prisma.ballot.count({
-          where: { votingId: voting.id },
+        const ballots = await prisma.ballot.findMany({
+            where: { votingId: voting.id }
         });
-        const freeformCount = await prisma.freeformBallot.count({
-          where: { votingId: voting.id },
+        
+        const tally: Record<string, number> = {};
+        ballots.forEach(b => {
+            tally[b.optionId] = (tally[b.optionId] || 0) + 1;
         });
-        const total = ballotsCount + freeformCount;
 
-        const tally = {
-          options: {},
-          other: freeformCount,
-        };
-
+        const total = ballots.length;
         const tallyHash = crypto
           .createHash('sha256')
-          .update(JSON.stringify(tally) + total)
+          .update(JSON.stringify({ options: tally }) + total)
           .digest('hex');
 
         await prisma.votingResult.create({
           data: {
             votingId: voting.id,
-            tally: tally as any,
+            tally: { options: tally } as any,
             totalBallots: total,
             tallyHash: tallyHash,
           },
@@ -179,7 +176,7 @@ async function main() {
     }
   }
 
-  console.log('✅ Seeding completed.');
+  console.log('✅ Seeding completed (PostgreSQL only).');
 }
 
 main()
@@ -189,4 +186,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await pool.end();
   });

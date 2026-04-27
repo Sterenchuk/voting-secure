@@ -168,9 +168,10 @@ describe('VoteService', () => {
       };
       repo.findVotingForVote.mockResolvedValue(voting as any);
       repo.findParticipation.mockResolvedValue(null);
+      repo.findVotingToken.mockResolvedValue({ id: 'token-1', used: false, expiresAt: new Date(Date.now() + 10000) } as any);
       repo.findOptionsWithBallotCounts.mockResolvedValue([{ id: 'opt-1', text: 'Opt 1', _count: { ballots: 1 } }] as any);
 
-      const result = await service.vote(votingId, ballots, userId);
+      const result = await service.vote(votingId, ballots, userId, 'token-1');
 
       expect(result.participated).toBe(true);
       expect(repo.createParticipationTx).toHaveBeenCalled();

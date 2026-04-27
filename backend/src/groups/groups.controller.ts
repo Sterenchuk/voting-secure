@@ -65,11 +65,8 @@ export class GroupsController {
   }
 
   @Get(':id')
-  findOne(
-    @Param('id') id: UuidDto['id'],
-    @CurrentUser('sub') userId?: string,
-  ): Promise<GroupResponseDto> {
-    return this.groupsService.findOne(id, userId);
+  findOne(@Param('id') id: UuidDto['id']): Promise<GroupResponseDto> {
+    return this.groupsService.findOne(id);
   }
 
   @Patch(':id')

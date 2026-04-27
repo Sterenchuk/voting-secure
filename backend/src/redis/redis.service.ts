@@ -1,5 +1,6 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger, ForbiddenException } from '@nestjs/common';
 import Redis from 'ioredis';
+import { CryptoUtils } from '../common/utils/crypto-utils';
 
 @Injectable()
 export class RedisVotingService {
@@ -74,55 +75,21 @@ export class RedisVotingService {
     return await this.redis.hgetall(key);
   }
 
-  async performVote(
-    votingId: string,
-    optionIds: string[],
-    userId: string,
-    hasOther = false,
-  ) {
-    const lockKey = `vote_lock:${votingId}:${userId}`;
-    const lockToken = await this.acquireLock(lockKey, 5);
+  async performVote(votingId: string, optionIds: string[], userId: string) {
+    const resultsKey = `voting:${votingId}:results`;
+    const votersKey = `voting:${votingId}:voters`;
 
-    if (!lockToken) {
-      throw new Error(
-        'Another vote is being processed for this user. Please try again.',
-      );
-    }
+    const pipeline = this.redis.pipeline();
 
-    try {
-      const hasVoted = await this.hasUserVoted(votingId, userId);
-      if (hasVoted) {
-        throw new Error('User has already voted');
-      }
+    // Mark user as voted
+    pipeline.sadd(votersKey, userId);
 
-      const resultsKey = `voting:${votingId}:results`;
-      const votersKey = `voting:${votingId}:voters`;
+    // Increment counts for options
+    optionIds.forEach((id) => {
+      pipeline.hincrby(resultsKey, id, 1);
+    });
 
-      const pipeline = this.redis.pipeline();
-
-      // Mark user as voted
-      pipeline.sadd(votersKey, userId);
-
-      // Increment counts for options
-      optionIds.forEach((id) => {
-        pipeline.hincrby(resultsKey, id, 1);
-      });
-
-      // Increment count for 'Other' if provided
-      if (hasOther) {
-        pipeline.hincrby(resultsKey, 'OTHER_COUNT', 1);
-      }
-
-      await pipeline.exec();
-    } finally {
-      await this.releaseLock(lockKey, lockToken);
-    }
-  }
-
-  async getOtherCount(votingId: string): Promise<number> {
-    const key = `voting:${votingId}:results`;
-    const count = await this.redis.hget(key, 'OTHER_COUNT');
-    return parseInt(count ?? '0');
+    await pipeline.exec();
   }
 
   async clearVotingData(votingId: string) {
@@ -134,7 +101,7 @@ export class RedisVotingService {
     await pipeline.exec();
   }
 
-  // ─── SURVEY METHODS ────────────────────────────────────────────────────────
+  // ─── SURVEY METHODS ─────────────────────────────────────────────────────────
 
   async hasUserSubmittedSurvey(
     surveyId: string,
@@ -172,44 +139,31 @@ export class RedisVotingService {
     userId: string,
     answers: { questionId: string; optionIds: string[]; hasOther?: boolean }[],
   ) {
-    const lockKey = `survey_lock:${surveyId}:${userId}`;
-    const lockToken = await this.acquireLock(lockKey, 10);
-
-    if (!lockToken) {
-      throw new Error(
-        'Another submission is being processed for this user. Please try again.',
-      );
+    const hasSubmitted = await this.hasUserSubmittedSurvey(surveyId, userId);
+    if (hasSubmitted) {
+      throw new Error('User has already submitted this survey');
     }
 
-    try {
-      const hasSubmitted = await this.hasUserSubmittedSurvey(surveyId, userId);
-      if (hasSubmitted) {
-        throw new Error('User has already submitted this survey');
-      }
+    const votersKey = `survey:${surveyId}:voters`;
+    const pipeline = this.redis.pipeline();
 
-      const votersKey = `survey:${surveyId}:voters`;
-      const pipeline = this.redis.pipeline();
+    // Mark user as submitted
+    pipeline.sadd(votersKey, userId);
 
-      // Mark user as submitted
-      pipeline.sadd(votersKey, userId);
+    // Process each question's answers
+    answers.forEach(({ questionId, optionIds, hasOther }) => {
+      const resultsKey = `survey:${surveyId}:results:${questionId}`;
 
-      // Process each question's answers
-      answers.forEach(({ questionId, optionIds, hasOther }) => {
-        const resultsKey = `survey:${surveyId}:results:${questionId}`;
-
-        optionIds.forEach((optionId) => {
-          pipeline.hincrby(resultsKey, optionId, 1);
-        });
-
-        if (hasOther) {
-          pipeline.hincrby(resultsKey, 'OTHER_COUNT', 1);
-        }
+      optionIds.forEach((optionId) => {
+        pipeline.hincrby(resultsKey, optionId, 1);
       });
 
-      await pipeline.exec();
-    } finally {
-      await this.releaseLock(lockKey, lockToken);
-    }
+      if (hasOther) {
+        pipeline.hincrby(resultsKey, 'OTHER_COUNT', 1);
+      }
+    });
+
+    await pipeline.exec();
   }
 
   async getQuestionResults(
@@ -260,5 +214,74 @@ export class RedisVotingService {
     if (lockKeys.length > 0) pipeline.del(...lockKeys);
 
     await pipeline.exec();
+  }
+
+  // ─── VOTING/SURVEY TOKEN METHODS ──────────────────────────────────────────────
+
+  private tokenKey(
+    type: 'voting' | 'survey',
+    userId: string,
+    entityId: string,
+  ): string {
+    return `token:${type}:${userId}:${entityId}`;
+  }
+
+  async issueToken(
+    type: 'voting' | 'survey',
+    userId: string,
+    entityId: string,
+    ttlSeconds = 3600,
+  ): Promise<string> {
+    const token = CryptoUtils.generateSecureToken();
+    const hash = CryptoUtils.hashToken(token);
+    await this.redis.set(
+      this.tokenKey(type, userId, entityId),
+      hash,
+      'EX',
+      ttlSeconds,
+    );
+    return token;
+  }
+
+  async verifyToken(
+    type: 'voting' | 'survey',
+    userId: string,
+    entityId: string,
+    submittedToken: string,
+  ): Promise<void> {
+    const storedHash = await this.redis.get(
+      this.tokenKey(type, userId, entityId),
+    );
+    if (!storedHash) throw new ForbiddenException('Invalid or expired token');
+    if (storedHash !== CryptoUtils.hashToken(submittedToken))
+      throw new ForbiddenException('Invalid token');
+  }
+
+  async consumeToken(
+    type: 'voting' | 'survey',
+    userId: string,
+    entityId: string,
+  ): Promise<void> {
+    await this.redis.del(this.tokenKey(type, userId, entityId));
+  }
+
+  async tokenExists(
+    type: 'voting' | 'survey',
+    userId: string,
+    entityId: string,
+  ): Promise<boolean> {
+    return (
+      (await this.redis.exists(this.tokenKey(type, userId, entityId))) === 1
+    );
+  }
+
+  async reissueToken(
+    type: 'voting' | 'survey',
+    userId: string,
+    entityId: string,
+    ttlSeconds = 3600,
+  ): Promise<string> {
+    await this.consumeToken(type, userId, entityId);
+    return this.issueToken(type, userId, entityId, ttlSeconds);
   }
 }

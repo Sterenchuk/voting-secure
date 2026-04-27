@@ -13,7 +13,6 @@ import {
   IUpdateVotingData,
   IVotingWhereInput,
 } from './types/voting.types';
-import { AuditAction } from '../common/enums/audit.actions';
 import type { VotingCreateDto } from './dto/voting.create.dto';
 import type { VotingUpdateDto } from './dto/voting.update.dto';
 import type { FindVotingQueryDto } from './dto/find.voting.query.dto';
@@ -81,6 +80,10 @@ export class VotingsService {
       ...v,
       participantsCount: v._count.participations,
       hasVoted: v.participations && v.participations.length > 0,
+      options: v.options.map(({ _count, ...opt }) => ({
+        ...opt,
+        voteCount: _count?.ballots ?? 0,
+      })),
     }));
   }
 
@@ -96,6 +99,7 @@ export class VotingsService {
     return {
       ...voting,
       hasVoted: !!hasVoted,
+      participantsCount: voting._count.participations,
       options: voting.options.map(({ _count, ...opt }) => ({
         ...opt,
         voteCount: _count.ballots,

@@ -24,10 +24,29 @@ export class CryptoUtils {
     return crypto.randomBytes(bytes).toString('hex');
   }
 
+  static generateSecureToken(bytes = 32): string {
+    return this.generateRandomToken(bytes);
+  }
+
   /**
    * Hashes a token for storage (e.g., RefreshToken, VotingToken).
    */
   static hashToken(token: string): string {
     return this.hash(token);
+  }
+
+  static generateBallotReceipt(
+    votingId: string,
+    optionId: string,
+    tokenHashed: string,
+  ): string {
+    const secret = process.env.BALLOT_SECRET;
+    if (!secret) {
+      throw new Error('BALLOT_SECRET environment variable is not set');
+    }
+    return crypto
+      .createHmac('sha256', secret)
+      .update(`${votingId}:${optionId}:${tokenHashed}`)
+      .digest('hex');
   }
 }

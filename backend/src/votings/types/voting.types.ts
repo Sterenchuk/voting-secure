@@ -94,18 +94,6 @@ export interface IBallot {
 
 export interface IBallotInput {
   optionId: string;
-  ballotHash: string;
-}
-
-// ─── VotingToken ─────────────────────────────────────────────────────────────
-
-export interface IVotingToken {
-  id: string;
-  votingId: string;
-  userId: string;
-  tokenHash: string;
-  used: boolean;
-  expiresAt: Date;
 }
 
 // ─── Participation ────────────────────────────────────────────────────────────
@@ -122,21 +110,14 @@ export interface IVoteParticipation {
 export interface IOptionResult {
   id: string;
   text: string;
+  isDynamic: boolean;
   voteCount: number;
-}
-
-export interface IFreeformBallot {
-  id: string;
-  votingId: string;
-  text: string;
-  ballotHash: string;
 }
 
 export interface IVotingResults {
   options: IOptionResult[];
   totalBallots: number;
-  other?: IFreeformBallot[];
-  otherCount?: number;
+  dynamicOptions?: IOptionResult[];
 }
 
 // ─── Sealed result ────────────────────────────────────────────────────────────

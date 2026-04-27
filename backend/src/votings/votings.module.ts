@@ -8,22 +8,21 @@ import { VotingsRepository } from './votings.repository';
 import { DatabaseModule } from '../database/database.module';
 import { RedisModule } from '../redis/redis.module';
 import { UsersModule } from '../users/users.module';
-import { wsAuthMiddleware } from '../auth/auth.ws.middleware';
-import { JwtService } from '@nestjs/jwt';
-import { UsersService } from '../users/users.service';
-import { createAdapter } from '@socket.io/redis-adapter';
-import Redis from 'ioredis';
+import { MailModule } from '../mail/mail.module';
 import { GroupsModule } from '../groups/groups.module';
-
+import { AuditModule } from '../audit/audit.module';
 @Module({
-  imports: [DatabaseModule, RedisModule, UsersModule, JwtModule, GroupsModule],
+  imports: [
+    DatabaseModule,
+    RedisModule,
+    UsersModule,
+    MailModule,
+    JwtModule.register({}),
+    GroupsModule,
+    AuditModule,
+  ],
   controllers: [VotingsController],
   providers: [VotingsService, VoteService, VoteGateway, VotingsRepository],
+  exports: [VotingsService, VoteService],
 })
-export class VotingsModule {
-  constructor(
-    private readonly jwtService: JwtService,
-    private readonly usersService: UsersService,
-    private readonly voteGateway: VoteGateway,
-  ) {}
-}
+export class VotingsModule {}

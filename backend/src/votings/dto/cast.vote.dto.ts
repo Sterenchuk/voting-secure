@@ -14,13 +14,13 @@ import { Type, Transform } from 'class-transformer';
 export class BallotItemDto {
   @IsUUID('4')
   optionId: string;
-
-  @IsString()
-  @IsNotEmpty()
-  ballotHash: string;
 }
 
 export class CastVoteDto {
+  @IsNotEmpty()
+  @IsString()
+  token: string;
+
   @IsArray()
   @ArrayMaxSize(50)
   @ValidateNested({ each: true })
@@ -33,9 +33,4 @@ export class CastVoteDto {
   @MaxLength(500)
   @Transform(({ value }) => value?.trim())
   otherText?: string;
-
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  freeformBallotHash?: string;
 }
