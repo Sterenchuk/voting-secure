@@ -64,7 +64,7 @@ async function bootstrap() {
     logger.error('Failed to connect to Redis Adapter:', error);
   }
 
-  const port = process.env.BACKEND_HOST_PORT || 3000;
+  const port = process.env.PORT || 3001;
   await app.listen(port);
 
   logger.log(`🚀 Node.js Backend is running on port ${port}`);

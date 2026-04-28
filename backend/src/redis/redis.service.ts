@@ -1,5 +1,6 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger, ForbiddenException } from '@nestjs/common';
 import Redis from 'ioredis';
+import { CryptoUtils } from '../common/utils/crypto-utils';
 
 @Injectable()
 export class RedisVotingService {
@@ -13,31 +14,32 @@ export class RedisVotingService {
     userId: string,
     token: string,
     expiresInSeconds: number,
-  ) {
-    const key = `auth:refresh:${token}`;
-    await this.redis.set(key, userId, 'EX', expiresInSeconds);
+  ): Promise<void> {
+    await this.redis.set(
+      `auth:refresh:${token}`,
+      userId,
+      'EX',
+      expiresInSeconds,
+    );
   }
 
   async getUserIdByToken(token: string): Promise<string | null> {
-    return await this.redis.get(`auth:refresh:${token}`);
+    return this.redis.get(`auth:refresh:${token}`);
   }
 
-  async deleteRefreshToken(token: string) {
+  async deleteRefreshToken(token: string): Promise<void> {
     await this.redis.del(`auth:refresh:${token}`);
   }
 
   // ─── DISTRIBUTED LOCK ──────────────────────────────────────────────────────
 
-  public async acquireLock(
-    lockKey: string,
-    ttlSeconds = 10,
-  ): Promise<string | null> {
+  async acquireLock(lockKey: string, ttlSeconds = 10): Promise<string | null> {
     const token = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
     const result = await this.redis.set(lockKey, token, 'EX', ttlSeconds, 'NX');
     return result === 'OK' ? token : null;
   }
 
-  public async releaseLock(lockKey: string, token: string): Promise<void> {
+  async releaseLock(lockKey: string, token: string): Promise<void> {
     const script = `
       if redis.call("get", KEYS[1]) == ARGV[1] then
         return redis.call("del", KEYS[1])
@@ -48,217 +50,280 @@ export class RedisVotingService {
     await this.redis.eval(script, 1, lockKey, token);
   }
 
-  // ─── VOTING METHODS (EU ANONYMITY SPLIT) ───────────────────────────────────
-
-  async markUserVoted(votingId: string, userId: string): Promise<void> {
-    const votersKey = `voting:${votingId}:voters`;
-    await this.redis.sadd(votersKey, userId);
-  }
-
-  async incrementOptionCount(
-    votingId: string,
-    optionId: string,
-  ): Promise<void> {
-    const resultsKey = `voting:${votingId}:results`;
-    await this.redis.hincrby(resultsKey, optionId, 1);
-  }
+  // ─── VOTING RESULT CACHE ───────────────────────────────────────────────────
 
   async hasUserVoted(votingId: string, userId: string): Promise<boolean> {
-    const votersKey = `voting:${votingId}:voters`;
-    const result = await this.redis.sismember(votersKey, userId);
+    const result = await this.redis.sismember(
+      `voting:${votingId}:voters`,
+      userId,
+    );
     return result === 1;
   }
 
   async getResults(votingId: string): Promise<Record<string, string>> {
-    const key = `voting:${votingId}:results`;
-    return await this.redis.hgetall(key);
+    return this.redis.hgetall(`voting:${votingId}:results`);
   }
 
   async performVote(
     votingId: string,
     optionIds: string[],
     userId: string,
-    hasOther = false,
-  ) {
-    const lockKey = `vote_lock:${votingId}:${userId}`;
-    const lockToken = await this.acquireLock(lockKey, 5);
-
-    if (!lockToken) {
-      throw new Error(
-        'Another vote is being processed for this user. Please try again.',
-      );
-    }
-
-    try {
-      const hasVoted = await this.hasUserVoted(votingId, userId);
-      if (hasVoted) {
-        throw new Error('User has already voted');
-      }
-
-      const resultsKey = `voting:${votingId}:results`;
-      const votersKey = `voting:${votingId}:voters`;
-
-      const pipeline = this.redis.pipeline();
-
-      // Mark user as voted
-      pipeline.sadd(votersKey, userId);
-
-      // Increment counts for options
-      optionIds.forEach((id) => {
-        pipeline.hincrby(resultsKey, id, 1);
-      });
-
-      // Increment count for 'Other' if provided
-      if (hasOther) {
-        pipeline.hincrby(resultsKey, 'OTHER_COUNT', 1);
-      }
-
-      await pipeline.exec();
-    } finally {
-      await this.releaseLock(lockKey, lockToken);
-    }
-  }
-
-  async getOtherCount(votingId: string): Promise<number> {
-    const key = `voting:${votingId}:results`;
-    const count = await this.redis.hget(key, 'OTHER_COUNT');
-    return parseInt(count ?? '0');
-  }
-
-  async clearVotingData(votingId: string) {
-    const pattern = `vote_lock:${votingId}:*`;
-    const keys = await this.redis.keys(pattern);
+  ): Promise<void> {
     const pipeline = this.redis.pipeline();
-    if (keys.length > 0) pipeline.del(...keys);
+    pipeline.sadd(`voting:${votingId}:voters`, userId);
+    optionIds.forEach((id) => {
+      pipeline.hincrby(`voting:${votingId}:results`, id, 1);
+    });
+    await pipeline.exec();
+  }
+
+  async clearVotingData(votingId: string): Promise<void> {
+    const lockKeys = await this.redis.keys(`vote_lock:${votingId}:*`);
+    const pipeline = this.redis.pipeline();
+    if (lockKeys.length > 0) pipeline.del(...lockKeys);
     pipeline.del(`voting:${votingId}:results`, `voting:${votingId}:voters`);
     await pipeline.exec();
   }
 
-  // ─── SURVEY METHODS ────────────────────────────────────────────────────────
+  // ─── SURVEY RESULT CACHE ───────────────────────────────────────────────────
 
   async hasUserSubmittedSurvey(
     surveyId: string,
     userId: string,
   ): Promise<boolean> {
-    const key = `survey:${surveyId}:voters`;
-    const result = await this.redis.sismember(key, userId);
+    const result = await this.redis.sismember(
+      `survey:${surveyId}:voters`,
+      userId,
+    );
     return result === 1;
   }
 
   async getSurveyVoterCount(surveyId: string): Promise<number> {
-    const key = `survey:${surveyId}:voters`;
-    return await this.redis.scard(key);
+    return this.redis.scard(`survey:${surveyId}:voters`);
   }
 
   async markSurveySubmitted(surveyId: string, userId: string): Promise<void> {
-    const key = `survey:${surveyId}:voters`;
-    await this.redis.sadd(key, userId);
+    await this.redis.sadd(`survey:${surveyId}:voters`, userId);
   }
 
-  async incrementQuestionOptionCount(
-    questionId: string,
-    optionId: string,
-  ): Promise<void> {
-    const resultKey = `question:${questionId}:result`;
-    await this.redis.hincrby(resultKey, optionId, 1);
-  }
-
-  /**
-   * Performs an anonymous survey submission for multiple questions.
-   * Splits 'Who' (votersKey) from 'What' (resultsKey).
-   */
   async performSurveySubmission(
     surveyId: string,
     userId: string,
     answers: { questionId: string; optionIds: string[]; hasOther?: boolean }[],
-  ) {
-    const lockKey = `survey_lock:${surveyId}:${userId}`;
-    const lockToken = await this.acquireLock(lockKey, 10);
+  ): Promise<void> {
+    const hasSubmitted = await this.hasUserSubmittedSurvey(surveyId, userId);
+    if (hasSubmitted) throw new Error('User has already submitted this survey');
 
-    if (!lockToken) {
-      throw new Error(
-        'Another submission is being processed for this user. Please try again.',
+    const pipeline = this.redis.pipeline();
+    pipeline.sadd(`survey:${surveyId}:voters`, userId);
+
+    answers.forEach(({ questionId, optionIds, hasOther }) => {
+      const resultsKey = `survey:${surveyId}:results:${questionId}`;
+      optionIds.forEach((optionId) =>
+        pipeline.hincrby(resultsKey, optionId, 1),
       );
-    }
+      if (hasOther) pipeline.hincrby(resultsKey, 'OTHER_COUNT', 1);
+    });
 
-    try {
-      const hasSubmitted = await this.hasUserSubmittedSurvey(surveyId, userId);
-      if (hasSubmitted) {
-        throw new Error('User has already submitted this survey');
-      }
-
-      const votersKey = `survey:${surveyId}:voters`;
-      const pipeline = this.redis.pipeline();
-
-      // Mark user as submitted
-      pipeline.sadd(votersKey, userId);
-
-      // Process each question's answers
-      answers.forEach(({ questionId, optionIds, hasOther }) => {
-        const resultsKey = `survey:${surveyId}:results:${questionId}`;
-
-        optionIds.forEach((optionId) => {
-          pipeline.hincrby(resultsKey, optionId, 1);
-        });
-
-        if (hasOther) {
-          pipeline.hincrby(resultsKey, 'OTHER_COUNT', 1);
-        }
-      });
-
-      await pipeline.exec();
-    } finally {
-      await this.releaseLock(lockKey, lockToken);
-    }
+    await pipeline.exec();
   }
 
   async getQuestionResults(
     surveyId: string,
     questionId: string,
   ): Promise<Record<string, string>> {
-    const key = `survey:${surveyId}:results:${questionId}`;
-    return await this.redis.hgetall(key);
+    return this.redis.hgetall(`survey:${surveyId}:results:${questionId}`);
   }
 
-  async clearSurveyData(surveyId: string) {
+  async clearSurveyData(surveyId: string): Promise<void> {
     const votersKey = `survey:${surveyId}:voters`;
-    const pattern = `survey:${surveyId}:results:*`;
 
-    // Using scanning for results keys instead of keys() for safety
-    const resultsKeys: string[] = [];
-    let cursor = '0';
-    do {
-      const [newCursor, foundKeys] = await this.redis.scan(
-        cursor,
-        'MATCH',
-        pattern,
-        'COUNT',
-        100,
-      );
-      cursor = newCursor;
-      resultsKeys.push(...foundKeys);
-    } while (cursor !== '0');
+    const scan = async (pattern: string): Promise<string[]> => {
+      const keys: string[] = [];
+      let cursor = '0';
+      do {
+        const [next, found] = await this.redis.scan(
+          cursor,
+          'MATCH',
+          pattern,
+          'COUNT',
+          100,
+        );
+        cursor = next;
+        keys.push(...found);
+      } while (cursor !== '0');
+      return keys;
+    };
 
-    const lockPattern = `survey_lock:${surveyId}:*`;
-    const lockKeys: string[] = [];
-    cursor = '0';
-    do {
-      const [newCursor, foundKeys] = await this.redis.scan(
-        cursor,
-        'MATCH',
-        lockPattern,
-        'COUNT',
-        100,
-      );
-      cursor = newCursor;
-      lockKeys.push(...foundKeys);
-    } while (cursor !== '0');
+    const [resultsKeys, lockKeys] = await Promise.all([
+      scan(`survey:${surveyId}:results:*`),
+      scan(`survey_lock:${surveyId}:*`),
+    ]);
 
     const pipeline = this.redis.pipeline();
     pipeline.del(votersKey);
     if (resultsKeys.length > 0) pipeline.del(...resultsKeys);
     if (lockKeys.length > 0) pipeline.del(...lockKeys);
-
     await pipeline.exec();
+  }
+
+  // ─── UNIFIED TOKEN METHODS (VOTING + SURVEY) ───────────────────────────────
+  //
+  // Forward key:  token:{type}:{userId}:{entityId}  → tokenHash
+  // Reverse key:  token_reverse:{tokenHash}          → { userId, entityId, type }
+  //
+  // The reverse key allows email-link confirmation to look up the userId
+  // from just the raw token — satisfying Rec(2004)11 §47 without a DB table.
+
+  private tokenKey(
+    type: 'voting' | 'survey',
+    userId: string,
+    entityId: string,
+  ): string {
+    return `token:${type}:${userId}:${entityId}`;
+  }
+
+  private reverseKey(hash: string): string {
+    return `token_reverse:${hash}`;
+  }
+
+  /**
+   * Issues a new token. If a token already exists for this user+entity,
+   * it is overwritten (Redis SET replaces automatically).
+   * Returns the raw token string — must be sent via email, never via API response.
+   */
+  async issueToken(
+    type: 'voting' | 'survey',
+    userId: string,
+    entityId: string,
+    ttlSeconds = 3600,
+  ): Promise<string> {
+    this.logger.debug(
+      `Issuing token for ${type} ${entityId} and user ${userId} with TTL ${ttlSeconds}s`,
+    );
+    const token = CryptoUtils.generateSecureToken();
+    const hash = CryptoUtils.hashToken(token);
+
+    const pipeline = this.redis.pipeline();
+    pipeline.set(this.tokenKey(type, userId, entityId), hash, 'EX', ttlSeconds);
+    pipeline.set(
+      this.reverseKey(hash),
+      JSON.stringify({ userId, entityId, type }),
+      'EX',
+      ttlSeconds,
+    );
+    await pipeline.exec();
+
+    return token;
+  }
+
+  /**
+   * Looks up token metadata from just the raw token string.
+   * Used by email-link confirmation endpoint which has no userId.
+   */
+  async lookupTokenByHash(
+    hash: string,
+  ): Promise<{ userId: string; entityId: string; type: string } | null> {
+    const raw = await this.redis.get(this.reverseKey(hash));
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      this.logger.error(`Failed to parse token_reverse value for hash ${hash}`);
+      return null;
+    }
+  }
+
+  /**
+   * Verifies a submitted token against the stored hash.
+   * Used during the normal vote flow where userId is known from JWT.
+   */
+  async verifyToken(
+    type: 'voting' | 'survey',
+    userId: string,
+    entityId: string,
+    submittedToken: string,
+  ): Promise<void> {
+    const storedHash = await this.redis.get(
+      this.tokenKey(type, userId, entityId),
+    );
+    if (!storedHash) throw new ForbiddenException('Invalid or expired token');
+    if (storedHash !== CryptoUtils.hashToken(submittedToken))
+      throw new ForbiddenException('Invalid token');
+  }
+
+  /**
+   * Consumes (deletes) a token — both forward and reverse keys.
+   * Call after the vote is committed to enforce single-use.
+   */
+  async consumeToken(
+    type: 'voting' | 'survey',
+    userId: string,
+    entityId: string,
+  ): Promise<void> {
+    const hash = await this.redis.get(this.tokenKey(type, userId, entityId));
+    const pipeline = this.redis.pipeline();
+    pipeline.del(this.tokenKey(type, userId, entityId));
+    if (hash) pipeline.del(this.reverseKey(hash));
+    await pipeline.exec();
+  }
+
+  async tokenExists(
+    type: 'voting' | 'survey',
+    userId: string,
+    entityId: string,
+  ): Promise<boolean> {
+    return (
+      (await this.redis.exists(this.tokenKey(type, userId, entityId))) === 1
+    );
+  }
+
+  /**
+   * Returns the stored hash for a token — used to cross-check in email confirmation.
+   */
+  async getStoredHash(
+    type: 'voting' | 'survey',
+    userId: string,
+    entityId: string,
+  ): Promise<string | null> {
+    return this.redis.get(this.tokenKey(type, userId, entityId));
+  }
+
+  // ─── SELECTION METHODS ─────────────────────────────────────────────────────
+  //
+  // Stores user's vote selections when they click "Cast Vote" on the page.
+  // Retrieved when the email link is clicked to confirm the vote.
+  // TTL matches the token TTL — both expire together.
+
+  async setSelections(
+    userId: string,
+    entityId: string,
+    selections: { optionIds: string[]; otherText?: string },
+    ttlSeconds = 3600,
+  ): Promise<void> {
+    await this.redis.set(
+      `vote_selections:${userId}:${entityId}`,
+      JSON.stringify(selections),
+      'EX',
+      ttlSeconds,
+    );
+  }
+
+  async getSelections(
+    userId: string,
+    entityId: string,
+  ): Promise<{ optionIds: string[]; otherText?: string } | null> {
+    const raw = await this.redis.get(`vote_selections:${userId}:${entityId}`);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      this.logger.error(`Failed to parse selections for ${userId}:${entityId}`);
+      return null;
+    }
+  }
+
+  async deleteSelections(userId: string, entityId: string): Promise<void> {
+    await this.redis.del(`vote_selections:${userId}:${entityId}`);
   }
 }

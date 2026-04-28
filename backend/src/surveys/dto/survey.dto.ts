@@ -34,6 +34,10 @@ export class SurveyCreateDto {
 
   @IsOptional()
   @IsDateString()
+  startAt?: string;
+
+  @IsOptional()
+  @IsDateString()
   endAt?: string;
 
   @IsArray()

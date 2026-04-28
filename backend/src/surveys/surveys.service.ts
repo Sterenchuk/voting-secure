@@ -32,12 +32,18 @@ export class SurveysService {
   async create(userId: string, dto: SurveyCreateDto) {
     await this.groupsService.checkAdminPermission(userId, dto.groupId);
 
+    let startAt = dto.startAt ? new Date(dto.startAt) : undefined;
+    if (dto.isOpen && (!startAt || startAt > new Date())) {
+      startAt = new Date();
+    }
+
     // Transform DTO to Repository Data structure
     const data: ICreateSurveyData = {
       title: dto.title,
       description: dto.description,
       groupId: dto.groupId,
       isOpen: dto.isOpen ?? false,
+      startAt,
       endAt: dto.endAt ? new Date(dto.endAt) : undefined,
       surveyQuestions: dto.questions.map((q) => {
         const question = {
@@ -92,7 +98,7 @@ export class SurveysService {
     return this.repo.createSurvey(userId, data);
   }
 
-  async findAll(dto: FindSurveyQueryDto) {
+  async findAll(dto: FindSurveyQueryDto, userId?: string) {
     const where: ISurveyWhereInput = { deletedAt: null };
     if (dto.groupId) where.groupId = dto.groupId;
     if (dto.title) where.title = { contains: dto.title, mode: 'insensitive' };
@@ -100,14 +106,24 @@ export class SurveysService {
     if (dto.isOpen !== undefined) where.isOpen = dto.isOpen;
     if (dto.isFinalized !== undefined) where.isFinalized = dto.isFinalized;
 
-    return this.repo.findSurveys(where);
+    const surveys = await this.repo.findSurveys(where, userId);
+    return surveys.map((s) => ({
+      ...s,
+      responsesCount: s._count.participations,
+      hasParticipated: s.participations && s.participations.length > 0,
+    }));
   }
 
-  async findOne(id: string) {
-    const survey = await this.repo.findSurveyById(id);
+  async findOne(id: string, userId?: string) {
+    const survey = await this.repo.findSurveyById(id, userId);
     if (!survey || (survey as any).deletedAt)
       throw new NotFoundException('Survey not found');
-    return survey;
+    
+    return {
+      ...survey,
+      responsesCount: survey._count.participations,
+      hasParticipated: survey.participations && survey.participations.length > 0,
+    };
   }
 
   async update(userId: string, surveyId: string, dto: SurveyUpdateDto) {
@@ -121,10 +137,16 @@ export class SurveysService {
       throw new ForbiddenException('Cannot update a finalized survey');
     }
 
+    let startAt = dto.startAt ? new Date(dto.startAt) : undefined;
+    if (dto.isOpen && (!startAt || startAt > new Date())) {
+      startAt = new Date();
+    }
+
     const updateData: Partial<ICreateSurveyData> = {
       title: dto.title,
       description: dto.description,
       isOpen: dto.isOpen,
+      startAt,
       endAt: dto.endAt ? new Date(dto.endAt) : undefined,
     };
 

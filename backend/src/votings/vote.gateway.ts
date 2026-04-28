@@ -15,7 +15,7 @@ import { IVotingResults, IVotingResultsEvent } from './types/voting.types';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { wsAuthMiddleware } from '../auth/auth.ws.middleware';
-
+import { ConfigService } from '@nestjs/config';
 // ─── Event names ──────────────────────────────────────────────────────────────
 
 export const WS_EVENTS = {
@@ -50,10 +50,13 @@ export class VoteGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly voteService: VoteService,
     private readonly jwtService: JwtService,
     private readonly usersService: UsersService,
+    private readonly configService: ConfigService,
   ) {}
 
   afterInit(server: Server) {
-    server.use(wsAuthMiddleware(this.jwtService, this.usersService));
+    server.use(
+      wsAuthMiddleware(this.jwtService, this.usersService, this.configService),
+    );
   }
 
   // ─── Lifecycle ───────────────────────────────────────────────────────────────

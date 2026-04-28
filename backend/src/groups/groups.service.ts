@@ -130,14 +130,15 @@ export class GroupsService {
   async findAll(userId: string, name?: string): Promise<GroupResponseDto[]> {
     const groupsResult = await this.databaseService.group.findMany({
       where: {
-        users: {
-          some: {
-            userId,
-          },
-        },
         ...(name && { name: { contains: name, mode: 'insensitive' } }),
       },
-      select: SELECT_GROUP_FIELDS,
+      select: {
+        ...SELECT_GROUP_FIELDS,
+        users: {
+          where: { userId },
+          select: { role: true },
+        },
+      },
     }).catch(e => handlePrismaError(e, 'Finding all groups'));
 
     return groupsResult.map((group) => ({
@@ -148,20 +149,46 @@ export class GroupsService {
       updatedAt: group.updatedAt,
       deletedAt: group.deletedAt,
       memberCount: group._count.users,
-    }));
+      isMember: group.users.length > 0,
+      userRole: group.users[0]?.role,
+    })) as any;
   }
 
-  async findOne(id: string): Promise<GroupResponseDto> {
+  async findOne(id: string, userId?: string): Promise<GroupResponseDto> {
     const group = await this.databaseService.group.findUnique({
       where: { id },
-      select: SELECT_GROUP_WITH_USERS,
+      select: {
+        ...SELECT_GROUP_WITH_USERS,
+        users: {
+          select: {
+            id: true,
+            userId: true,
+            groupId: true,
+            role: true,
+            user: {
+              select: {
+                email: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
     }).catch(e => handlePrismaError(e, 'Finding group'));
 
     if (!group) {
       throw new NotFoundException('Group not found');
     }
 
-    return group;
+    const membership = userId 
+      ? group.users.find(u => u.userId === userId)
+      : null;
+
+    return {
+      ...group,
+      isMember: !!membership,
+      userRole: membership?.role,
+    } as any;
   }
 
   async findMembers(groupId: string): Promise<any[]> {

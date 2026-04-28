@@ -57,18 +57,40 @@ export class SurveysRepository {
 
   // ________________FIND_SURVEYS________________
 
-  findSurveys(where: ISurveyWhereInput) {
+  findSurveys(where: ISurveyWhereInput, userId?: string) {
     return this.db.survey.findMany({
       where: { ...where, deletedAt: null },
-      select: SELECT_SURVEY_WITH_QUESTIONS,
+      select: {
+        ...SELECT_SURVEY_WITH_QUESTIONS,
+        _count: {
+          select: { participations: true },
+        },
+        participations: userId
+          ? {
+              where: { userId },
+              select: { id: true },
+            }
+          : undefined,
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  findSurveyById(surveyId: string) {
+  findSurveyById(surveyId: string, userId?: string) {
     return this.db.survey.findUnique({
       where: { id: surveyId, deletedAt: null },
-      select: SELECT_SURVEY_WITH_QUESTIONS,
+      select: {
+        ...SELECT_SURVEY_WITH_QUESTIONS,
+        _count: {
+          select: { participations: true },
+        },
+        participations: userId
+          ? {
+              where: { userId },
+              select: { id: true },
+            }
+          : undefined,
+      },
     });
   }
 
