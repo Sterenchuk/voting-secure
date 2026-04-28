@@ -10,6 +10,7 @@ import {
   AuditSecurityContext,
   AuditChainDocument,
   VerifyResult,
+  ChainAction,
 } from './types/audit.types';
 
 // ─── Serialisation ────────────────────────────────────────────────────────────
@@ -95,6 +96,21 @@ export class AuditService implements OnModuleInit {
     };
   }
 
+  async getVotingChain(votingId: string) {
+    return this.chainModel
+      .find({ votingId })
+      .sort({ sequence: 1 })
+      .select({
+        sequence: 1,
+        action: 1,
+        payload: 1,
+        hash: 1,
+        prevHash: 1,
+        createdAt: 1,
+      })
+      .lean();
+  }
+
   // ── Public: append to chain ───────────────────────────────────────────────
   async appendChain(ctx: AuditChainContext): Promise<void> {
     try {
@@ -140,6 +156,34 @@ export class AuditService implements OnModuleInit {
   }
 
   // ── Public: verify chain ─────────────────────────────────────────────────
+
+  async findBallotReceipt(
+    votingId: string,
+    hash: string,
+  ): Promise<{
+    found: boolean;
+    sequence?: number;
+    blockHash?: string;
+    prevHash?: string;
+  }> {
+    const doc = await this.chainModel
+      .findOne({
+        votingId,
+        action: ChainAction.BALLOT_CAST,
+        'payload.ballotHashes': hash,
+      })
+      .select({ sequence: 1, hash: 1, prevHash: 1 })
+      .lean();
+
+    if (!doc) return { found: false };
+
+    return {
+      found: true,
+      sequence: (doc as any).sequence,
+      blockHash: (doc as any).hash,
+      prevHash: (doc as any).prevHash,
+    };
+  }
 
   /**
    * Verifies the hash chain.

@@ -40,21 +40,27 @@ export class VoteService {
 
   // ─── Token ────────────────────────────────────────────────────────────────────
 
-  async requestToken(votingId: string, user: { id: string; email: string }) {
+  async requestToken(
+    votingId: string,
+    user: { id: string; email: string },
+    selections: { optionIds: string[]; otherText?: string },
+  ) {
     const voting = await this.repo.findVotingById(votingId);
     if (!voting) throw new NotFoundException('Voting not found');
 
     const hasVoted = await this.redis.hasUserVoted(votingId, user.id);
     if (hasVoted)
       throw new ConflictException('Already participated in this voting');
-    const tokenExists = await this.redis.tokenExists(
+
+    // Store selections in Redis (TTL matches token — 1hr)
+    await this.redis.setSelections(user.id, votingId, selections, 3600);
+
+    const token = await this.redis.issueToken(
       'voting',
       user.id,
       votingId,
+      3600,
     );
-    const token = tokenExists
-      ? await this.redis.reissueToken('voting', user.id, votingId)
-      : await this.redis.issueToken('voting', user.id, votingId, 3600);
 
     try {
       await this.mailService.sendVotingToken(
@@ -83,6 +89,73 @@ export class VoteService {
     }
 
     return { status: 'Success', message: 'Voting token sent to email' };
+  }
+
+  async confirmVoteFromEmail(
+    votingId: string,
+    rawToken: string,
+  ): Promise<{ success: boolean; message?: string; receipts?: string[] }> {
+    let userId!: string;
+    try {
+      const hash = CryptoUtils.hashToken(rawToken);
+
+      // look up who owns this token
+      const tokenMeta = await this.redis.lookupTokenByHash(hash);
+      if (!tokenMeta || tokenMeta.entityId !== votingId) {
+        return { success: false, message: 'Invalid or expired voting token.' };
+      }
+
+      userId = tokenMeta.userId;
+      this.logger.debug(
+        `Confirming vote for user ${userId} on voting ${votingId}`,
+      );
+
+      const storedHash = await this.redis.getStoredHash(
+        'voting',
+        userId,
+        votingId,
+      );
+      if (!storedHash || storedHash !== hash) {
+        return { success: false, message: 'Token already used or expired.' };
+      }
+
+      const selections = await this.redis.getSelections(userId, votingId);
+
+      if (!selections) {
+        return {
+          success: false,
+          message:
+            'Vote selections expired. Please return to the voting page and try again.',
+        };
+      }
+      const { optionIds, otherText } = selections;
+
+      // get user email for receipt
+      this.logger.debug(
+        `Confirming vote for user ${userId} on voting ${votingId}`,
+      );
+      const user = await this.usersService.findOne(userId);
+
+      await this.redis.deleteSelections(userId, votingId);
+
+      const result = await this.vote(
+        votingId,
+        optionIds.map((id: string) => ({ optionId: id })),
+        { id: userId, email: user.email },
+        rawToken,
+        otherText,
+      );
+
+      return { success: true, receipts: result.receipts };
+
+      return { success: true, receipts: result.receipts };
+    } catch (err: any) {
+      this.logger.error(`Confirm vote failed: ${err.message}`, err.stack);
+      return {
+        success: false,
+        message: err?.message ?? 'Something went wrong.',
+      };
+    }
   }
 
   // ─── Vote ─────────────────────────────────────────────────────────────────────
@@ -123,7 +196,6 @@ export class VoteService {
 
         // ── Token verification ───────────────────────────────────────────────
         await this.redis.verifyToken('voting', user.id, votingId, token);
-        await this.redis.consumeToken('voting', user.id, votingId);
 
         tokenHashed = CryptoUtils.hashToken(token);
         // ── Voting guards ────────────────────────────────────────────────────
@@ -213,6 +285,9 @@ export class VoteService {
           await this.repo.createBallotsTx(tx, votingId, ballotsHashed);
         }
       });
+
+      await this.redis.consumeToken('voting', user.id, votingId);
+
       try {
         await this.redis.performVote(votingId, optionIdsToTally, user.id);
       } catch (err) {
@@ -400,5 +475,12 @@ export class VoteService {
       throw new BadRequestException(
         `You can select at most ${voting.maxChoices} option(s)`,
       );
+  }
+
+  // ─── Receipt verification ────────────────────────────────────────────────────────
+  async verifyReceipt(votingId: string, hash: string) {
+    const voting = await this.repo.findVotingAllowOther(votingId);
+    if (!voting) throw new NotFoundException('Voting not found');
+    return this.auditService.findBallotReceipt(votingId, hash);
   }
 }

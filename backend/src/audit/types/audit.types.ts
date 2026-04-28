@@ -17,6 +17,7 @@ export enum ChainAction {
   OPTION_UPDATED = 'OPTION_UPDATED',
   OPTION_REMOVED = 'OPTION_REMOVED',
   BALLOT_CAST = 'BALLOT_CAST', // userId MUST be null
+  VOTING_TOKEN_ISSUED = 'VOTING_TOKEN_ISSUED', // add this line
   VOTING_RESULT_SEALED = 'VOTING_RESULT_SEALED',
   // ── Survey lifecycle ──────────────────────────────────────────────────────
   SURVEY_CREATED = 'SURVEY_CREATED',
