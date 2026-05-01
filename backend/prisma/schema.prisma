@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-
 }
 
 // ─── ENUMS ────────────────────────────────────────────────────────────────────
@@ -86,6 +85,8 @@ model User {
   name            String?
   isActive        Boolean   @default(true)
   isEmailVerified Boolean   @default(false)
+  language        String    @default("en")
+  theme           String    @default("light")
   deletedAt       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -100,7 +101,7 @@ model User {
   votings        VoteParticipation[]
 
   // ── Survey ────────────────────────────────────────────────────────────────
-  createdSurveys Survey[]             @relation("SurveyCreator")
+  createdSurveys Survey[]              @relation("SurveyCreator")
   surveys        SurveyParticipation[]
 
   // ── Tokens ────────────────────────────────────────────────────────────────
@@ -118,18 +119,18 @@ model Group {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  creator User      @relation("GroupCreator", fields: [creatorId], references: [id])
+  creator User        @relation("GroupCreator", fields: [creatorId], references: [id])
   users   UserGroup[]
   votings Voting[]
   surveys Survey[]
 }
 
 model UserGroup {
-  id      String    @id @default(uuid())
-  userId  String
-  groupId String
-  role    GroupRole @default(MEMBER)
-  joinedAt DateTime @default(now())
+  id       String    @id @default(uuid())
+  userId   String
+  groupId  String
+  role     GroupRole @default(MEMBER)
+  joinedAt DateTime  @default(now())
 
   user  User  @relation(fields: [userId], references: [id])
   group Group @relation(fields: [groupId], references: [id])
@@ -140,22 +141,22 @@ model UserGroup {
 // ─── VOTING MODULE ────────────────────────────────────────────────────────────
 
 model Voting {
-  id          String     @id @default(uuid())
-  creatorId   String
-  creator     User       @relation("VotingCreator", fields: [creatorId], references: [id])
-  groupId     String
-  group       Group      @relation(fields: [groupId], references: [id])
+  id        String @id @default(uuid())
+  creatorId String
+  creator   User   @relation("VotingCreator", fields: [creatorId], references: [id])
+  groupId   String
+  group     Group  @relation(fields: [groupId], references: [id])
 
-  title            String
-  description      String?
-  type             VotingType @default(SINGLE_CHOICE)
-  isFinalized      Boolean    @default(false)
-  isOpen           Boolean    @default(false)
-  deletedAt        DateTime?
+  title       String
+  description String?
+  type        VotingType @default(SINGLE_CHOICE)
+  isFinalized Boolean    @default(false)
+  isOpen      Boolean    @default(false)
+  deletedAt   DateTime?
 
-  allowOther       Boolean  @default(false)
-  minChoices       Int      @default(1)
-  maxChoices       Int?
+  allowOther Boolean @default(false)
+  minChoices Int     @default(1)
+  maxChoices Int?
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -163,10 +164,10 @@ model Voting {
   endAt       DateTime?
   finalizedAt DateTime?
 
-  options         Option[]
-  ballots         Ballot[]
-  participations  VoteParticipation[]
-  result          VotingResult?
+  options        Option[]
+  ballots        Ballot[]
+  participations VoteParticipation[]
+  result         VotingResult?
 }
 
 model Option {
@@ -216,14 +217,14 @@ model VoteParticipation {
 
 // Rec(2004)11 §26 – "The What" for votings. Permanently anonymous.
 model Ballot {
-  id         String   @id @default(uuid())
-  votingId   String
-  optionId   String
-  ballotHash String   @unique
-  tokenHashed    String?
+  id          String  @id @default(uuid())
+  votingId    String
+  optionId    String
+  ballotHash  String  @unique
+  tokenHashed String?
 
-  voting Voting       @relation(fields: [votingId], references: [id])
-  option Option       @relation(fields: [optionId], references: [id])
+  voting Voting @relation(fields: [votingId], references: [id])
+  option Option @relation(fields: [optionId], references: [id])
 
   @@index([votingId])
 }
@@ -242,13 +243,13 @@ model VotingResult {
 // ─── SURVEY MODULE ────────────────────────────────────────────────────────────
 
 model Survey {
-  id          String    @id @default(uuid())
+  id          String  @id @default(uuid())
   title       String
   description String?
   creatorId   String
-  creator     User      @relation("SurveyCreator", fields: [creatorId], references: [id])
+  creator     User    @relation("SurveyCreator", fields: [creatorId], references: [id])
   groupId     String
-  group       Group     @relation(fields: [groupId], references: [id])
+  group       Group   @relation(fields: [groupId], references: [id])
 
   isOpen      Boolean   @default(false)
   isFinalized Boolean   @default(false)
@@ -285,12 +286,12 @@ model SurveyQuestion {
 }
 
 model SurveyChoiceConfig {
-  id            String         @id @default(uuid())
-  questionId    String         @unique
-  question      SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  id         String         @id @default(uuid())
+  questionId String         @unique
+  question   SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
-  allowOther    Boolean        @default(false)
-  allowMultiple Boolean        @default(false)
+  allowOther    Boolean @default(false)
+  allowMultiple Boolean @default(false)
   minChoices    Int?
   maxChoices    Int?
 }
@@ -300,9 +301,9 @@ model SurveyScaleConfig {
   questionId String         @unique
   question   SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
-  scaleMin   Int
-  scaleMax   Int
-  step       Int            @default(1)
+  scaleMin Int
+  scaleMax Int
+  step     Int @default(1)
 }
 
 model SurveyOption {
@@ -389,7 +390,7 @@ model SurveyResult {
   tally          Json
   totalResponses Int
   tallyHash      String
-  sealedAt     DateTime @default(now())
+  sealedAt       DateTime @default(now())
 
   survey Survey @relation(fields: [surveyId], references: [id])
 }

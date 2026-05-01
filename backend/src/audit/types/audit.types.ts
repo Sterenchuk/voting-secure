@@ -58,7 +58,10 @@ export type AuditAction = ChainAction | SecurityAction;
 
 export interface AuditChainDocument {
   _id?: unknown;
-  sequence: number;
+  sequence: number;              // global — never resets
+  groupSequence?: number | null; // per groupId
+  votingSequence?: number | null;// per votingId
+  surveySequence?: number | null;// per surveyId
   action: ChainAction;
   payload: Record<string, unknown>;
   userId?: string | null;
@@ -66,8 +69,11 @@ export interface AuditChainDocument {
   votingId?: string | null;
   surveyId?: string | null;
   createdAt: Date;
-  prevHash: string;
-  hash: string;
+  prevHash: string;              // global chain link
+  groupPrevHash?: string | null; // group chain link
+  votingPrevHash?: string | null;// voting chain link
+  surveyPrevHash?: string | null;// survey chain link
+  hash: string;                  // covers ALL fields above
 }
 
 /**
@@ -105,4 +111,9 @@ export interface VerifyResult {
   totalChecked: number;
   brokenAt: number | null;
   reason: string | null;
+}
+
+export interface ScopedVerifyResult extends VerifyResult {
+  scope: 'global' | 'group' | 'voting' | 'survey';
+  scopeId?: string;
 }

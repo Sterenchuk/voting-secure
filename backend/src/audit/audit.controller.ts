@@ -9,7 +9,7 @@ import {
 
 import { AuditService } from './audit.service';
 import { AuditVerifyGuard } from './audit-verify.guard';
-import { VerifyResult } from './types/audit.types';
+import { VerifyResult, ScopedVerifyResult } from './types/audit.types';
 import { Public } from '../common/decorators/public.decorator';
 
 @Controller('audit')
@@ -22,19 +22,45 @@ export class AuditController {
     return this.auditService.getVotingChain(votingId);
   }
 
+  // ── Global (platform admin only) ──────────────────────────────────────────
+
   @Get('verify')
   @UseGuards(AuditVerifyGuard)
   @HttpCode(HttpStatus.OK)
-  async verifyFullChain(): Promise<VerifyResult> {
+  verifyFullChain(): Promise<VerifyResult> {
     return this.auditService.verifyChain();
   }
 
-  /**
-   * GET /audit/verify/:groupId
-   * Platform ADMIN or group OWNER/ADMIN — walks only entries for that group.
-   *
-   * Note: sequence gaps are NOT checked for group-scoped verification
-   * (gaps are expected because entries from other groups sit between them).
-   * Only per-entry hash integrity is verified.
-   */
+  // ── Group scope ───────────────────────────────────────────────────────────
+
+  @Get('verify/group/:groupId')
+  @UseGuards(AuditVerifyGuard)
+  @HttpCode(HttpStatus.OK)
+  verifyGroupChain(
+    @Param('groupId') groupId: string,
+  ): Promise<ScopedVerifyResult> {
+    return this.auditService.verifyGroupChain(groupId);
+  }
+
+  // ── Voting scope (public — participants can verify their own voting) ───────
+
+  @Get('verify/voting/:votingId')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  verifyVotingChain(
+    @Param('votingId') votingId: string,
+  ): Promise<ScopedVerifyResult> {
+    return this.auditService.verifyVotingChain(votingId);
+  }
+
+  // ── Survey scope (public) ─────────────────────────────────────────────────
+
+  @Get('verify/survey/:surveyId')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  verifySurveyChain(
+    @Param('surveyId') surveyId: string,
+  ): Promise<ScopedVerifyResult> {
+    return this.auditService.verifySurveyChain(surveyId);
+  }
 }

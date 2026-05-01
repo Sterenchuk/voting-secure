@@ -75,6 +75,8 @@ export class AuthService {
         email: user.email,
         name: user.name,
         role: user.role,
+        language: user.language,
+        theme: user.theme,
       };
 
       return {
@@ -102,13 +104,15 @@ export class AuthService {
       },
     });
 
-    await this.mailService.sendVerificationEmail(user.email, token);
+    await this.mailService.sendVerificationEmail(user.email, token, user.language, user.theme);
 
     const payload = {
       sub: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
+      language: user.language,
+      theme: user.theme,
     };
     const accessToken = this.jwtService.sign(payload);
 
@@ -141,6 +145,8 @@ export class AuthService {
       email: user.email,
       name: user.name,
       role: user.role,
+      language: user.language,
+      theme: user.theme,
     };
     const accessToken = this.jwtService.sign(payload);
 
@@ -211,7 +217,7 @@ export class AuthService {
       },
     });
 
-    await this.mailService.sendPasswordResetEmail(user.email, token);
+    await this.mailService.sendPasswordResetEmail(user.email, token, user.language, user.theme);
 
     return {
       message: 'If a user with that email exists, a reset link has been sent',

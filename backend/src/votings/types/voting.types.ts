@@ -117,6 +117,7 @@ export interface IOptionResult {
 export interface IVotingResults {
   options: IOptionResult[];
   totalBallots: number;
+  otherTotal?: number;
   dynamicOptions?: IOptionResult[];
 }
 

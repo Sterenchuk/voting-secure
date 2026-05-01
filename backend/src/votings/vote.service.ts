@@ -42,9 +42,12 @@ export class VoteService {
 
   async requestToken(
     votingId: string,
-    user: { id: string; email: string },
+    user: { id: string; email: string; language: string; theme: string },
     selections: { optionIds: string[]; otherText?: string },
   ) {
+    this.logger.debug(
+      `Requesting voting token for user ${user.id} ${user.language} ${user.theme} on voting ${votingId}`,
+    );
     const voting = await this.repo.findVotingById(votingId);
     if (!voting) throw new NotFoundException('Voting not found');
 
@@ -68,6 +71,8 @@ export class VoteService {
         token,
         voting.title,
         votingId,
+        user.language,
+        user.theme,
       );
     } catch (err) {
       this.logger.error('Failed to send voting token', err);
@@ -94,7 +99,13 @@ export class VoteService {
   async confirmVoteFromEmail(
     votingId: string,
     rawToken: string,
-  ): Promise<{ success: boolean; message?: string; receipts?: string[] }> {
+  ): Promise<{
+    success: boolean;
+    message?: string;
+    receipts?: string[];
+    theme?: string;
+    language?: string;
+  }> {
     let userId!: string;
     try {
       const hash = CryptoUtils.hashToken(rawToken);
@@ -131,24 +142,32 @@ export class VoteService {
       const { optionIds, otherText } = selections;
 
       // get user email for receipt
-      this.logger.debug(
-        `Confirming vote for user ${userId} on voting ${votingId}`,
-      );
-      const user = await this.usersService.findOne(userId);
 
+      const user = await this.usersService.findOne(userId);
+      this.logger.debug(
+        `Confirming vote for user ${userId} ${user.language} ${user.theme} on voting ${votingId}`,
+      );
       await this.redis.deleteSelections(userId, votingId);
 
       const result = await this.vote(
         votingId,
         optionIds.map((id: string) => ({ optionId: id })),
-        { id: userId, email: user.email },
+        {
+          id: userId,
+          email: user.email,
+          language: user.language,
+          theme: user.theme,
+        },
         rawToken,
         otherText,
       );
 
-      return { success: true, receipts: result.receipts };
-
-      return { success: true, receipts: result.receipts };
+      return {
+        success: true,
+        receipts: result.receipts,
+        theme: user.theme,
+        language: user.language,
+      };
     } catch (err: any) {
       this.logger.error(`Confirm vote failed: ${err.message}`, err.stack);
       return {
@@ -163,7 +182,7 @@ export class VoteService {
   async vote(
     votingId: string,
     ballots: IBallotInput[],
-    user: { id: string; email: string },
+    user: { id: string; email: string; language: string; theme: string },
     token: string,
     otherText?: string,
   ) {
@@ -315,11 +334,18 @@ export class VoteService {
       }
 
       try {
+        this.logger.debug(
+          `Sending receipt email to user ${user.language} ${user.theme} for voting ${votingId}`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
         await this.mailService.sendVoteReceipt(
           user.email,
           votingTitle,
           votingId,
           receipts,
+          user.language,
+          user.theme,
         );
       } catch (err) {
         this.logger.error(`Receipt email failed for user ${user.id}: ${err}`);
@@ -334,7 +360,7 @@ export class VoteService {
         receipts,
         proof: {
           verifyUrl: `/votings/${votingId}/verify-receipt`,
-          chainUrl: `/votings/${votingId}/audit-chain`,
+          chainUrl: `/audit/votings/${votingId}/audit-chain`,
         },
       };
     } finally {
@@ -354,18 +380,17 @@ export class VoteService {
       this.repo.findVotingAllowOther(votingId),
     ]);
 
-    let options: IOptionResult[];
+    let allOptions: IOptionResult[];
 
     if (cached && Object.keys(cached).length > 0) {
-      options = rawWithCounts.map((o) => ({
+      allOptions = rawWithCounts.map((o) => ({
         id: o.id,
         text: o.text,
         isDynamic: o.isDynamic,
         voteCount: parseInt(cached[o.id] ?? '0'),
       }));
     } else {
-      // Cache miss — read counts from DB
-      options = rawWithCounts.map((o) => ({
+      allOptions = rawWithCounts.map((o) => ({
         id: o.id,
         text: o.text,
         isDynamic: o.isDynamic,
@@ -373,16 +398,23 @@ export class VoteService {
       }));
     }
 
-    const totalBallots = options.reduce((sum, o) => sum + o.voteCount, 0);
+    const staticOptions = allOptions.filter((o) => !o.isDynamic);
+    const dynamicOptions = allOptions.filter((o) => o.isDynamic);
 
-    // Admin view — separate dynamic options so they're clearly labelled
-    if (voting?.allowOther && includeRawOther) {
-      const staticOptions = options.filter((o) => !o.isDynamic);
-      const dynamicOptions = options.filter((o) => o.isDynamic);
-      return { options: staticOptions, totalBallots, dynamicOptions };
+    const otherTotal = dynamicOptions.reduce((sum, o) => sum + o.voteCount, 0);
+    const staticTotal = staticOptions.reduce((sum, o) => sum + o.voteCount, 0);
+    const totalBallots = staticTotal + otherTotal;
+
+    if (voting?.allowOther) {
+      return {
+        options: staticOptions,
+        totalBallots,
+        otherTotal,
+        dynamicOptions,
+      };
     }
 
-    return { options, totalBallots };
+    return { options: staticOptions, totalBallots };
   }
 
   async getSealedResult(votingId: string) {
@@ -400,6 +432,9 @@ export class VoteService {
     if (voting.isFinalized)
       throw new ConflictException('Voting is already finalized');
 
+    // verify voting chain before sealing
+    const verifyResult = await this.auditService.verifyVotingChain(votingId);
+
     const options = await this.repo.findOptionsWithBallotCounts(votingId);
 
     const tally = {
@@ -409,9 +444,29 @@ export class VoteService {
     const totalBallots = await this.repo.countBallotsByVoting(votingId);
     const tallyHash = CryptoUtils.generateTallyHash(tally, totalBallots);
 
-    return this.repo.$transaction((tx) =>
+    const result = await this.repo.$transaction((tx) =>
       this.repo.finalizeVoting(tx, votingId, tally, totalBallots, tallyHash),
     );
+
+    // seal the audit chain with verification result
+    try {
+      await this.auditService.appendChain({
+        action: ChainAction.VOTING_RESULT_SEALED,
+        payload: {
+          tallyHash,
+          totalBallots,
+          chainVerified: verifyResult.valid,
+          chainBlocksChecked: verifyResult.totalChecked,
+          chainBrokenAt: verifyResult.brokenAt,
+        },
+        votingId,
+        groupId: voting.groupId,
+      });
+    } catch (err) {
+      this.logger.error(`Audit write failed for VOTING_RESULT_SEALED: ${err}`);
+    }
+
+    return { ...result, chainVerified: verifyResult.valid };
   }
 
   // ─── User participation status ────────────────────────────────────────────────

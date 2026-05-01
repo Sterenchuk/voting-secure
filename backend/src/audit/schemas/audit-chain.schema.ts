@@ -13,6 +13,15 @@ export class AuditChain {
   @Prop({ required: true, unique: true, index: true })
   sequence: number;
 
+  @Prop({ type: Number, default: null })
+  groupSequence: number | null;
+
+  @Prop({ type: Number, default: null })
+  votingSequence: number | null;
+
+  @Prop({ type: Number, default: null })
+  surveySequence: number | null;
+
   @Prop({ required: true, type: String, enum: Object.values(ChainAction) })
   action: ChainAction;
 
@@ -36,6 +45,15 @@ export class AuditChain {
 
   @Prop({ required: true })
   prevHash: string;
+
+  @Prop({ type: String, default: null })
+  groupPrevHash: string | null;
+
+  @Prop({ type: String, default: null })
+  votingPrevHash: string | null;
+
+  @Prop({ type: String, default: null })
+  surveyPrevHash: string | null;
 
   @Prop({ required: true, unique: true })
   hash: string;

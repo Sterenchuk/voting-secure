@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer from 'nodemailer';
+import { mailTranslations, MailLanguage } from './mail-translations';
+
 @Injectable()
 export class MailService {
   private transporter: nodemailer.Transporter;
@@ -17,34 +19,100 @@ export class MailService {
     });
   }
 
-  async sendVerificationEmail(email: string, token: string) {
+  private getThemeStyles(theme: string) {
+    const isDark = theme === 'dark';
+    return {
+      container: `
+        font-family: sans-serif;
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+        border: 1px solid ${isDark ? '#333' : '#eee'};
+        border-radius: 10px;
+        background-color: ${isDark ? '#121212' : '#ffffff'};
+        color: ${isDark ? '#e0e0e0' : '#111111'};
+      `,
+      title: `color: ${isDark ? '#ffffff' : '#111'}; font-size: 24px; margin-top: 0;`,
+      text: `color: ${isDark ? '#cccccc' : '#444'}; font-size: 16px; line-height: 1.5;`,
+      muted: `color: ${isDark ? '#888' : '#666'}; font-size: 14px; border-top: 1px solid ${isDark ? '#333' : '#eee'}; padding-top: 20px;`,
+      small: `color: ${isDark ? '#666' : '#999'}; font-size: 12px; margin-top: 10px;`,
+      button: `
+        display: inline-block;
+        padding: 14px 28px;
+        background: #059669;
+        color: #ffffff;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 16px;
+      `,
+      code: `
+        display: block;
+        padding: 10px;
+        background: ${isDark ? '#1e1e1e' : '#f5f5f5'};
+        color: ${isDark ? '#34d399' : '#059669'};
+        border-radius: 4px;
+        word-break: break-all;
+        font-size: 12px;
+        font-family: monospace;
+      `,
+    };
+  }
+
+  private getTranslations(lang: string = 'en') {
+    return mailTranslations[lang as MailLanguage] || mailTranslations.en;
+  }
+
+  async sendVerificationEmail(
+    email: string,
+    token: string,
+    lang: string = 'en',
+    theme: string = 'light',
+  ) {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     const url = `${frontendUrl}/verify-email?token=${token}`;
+    const t = this.getTranslations(lang).verification;
+    const s = this.getThemeStyles(theme);
 
     await this.transporter.sendMail({
       from: this.configService.get<string>('MAIL_FROM'),
       to: email,
-      subject: 'Verify your email',
+      subject: t.subject,
       html: `
-        <h1>Email Verification</h1>
-        <p>Please click the link below to verify your email:</p>
-        <a href="${url}">Verify Email</a>
+        <div style="${s.container}">
+          <h1 style="${s.title}">${t.title}</h1>
+          <p style="${s.text}">${t.text}</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${url}" style="${s.button}">${t.button}</a>
+          </div>
+        </div>
       `,
     });
   }
 
-  async sendPasswordResetEmail(email: string, token: string) {
+  async sendPasswordResetEmail(
+    email: string,
+    token: string,
+    lang: string = 'en',
+    theme: string = 'light',
+  ) {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     const url = `${frontendUrl}/reset-password?token=${token}`;
+    const t = this.getTranslations(lang).passwordReset;
+    const s = this.getThemeStyles(theme);
 
     await this.transporter.sendMail({
       from: this.configService.get<string>('MAIL_FROM'),
       to: email,
-      subject: 'Reset your password',
+      subject: t.subject,
       html: `
-        <h1>Password Reset</h1>
-        <p>Please click the link below to reset your password:</p>
-        <a href="${url}">Reset Password</a>
+        <div style="${s.container}">
+          <h1 style="${s.title}">${t.title}</h1>
+          <p style="${s.text}">${t.text}</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${url}" style="${s.button}">${t.button}</a>
+          </div>
+        </div>
       `,
     });
   }
@@ -54,45 +122,44 @@ export class MailService {
     token: string,
     votingTitle: string,
     votingId: string,
+    lang: string = 'en',
+    theme: string = 'light',
   ) {
-    const backendUrl = this.configService.get<string>('BACKEND_URL') || 'http://localhost:3000';
+    console.log(
+      `Preparing to send voting token email to ${lang} ${theme} for voting ${votingId}`,
+    );
+    const backendUrl =
+      this.configService.get<string>('BACKEND_URL') || 'http://localhost:3001';
     const confirmUrl = `${backendUrl}/votings/${votingId}/confirm-vote?token=${token}`;
+    const t = this.getTranslations(lang).votingToken;
+    const s = this.getThemeStyles(theme);
 
     await this.transporter.sendMail({
       from: this.configService.get<string>('MAIL_FROM'),
       to: email,
-      subject: `Confirm your vote — ${votingTitle}`,
+      subject: t.subject.replace('{title}', votingTitle),
       html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-        <h1 style="color: #111; font-size: 24px;">Confirm Your Vote</h1>
-        <p style="color: #444; font-size: 16px; line-height: 1.5;">
-          You have requested to cast a vote in <strong>${votingTitle}</strong>.
+      <div style="${s.container}">
+        <h1 style="${s.title}">${t.title}</h1>
+        <p style="${s.text}">
+          ${t.text1.replace('{title}', votingTitle)}
         </p>
-        <p style="color: #444; font-size: 16px; line-height: 1.5;">
-          To complete your submission, please click the button below. This will securely record your vote and add it to the public audit chain.
+        <p style="${s.text}">
+          ${t.text2}
         </p>
         
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${confirmUrl}" style="
-            display:inline-block;
-            padding:14px 28px;
-            background:#059669;
-            color:#fff;
-            border-radius:8px;
-            text-decoration:none;
-            font-weight: 600;
-            font-size: 16px;
-          ">
-            Confirm My Vote
+          <a href="${confirmUrl}" style="${s.button}">
+            ${t.button}
           </a>
         </div>
 
-        <p style="color: #666; font-size: 14px; border-top: 1px solid #eee; padding-top: 20px;">
-          <strong>Security Note:</strong> This link expires in 1 hour and can only be used once. If you did not request this, you can safely ignore this email.
+        <p style="${s.muted}">
+          ${t.securityNote}
         </p>
         
-        <p style="color: #999; font-size: 12px; margin-top: 10px;">
-          If the button doesn't work, copy and paste this URL into your browser:<br/>
+        <p style="${s.small}">
+          ${t.trouble}<br/>
           <span style="word-break: break-all; color: #059669;">${confirmUrl}</span>
         </p>
       </div>
@@ -100,19 +167,29 @@ export class MailService {
     });
   }
 
-  async sendSurveyToken(email: string, token: string, surveyTitle: string) {
+  async sendSurveyToken(
+    email: string,
+    token: string,
+    surveyTitle: string,
+    lang: string = 'en',
+    theme: string = 'light',
+  ) {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     const url = `${frontendUrl}/surveys/proof?token=${token}`;
+    const t = this.getTranslations(lang).surveyToken;
+    const s = this.getThemeStyles(theme);
 
     await this.transporter.sendMail({
       from: this.configService.get<string>('MAIL_FROM'),
       to: email,
-      subject: `Your survey token for: ${surveyTitle}`,
+      subject: t.subject.replace('{title}', surveyTitle),
       html: `
-        <h1>Survey Token</h1>
-        <p>You have requested a token to participate in: <strong>${surveyTitle}</strong>.</p>
-        <p>Your token: <code>${token}</code></p>
-        <p>Keep this for your records.</p>
+        <div style="${s.container}">
+          <h1 style="${s.title}">${t.title}</h1>
+          <p style="${s.text}">${t.text.replace('{title}', surveyTitle)}</p>
+          <p style="${s.text}">${t.tokenLabel} <code style="background:${theme === 'dark' ? '#333' : '#eee'}; padding: 2px 5px; border-radius: 3px;">${token}</code></p>
+          <p style="${s.small}">${t.footer}</p>
+        </div>
       `,
     });
   }
@@ -122,68 +199,53 @@ export class MailService {
     votingTitle: string,
     votingId: string,
     receipts: string[],
+    lang: string = 'en',
+    theme: string = 'light',
   ) {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     const verifyUrl = `${frontendUrl}/votings/${votingId}/verify`;
+    const t = this.getTranslations(lang).voteReceipt;
+    const s = this.getThemeStyles(theme);
 
     await this.transporter.sendMail({
       from: this.configService.get<string>('MAIL_FROM'),
       to: email,
-      subject: `Your vote receipt — ${votingTitle}`,
+      subject: t.subject.replace('{title}', votingTitle),
       html: `
-      <h1>Vote Confirmed</h1>
-      <p>You successfully voted in: <strong>${votingTitle}</strong></p>
+      <div style="${s.container}">
+        <h1 style="${s.title}">${t.title}</h1>
+        <p style="${s.text}">${t.text.replace('{title}', votingTitle)}</p>
 
-      <h2>Your Ballot Receipts</h2>
-      <p>
-        These are your cryptographic proofs. Each hash proves
-        a specific ballot was cast and recorded in the public
-        audit chain. Keep this email.
-      </p>
+        <h2 style="${s.title}; font-size: 18px;">${t.subtitle}</h2>
+        <p style="${s.text}; font-size: 14px;">
+          ${t.description}
+        </p>
 
-      ${receipts
-        .map(
-          (r, i) => `
-        <div style="margin:8px 0">
-          <strong>Ballot ${i + 1}:</strong><br/>
-          <code style="
-            display:block;
-            padding:10px;
-            background:#f5f5f5;
-            border-radius:4px;
-            word-break:break-all;
-            font-size:12px;
-          ">${r}</code>
+        ${receipts
+          .map(
+            (r, i) => `
+          <div style="margin:8px 0">
+            <strong style="font-size: 14px;">${t.ballotLabel.replace('{index}', (i + 1).toString())}</strong><br/>
+            <code style="${s.code}">${r}</code>
+          </div>
+        `,
+          )
+          .join('')}
+
+        <h2 style="${s.title}; font-size: 18px; margin-top: 20px;">${t.verifyTitle}</h2>
+        <p style="${s.text}; font-size: 14px;">
+          ${t.verifyText}
+        </p>
+        <div style="text-align: center;">
+          <a href="${verifyUrl}" style="${s.button}; padding: 12px 24px; font-size: 14px;">
+            ${t.verifyButton}
+          </a>
         </div>
-      `,
-        )
-        .join('')}
 
-      <h2>Verify Your Vote</h2>
-      <p>
-        You can verify your vote was counted by checking
-        your receipt against the public audit chain:
-      </p>
-      <a
-        href="${verifyUrl}"
-        style="
-          display:inline-block;
-          padding:12px 24px;
-          background:#1a1a1a;
-          color:#fff;
-          border-radius:6px;
-          text-decoration:none;
-          margin:8px 0;
-        "
-      >
-        Verify My Vote
-      </a>
-
-      <p style="color:#666;font-size:12px;margin-top:24px">
-        This receipt was generated at the moment of voting.
-        The hashes are HMAC-SHA256 signatures tied to your
-        specific ballot and cannot be forged.
-      </p>
+        <p style="${s.small}; margin-top: 24px;">
+          ${t.footer}
+        </p>
+      </div>
     `,
     });
   }

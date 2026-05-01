@@ -111,7 +111,12 @@ export class VotingsController {
   ) {
     return this.voteService.requestToken(
       votingId,
-      { id: user.sub, email: user.email },
+      {
+        id: user.sub,
+        email: user.email,
+        language: user.language,
+        theme: user.theme,
+      },
       {
         optionIds: dto.optionIds,
         otherText: dto.otherText,
@@ -134,12 +139,30 @@ export class VotingsController {
   ) {
     const result = await this.voteService.confirmVoteFromEmail(votingId, token);
 
-    res.setHeader('Content-Type', 'text/html');
-    if (result.success) {
-      res.send(this.successHtml(result.receipts || []));
-    } else {
-      res.send(this.errorHtml(result.message || 'Verification failed'));
-    }
+    const theme = result?.theme ?? 'light';
+    const language = result?.language ?? 'en';
+
+    console.log(
+      `Vote confirmation result for voting ${votingId}:`,
+      result.language,
+      result.theme,
+      result.success,
+      result.message,
+      result.receipts,
+    );
+    const html = result.success
+      ? this.successHtml(
+          result.receipts ?? [],
+          theme as 'light' | 'dark',
+          language,
+        )
+      : this.errorHtml(
+          result.message ?? 'Verification failed.',
+          theme as 'light' | 'dark',
+          language,
+        );
+
+    res.status(HttpStatus.OK).type('text/html').send(html);
   }
 
   /**
@@ -158,7 +181,12 @@ export class VotingsController {
     return this.voteService.vote(
       votingId,
       dto.ballots,
-      { id: user.sub, email: user.email },
+      {
+        id: user.sub,
+        email: user.email,
+        language: user.language,
+        theme: user.theme,
+      },
       dto.token,
       dto.otherText,
     );
@@ -206,12 +234,6 @@ export class VotingsController {
   @Post(':id/finalize')
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)
-  @Audit({
-    action: ChainAction.VOTING_FINALIZED,
-    extractPayload: (_res: any, req: any) => ({
-      votingId: req.params.id,
-    }),
-  })
   finalize(@Param('id') votingId: string, @CurrentUser() user: UserPayloadDto) {
     return this.voteService.finalizeVoting(votingId, user.sub);
   }
@@ -235,27 +257,29 @@ export class VotingsController {
 
   @Get(':id/verify-receipt')
   @Public()
-  verifyReceipt(@Param('id') votingId: string, @Query('hash') hash: string) {
+  verifyReceipt(
+    @Param('id') votingId: string,
+    @Query('hash') hash: string,
+    @CurrentUser() user: UserPayloadDto,
+  ) {
     return this.voteService.verifyReceipt(votingId, hash);
   }
 
-  @Get('verify/:groupId')
-  @UseGuards(AuditVerifyGuard)
-  @HttpCode(HttpStatus.OK)
-  async verifyGroupChain(
-    @Param('groupId') groupId: string,
-  ): Promise<VerifyResult> {
-    return this.auditService.verifyChain(groupId);
-  }
+  private successHtml(
+    receipts: string[],
+    theme: 'light' | 'dark' = 'light',
+    language: string = 'en',
+  ): string {
+    const isDark = theme === 'dark';
+    const labels = this.getLabels(language);
 
-  private successHtml(receipts: string[]) {
     return `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="${language}">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Vote Confirmed</title>
+  <title>${labels.successTitle}</title>
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -264,24 +288,24 @@ export class VotingsController {
       justify-content: center;
       min-height: 100vh;
       margin: 0;
-      background: #f9fafb;
+      background: ${isDark ? '#111827' : '#f9fafb'};
     }
     .card {
-      background: white;
+      background: ${isDark ? '#1f2937' : 'white'};
       border-radius: 12px;
       padding: 2.5rem;
       max-width: 520px;
       width: 90%;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,${isDark ? '0.4' : '0.1'}), 0 2px 4px -1px rgba(0,0,0,0.06);
       text-align: center;
     }
     .icon { font-size: 3.5rem; margin-bottom: 1.5rem; }
-    h1 { color: #059669; margin: 0 0 0.75rem; font-size: 1.75rem; }
-    p { color: #4b5563; margin: 0 0 2rem; line-height: 1.5; }
+    h1 { color: ${isDark ? '#34d399' : '#059669'}; margin: 0 0 0.75rem; font-size: 1.75rem; }
+    p { color: ${isDark ? '#9ca3af' : '#4b5563'}; margin: 0 0 2rem; line-height: 1.5; }
     .receipt-container { margin-top: 1.5rem; }
     .receipt {
-      background: #f3f4f6;
-      border: 1px solid #e5e7eb;
+      background: ${isDark ? '#111827' : '#f3f4f6'};
+      border: 1px solid ${isDark ? '#374151' : '#e5e7eb'};
       border-radius: 8px;
       padding: 1rem;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -289,12 +313,12 @@ export class VotingsController {
       word-break: break-all;
       text-align: left;
       margin-bottom: 0.5rem;
-      color: #111827;
+      color: ${isDark ? '#e5e7eb' : '#111827'};
     }
     .label {
       font-size: 11px;
       font-weight: 700;
-      color: #6b7280;
+      color: ${isDark ? '#6b7280' : '#6b7280'};
       text-transform: uppercase;
       letter-spacing: 0.05em;
       margin-bottom: 0.75rem;
@@ -305,24 +329,21 @@ export class VotingsController {
       color: #9ca3af;
       margin-top: 2rem;
       padding-top: 1.5rem;
-      border-top: 1px solid #f3f4f6;
+      border-top: 1px solid ${isDark ? '#374151' : '#f3f4f6'};
     }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="icon">✅</div>
-    <h1>Vote Confirmed</h1>
-    <p>Your choices have been securely recorded and added to the public audit chain.</p>
-    
+    <h1>${labels.successHeading}</h1>
+    <p>${labels.successBody}</p>
     <div class="receipt-container">
-      <div class="label">Digital Ballot Receipts</div>
+      <div class="label">${labels.receiptsLabel}</div>
       ${receipts.map((r) => `<div class="receipt">${r}</div>`).join('')}
     </div>
-
     <div class="footer">
-      A copy has been sent to your email.<br/>
-      You can safely close this window now.
+      ${labels.successFooter}
     </div>
   </div>
 </body>
@@ -330,14 +351,21 @@ export class VotingsController {
 `;
   }
 
-  private errorHtml(message: string) {
+  private errorHtml(
+    message: string,
+    theme: 'light' | 'dark' = 'light',
+    language: string = 'en',
+  ): string {
+    const isDark = theme === 'dark';
+    const labels = this.getLabels(language);
+
     return `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="${language}">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Vote Failed</title>
+  <title>${labels.errorTitle}</title>
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -346,26 +374,25 @@ export class VotingsController {
       justify-content: center;
       min-height: 100vh;
       margin: 0;
-      background: #fef2f2;
+      background: ${isDark ? '#1f0a0a' : '#fef2f2'};
     }
     .card {
-      background: white;
+      background: ${isDark ? '#1f2937' : 'white'};
       border-radius: 12px;
       padding: 2.5rem;
       max-width: 480px;
       width: 90%;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,${isDark ? '0.4' : '0.1'});
       text-align: center;
-      border: 1px solid #fee2e2;
+      border: 1px solid ${isDark ? '#7f1d1d' : '#fee2e2'};
     }
     .icon { font-size: 3.5rem; margin-bottom: 1.5rem; }
-    h1 { color: #dc2626; margin: 0 0 1rem; font-size: 1.75rem; }
-    p { color: #4b5563; line-height: 1.6; margin: 0; }
-    .action { margin-top: 2rem; }
+    h1 { color: ${isDark ? '#f87171' : '#dc2626'}; margin: 0 0 1rem; font-size: 1.75rem; }
+    p { color: ${isDark ? '#9ca3af' : '#4b5563'}; line-height: 1.6; margin: 0; }
     .btn {
       display: inline-block;
-      background: #111827;
-      color: white;
+      background: ${isDark ? '#e5e7eb' : '#111827'};
+      color: ${isDark ? '#111827' : 'white'};
       padding: 0.75rem 1.5rem;
       border-radius: 6px;
       text-decoration: none;
@@ -377,16 +404,50 @@ export class VotingsController {
 <body>
   <div class="card">
     <div class="icon">❌</div>
-    <h1>Verification Failed</h1>
+    <h1>${labels.errorHeading}</h1>
     <p>${message}</p>
-    <div class="action">
-      <p style="font-size: 14px; color: #6b7280; margin-bottom: 1rem;">
-        Please return to the voting page and try requesting a new token.
+    <div style="margin-top: 2rem;">
+      <p style="font-size: 14px; color: ${isDark ? '#6b7280' : '#6b7280'}; margin-bottom: 1rem;">
+        ${labels.errorHint}
       </p>
     </div>
   </div>
 </body>
 </html>
 `;
+  }
+
+  private getLabels(language: string): Record<string, string> {
+    const translations: Record<string, Record<string, string>> = {
+      en: {
+        successTitle: 'Vote Confirmed',
+        successHeading: 'Vote Confirmed',
+        successBody:
+          'Your choices have been securely recorded and added to the public audit chain.',
+        receiptsLabel: 'Digital Ballot Receipts',
+        successFooter:
+          'A copy has been sent to your email.<br/>You can safely close this window now.',
+        errorTitle: 'Vote Failed',
+        errorHeading: 'Verification Failed',
+        errorHint:
+          'Please return to the voting page and try requesting a new token.',
+      },
+      uk: {
+        successTitle: 'Голос підтверджено',
+        successHeading: 'Голос підтверджено',
+        successBody:
+          'Ваші вибори надійно зафіксовано та додано до публічного ланцюжка аудиту.',
+        receiptsLabel: 'Цифрові квитанції бюлетеня',
+        successFooter:
+          'Копію надіслано на вашу електронну пошту.<br/>Це вікно можна закрити.',
+        errorTitle: 'Помилка голосування',
+        errorHeading: 'Перевірка не пройдена',
+        errorHint:
+          'Поверніться на сторінку голосування та запросіть новий токен.',
+      },
+      // add more locales as needed
+    };
+
+    return translations[language] ?? translations['en'];
   }
 }

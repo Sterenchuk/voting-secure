@@ -9,6 +9,7 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  Res,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -26,6 +27,8 @@ import { UserPayloadDto } from '../auth/dto/payload.dto';
 
 import { JwtService } from '@nestjs/jwt';
 import { Audit, ChainAction, SecurityAction } from '../audit/audit.decorator';
+import { ConfigService } from '@nestjs/config';
+import type { Response } from 'express';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -33,6 +36,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -52,6 +56,7 @@ export class UsersController {
   async update(
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
     @Body() userUpdateDto: UserUpdateDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<{ user: UserResponseDto; access_token: string }> {
     const updatedUser = await this.usersService.update(userId, userUpdateDto);
 
@@ -60,9 +65,21 @@ export class UsersController {
       email: updatedUser.email,
       name: updatedUser.name,
       role: updatedUser.role,
+      language: updatedUser.language,
+      theme: updatedUser.theme,
     };
 
     const access_token = this.jwtService.sign(payload);
+
+    res.cookie('access_token', access_token, {
+      httpOnly: true,
+      secure: this.configService.get<string>('NODE_ENV') === 'production',
+      sameSite: 'strict',
+      maxAge: 15 * 60 * 1000,
+      path: '/',
+      signed: true,
+    });
+
     return { user: updatedUser, access_token };
   }
 
