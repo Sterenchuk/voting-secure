@@ -12,7 +12,6 @@ export interface VoteUpdate {
       voteCount: number;
     }>;
     totalBallots: number;
-    otherCount?: number;
   };
 }
 
@@ -184,9 +183,9 @@ class SocketService {
   // Cast a vote via socket
   async castVote(payload: {
     votingId: string;
-    ballots: Array<{ optionId: string; ballotHash: string }>;
+    token: string;
+    optionIds: string[];
     otherText?: string;
-    freeformBallotHash?: string;
   }): Promise<any> {
     const namespace = "/votings";
     let socket = this.getSocket(namespace);
@@ -237,7 +236,14 @@ class SocketService {
       socket.on("voting:vote_success", onSuccess);
       socket.on("voting:error", onError);
 
-      socket.emit("voting:cast", payload, (response: any) => {
+      // Backend expects token: string (raw secret) 
+      // and ballots: { optionId: string }[]
+      socket.emit("voting:cast", {
+        votingId: payload.votingId,
+        token: payload.token,
+        ballots: payload.optionIds.map(id => ({ optionId: id })),
+        otherText: payload.otherText
+      }, (response: any) => {
         if (response?.error) {
           cleanup();
           reject(new Error(response.message || "Failed to cast vote"));

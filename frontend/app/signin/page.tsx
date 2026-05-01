@@ -13,11 +13,22 @@ import styles from "./page.module.css";
 export default function SignInPage() {
   const { t, language, setLanguage } = useI18n();
   const { theme, setTheme } = useTheme();
-  const { signIn, loading, error } = useAuth();
+  const { signIn, loading, error, isAuthenticated, updateProfile } = useAuth();
   const router = useRouter();
 
   const toggleTheme = () => {
-    setTheme(theme === "dark" ? "light" : "dark");
+    const newTheme = theme === "dark" ? "light" : "dark";
+    setTheme(newTheme);
+    if (isAuthenticated) {
+      updateProfile({ theme: newTheme });
+    }
+  };
+
+  const handleLanguageChange = (lang: "en" | "uk") => {
+    setLanguage(lang);
+    if (isAuthenticated) {
+      updateProfile({ language: lang });
+    }
   };
 
   const [formData, setFormData] = useState({
@@ -109,7 +120,7 @@ export default function SignInPage() {
           <div className={styles.headerActions}>
             <button
               className={styles.iconButton}
-              onClick={() => setLanguage(language === "en" ? "uk" : "en")}
+              onClick={() => handleLanguageChange(language === "en" ? "uk" : "en")}
               aria-label="Change language"
             >
               {language.toUpperCase()}
@@ -152,7 +163,7 @@ export default function SignInPage() {
           <form onSubmit={handleSubmit} className={styles.form}>
             {error && (
               <div className={styles.errorAlert} role="alert">
-                {error.message}
+                {error.message === "Unauthorized" ? <></> : error.message}
               </div>
             )}
 

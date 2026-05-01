@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from "react";
 import { api, ApiError } from "./useApi";
-import { generateBallotHash } from "@/lib/security/crypto";
 import { VotingType } from "@/types/voting";
 import { socketService } from "@/lib/socket/socketService";
 
@@ -11,6 +10,13 @@ export interface VotingOption {
   text: string;
   voteCount: number;
   percentage: number;
+}
+
+export interface AuditProof {
+  chainSequence: number;
+  chainHash: string;
+  verifyUrl: string;
+  chainUrl: string;
 }
 
 export interface Voting {
@@ -34,6 +40,8 @@ export interface Voting {
   totalVotes: number;
   participantsCount: number;
   hasVoted?: boolean;
+  otherTotal?: number;
+  dynamicOptions?: VotingOption[];
   // derived status for UI
   status: "draft" | "active" | "upcoming" | "completed";
 }
@@ -52,17 +60,27 @@ export interface CreateVotingData {
   endAt?: string;
 }
 
-// ── Mirrors CastVoteDto ───────────────────────────────────────────────────────
 export interface CastVoteData {
   votingId: string;
-  optionIds: string[]; // supports both single and multiple choice
-  otherText?: string; // maps to CastVoteDto.otherText
-  freeformBallotHash?: string;
+  token: string; // The raw secret token
+  optionIds: string[];
+  otherText?: string;
+  isAbstention?: boolean;
+}
+
+export interface CastVoteResponse {
+  participated: true;
+  receipts: string[];
+  proof: {
+    verifyUrl: string;
+    chainUrl: string;
+  };
 }
 
 interface VotingsState {
   votings: Voting[];
   currentVoting: Voting | null;
+  results: any | null;
   loading: boolean;
   error: ApiError | null;
 }
@@ -73,10 +91,25 @@ const mapVoting = (v: any): Voting => {
     id: opt.id,
     text: opt.text,
     voteCount: opt.voteCount ?? 0,
-    percentage: 0, // filled below after totalVotes is known
+    percentage: 0,
   }));
 
-  const totalVotes = options.reduce((sum, o) => sum + o.voteCount, 0);
+  const dynamicOptions: VotingOption[] = (v.dynamicOptions ?? []).map((opt: any) => ({
+    id: opt.id,
+    text: opt.text,
+    voteCount: opt.voteCount ?? 0,
+    percentage: 0,
+  }));
+
+  const otherTotal = v.otherTotal ?? 0;
+
+  // totalVotes calculated from options + other
+  const totalVotes = options.reduce((sum, o) => sum + o.voteCount, 0) + otherTotal;
+
+  // participantsCount from backend _count or provided field
+  const participantsCount =
+    v.participantsCount ?? v._count?.participations ?? totalVotes;
+
   options.forEach((o) => {
     o.percentage = totalVotes > 0 ? (o.voteCount / totalVotes) * 100 : 0;
   });
@@ -107,8 +140,10 @@ const mapVoting = (v: any): Voting => {
     createdAt: v.createdAt,
     options,
     totalVotes,
-    participantsCount: v.participantsCount ?? totalVotes,
+    participantsCount,
     hasVoted: v.hasVoted,
+    otherTotal,
+    dynamicOptions,
     status,
   };
 };
@@ -117,6 +152,7 @@ export function useVotings() {
   const [state, setState] = useState<VotingsState>({
     votings: [],
     currentVoting: null,
+    results: null,
     loading: false,
     error: null,
   });
@@ -175,6 +211,22 @@ export function useVotings() {
     return response;
   }, []);
 
+  const fetchResults = useCallback(async (id: string) => {
+    const response = await api.get<any>(`/votings/${id}/results`);
+    if (response.data) {
+      setState((prev) => ({ ...prev, results: response.data }));
+    }
+    return response;
+  }, []);
+
+  const fetchSealedResults = useCallback(async (id: string) => {
+    const response = await api.get<any>(`/votings/${id}/results/sealed`);
+    if (response.data) {
+      setState((prev) => ({ ...prev, results: response.data }));
+    }
+    return response;
+  }, []);
+
   const createVoting = useCallback(async (data: CreateVotingData) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
@@ -194,50 +246,40 @@ export function useVotings() {
     return response;
   }, []);
 
-  const castVote = useCallback(async (data: CastVoteData) => {
-    setState((prev) => ({ ...prev, loading: true, error: null }));
+  const requestToken = useCallback(
+    async (votingId: string, optionIds: string[], otherText?: string) => {
+      setState((prev) => ({ ...prev, loading: true, error: null }));
+      const response = await api.post<{
+        status: string;
+        message: string;
+      }>(`/votings/${votingId}/token`, { optionIds, otherText });
+      setState((prev) => ({ ...prev, loading: false, error: response.error }));
+      return response;
+    },
+    [],
+  );
 
+  const castVote = useCallback(async (data: CastVoteData) => {
     try {
-      const ballots = await Promise.all(
-        data.optionIds.map(async (optionId) => ({
-          optionId,
-          ballotHash: await generateBallotHash(data.votingId, optionId),
-        })),
+      const response = await api.post<CastVoteResponse>(
+        `/votings/${data.votingId}/vote`,
+        {
+          token: data.token,
+          ballots: data.optionIds.map((id) => ({ optionId: id })),
+          otherText: data.otherText,
+        },
       );
 
-      const response = await socketService.castVote({
-        votingId: data.votingId,
-        ballots,
-        ...(data.otherText && { otherText: data.otherText }),
-        ...(data.freeformBallotHash && {
-          freeformBallotHash: data.freeformBallotHash,
-        }),
-      });
-
-      if (response) {
-        const refreshed = await api.get<any>(`/votings/${data.votingId}`);
-        if (refreshed.data) {
-          const mapped = mapVoting(refreshed.data);
-          setState((prev) => ({
-            ...prev,
-            currentVoting: mapped,
-            votings: prev.votings.map((v) =>
-              v.id === data.votingId ? mapped : v,
-            ),
-            loading: false,
-          }));
-        } else {
-          setState((prev) => ({ ...prev, loading: false }));
-        }
-        return { data: response, error: null, status: 200 };
+      if (response.data) {
+        return { data: response.data, error: null, status: 200 };
+      } else {
+        throw new Error(response.error?.message || "Failed to cast vote");
       }
     } catch (err: any) {
       const error: ApiError = { message: err.message || "Failed to cast vote" };
-      setState((prev) => ({ ...prev, loading: false, error }));
+      setState((prev) => ({ ...prev, error }));
       return { data: null, error, status: 500 };
     }
-
-    return { data: null, error: { message: "Unknown error" }, status: 500 };
   }, []);
 
   const deleteVoting = useCallback(async (id: string) => {
@@ -269,14 +311,89 @@ export function useVotings() {
     }));
   }, []);
 
+  const syncResults = useCallback(
+    (data: { votingId: string; results: any }) => {
+      setState((prev) => {
+        if (!prev.currentVoting || prev.currentVoting.id !== data.votingId)
+          return prev;
+
+        const results = data.results;
+        const updatedOptions = prev.currentVoting.options.map((opt) => {
+          const match = results.options?.find((r: any) => r.id === opt.id);
+          return match ? { ...opt, voteCount: match.voteCount } : opt;
+        });
+
+        const updatedDynamicOptions: VotingOption[] = (
+          results.dynamicOptions ?? []
+        ).map((opt: any) => ({
+          id: opt.id,
+          text: opt.text,
+          voteCount: opt.voteCount ?? 0,
+          percentage: 0,
+        }));
+
+        const otherTotal = results.otherTotal ?? 0;
+
+        const totalVotes =
+          updatedOptions.reduce((sum, o) => sum + o.voteCount, 0) + otherTotal;
+
+        updatedOptions.forEach((o) => {
+          o.percentage = totalVotes > 0 ? (o.voteCount / totalVotes) * 100 : 0;
+        });
+
+        const updated = {
+          ...prev.currentVoting,
+          options: updatedOptions,
+          totalVotes,
+          otherTotal,
+          dynamicOptions: updatedDynamicOptions,
+        };
+
+        return {
+          ...prev,
+          currentVoting: updated,
+          votings: prev.votings.map((v) => (v.id === updated.id ? updated : v)),
+        };
+      });
+    },
+    [],
+  );
+
+  const updateVotingState = useCallback((partial: Partial<Voting>) => {
+    setState((prev) => {
+      if (!prev.currentVoting) return prev;
+      const updated = { ...prev.currentVoting, ...partial };
+      return {
+        ...prev,
+        currentVoting: updated,
+        votings: prev.votings.map((v) => (v.id === updated.id ? updated : v)),
+      };
+    });
+  }, []);
+
+  const verifyReceipt = useCallback(async (votingId: string, hash: string) => {
+    return api.get<{
+      found: boolean;
+      sequence?: number;
+      blockHash?: string;
+      prevHash?: string;
+    }>(`/votings/${votingId}/verify-receipt?hash=${encodeURIComponent(hash)}`);
+  }, []);
+
   return {
     ...state,
     fetchVotings,
     fetchVoting,
+    fetchResults,
+    fetchSealedResults,
     createVoting,
+    requestToken,
     castVote,
     deleteVoting,
     updateVotingResults,
+    syncResults,
+    updateVotingState,
+    verifyReceipt,
   };
 }
 

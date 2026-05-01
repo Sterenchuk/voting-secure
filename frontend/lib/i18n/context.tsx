@@ -23,6 +23,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>("en");
   const [mounted, setMounted] = useState(false);
 
+  // Initial load from localStorage or browser
   useEffect(() => {
     setMounted(true);
     const stored = localStorage.getItem(STORAGE_KEY) as Language | null;
@@ -36,6 +37,13 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
       }
     }
   }, []);
+
+  // Update HTML lang attribute
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.lang = language;
+    }
+  }, [language]);
 
   const setLanguage = useCallback((lang: Language) => {
     setLanguageState(lang);

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useI18n } from "@/lib/i18n/context";
 import { useTheme } from "next-themes";
+import { useAuth } from "@/lib/auth/context";
 import styles from "./Header.module.css";
 
 interface HeaderProps {
@@ -15,12 +16,24 @@ interface HeaderProps {
 export function Header({ isAuthenticated = false, userName }: HeaderProps) {
   const { t, language, setLanguage } = useI18n();
   const { theme, setTheme } = useTheme();
+  const { updateProfile } = useAuth();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const toggleTheme = () => {
-    setTheme(theme === "dark" ? "light" : "dark");
+    const newTheme = theme === "dark" ? "light" : "dark";
+    setTheme(newTheme);
+    if (isAuthenticated) {
+      updateProfile({ theme: newTheme });
+    }
+  };
+
+  const handleLanguageChange = (lang: "en" | "uk") => {
+    setLanguage(lang);
+    if (isAuthenticated) {
+      updateProfile({ language: lang });
+    }
   };
 
   const isActive = (path: string) => pathname === path;
@@ -90,7 +103,7 @@ export function Header({ isAuthenticated = false, userName }: HeaderProps) {
           {/* Language Switcher */}
           <button
             className={styles.iconButton}
-            onClick={() => setLanguage(language === "en" ? "uk" : "en")}
+            onClick={() => handleLanguageChange(language === "en" ? "uk" : "en")}
             aria-label="Change language"
           >
             <span className={styles.langText}>{language.toUpperCase()}</span>

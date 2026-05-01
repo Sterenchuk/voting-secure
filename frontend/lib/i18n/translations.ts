@@ -36,6 +36,7 @@ export const translations = {
       settings: "Settings",
       voting: "Voting",
       survey: "Survey",
+      other: "Other",
     },
 
     // Navigation
@@ -417,6 +418,7 @@ export const translations = {
       settings: "Налаштування",
       voting: "Голосування",
       survey: "Опитування",
+      other: "Інше",
     },
 
     // Navigation

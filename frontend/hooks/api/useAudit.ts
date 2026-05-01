@@ -3,183 +3,122 @@
 import { useState, useCallback } from "react";
 import { api, ApiError } from "./useApi";
 
-export interface AuditRecord {
-  _id?: string;
+export interface AuditLogEntry {
   sequence: number;
+  groupSequence?: number | null;
+  votingSequence?: number | null;
+  surveySequence?: number | null;
   action: string;
   payload: Record<string, any>;
-  userId: string | null;
-  groupId: string | null;
-  votingId: string | null;
-  surveyId: string | null;
+  userId?: string | null;
+  groupId?: string | null;
+  votingId?: string | null;
+  surveyId?: string | null;
   createdAt: string;
   prevHash: string;
+  groupPrevHash?: string | null;
+  votingPrevHash?: string | null;
+  surveyPrevHash?: string | null;
   hash: string;
 }
 
-export interface AuditVerification {
+export interface VerifyReceiptResult {
+  found: boolean;
+  chainSequence: number;
+  blockHash: string;
+  prevHash: string;
+  timestamp: string;
+}
+
+export interface ChainIntegrityResult {
   valid: boolean;
   totalChecked: number;
   brokenAt: number | null;
   reason: string | null;
+  scope?: "global" | "group" | "voting" | "survey";
+  scopeId?: string;
 }
 
 interface AuditState {
-  records: AuditRecord[];
-  currentRecord: AuditRecord | null;
-  verification: AuditVerification | null;
+  blocks: AuditLogEntry[];
+  totalCount: number;
   loading: boolean;
   error: ApiError | null;
-  totalCount: number;
-  page: number;
-  pageSize: number;
+  integrity: ChainIntegrityResult | null;
 }
 
 export function useAudit() {
   const [state, setState] = useState<AuditState>({
-    records: [],
-    currentRecord: null,
-    verification: null,
+    blocks: [],
+    totalCount: 0,
     loading: false,
     error: null,
-    totalCount: 0,
-    page: 1,
-    pageSize: 20,
+    integrity: null,
   });
 
-  const fetchAuditRecords = useCallback(
-    async (filters?: {
-      entityType?: string;
-      entityId?: string;
-      page?: number;
-      pageSize?: number;
-    }) => {
-      setState((prev) => ({ ...prev, loading: true, error: null }));
-
-      const queryParams = new URLSearchParams();
-      if (filters?.entityType)
-        queryParams.append("entityType", filters.entityType);
-      if (filters?.entityId) queryParams.append("entityId", filters.entityId);
-      if (filters?.page) queryParams.append("page", filters.page.toString());
-      if (filters?.pageSize)
-        queryParams.append("pageSize", filters.pageSize.toString());
-
-      const url = `/audit${queryParams.toString() ? `?${queryParams}` : ""}`;
-      const response = await api.get<{
-        records: AuditRecord[];
-        totalCount: number;
-        page: number;
-        pageSize: number;
-      }>(url);
-
-      if (response.data) {
-        setState((prev) => ({
-          ...prev,
-          records: response.data!.records,
-          totalCount: response.data!.totalCount,
-          page: response.data!.page,
-          pageSize: response.data!.pageSize,
-          loading: false,
-        }));
-      } else {
-        setState((prev) => ({
-          ...prev,
-          loading: false,
-          error: response.error,
-        }));
-      }
-
-      return response;
-    },
-    [],
-  );
-
-  const fetchAuditRecord = useCallback(async (id: string) => {
+  const fetchGlobalChain = useCallback(async (page = 1, pageSize = 20) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
-
-    const response = await api.get<{ record: AuditRecord }>(`/audit/${id}`);
-
-    if (response.data) {
-      setState((prev) => ({
-        ...prev,
-        currentRecord: response.data!.record,
-        loading: false,
-      }));
-    } else {
-      setState((prev) => ({
-        ...prev,
-        loading: false,
-        error: response.error,
-      }));
-    }
-
-    return response;
-  }, []);
-
-  const verifyChain = useCallback(async (groupId?: string) => {
-    setState((prev) => ({
-      ...prev,
-      loading: true,
-      error: null,
-      verification: null,
-    }));
-
-    const url = groupId ? `/audit/verify/${groupId}` : "/audit/verify";
-    const response = await api.get<AuditVerification>(url);
-
-    if (response.data) {
-      setState((prev) => ({
-        ...prev,
-        verification: response.data,
-        loading: false,
-      }));
-    } else {
-      setState((prev) => ({
-        ...prev,
-        loading: false,
-        error: response.error,
-      }));
-    }
-
-    return response;
-  }, []);
-
-  const searchAuditByHash = useCallback(async (hash: string) => {
-    setState((prev) => ({ ...prev, loading: true, error: null }));
-
-    const response = await api.get<{ record: AuditRecord }>(
-      `/audit/hash/${hash}`,
+    const response = await api.get<{ records: AuditLogEntry[]; totalCount: number }>(
+      `/audit?page=${page}&pageSize=${pageSize}`
     );
 
     if (response.data) {
       setState((prev) => ({
         ...prev,
-        currentRecord: response.data!.record,
+        blocks: response.data!.records,
+        totalCount: response.data!.totalCount,
         loading: false,
       }));
     } else {
-      setState((prev) => ({
-        ...prev,
-        loading: false,
-        error: response.error,
-      }));
+      setState((prev) => ({ ...prev, loading: false, error: response.error }));
     }
-
     return response;
   }, []);
 
-  const clearVerification = useCallback(() => {
-    setState((prev) => ({ ...prev, verification: null }));
+  const fetchVotingChain = useCallback(async (votingId: string) => {
+    setState((prev) => ({ ...prev, loading: true, error: null }));
+    const response = await api.get<AuditLogEntry[]>(`/audit/votings/${votingId}/audit-chain`);
+
+    if (response.data) {
+      setState((prev) => ({
+        ...prev,
+        blocks: response.data!,
+        totalCount: response.data!.length,
+        loading: false,
+      }));
+    } else {
+      setState((prev) => ({ ...prev, loading: false, error: response.error }));
+    }
+    return response;
   }, []);
+
+  const verifyReceipt = useCallback(async (votingId: string, hash: string) => {
+    return api.get<VerifyReceiptResult>(
+      `/votings/${votingId}/verify-receipt?hash=${hash}`
+    );
+  }, []);
+
+  const verifyScopedIntegrity = useCallback(
+    async (scope: "global" | "group" | "voting" | "survey" = "global", scopeId?: string) => {
+      let url = "/audit/verify";
+      if (scope !== "global" && scopeId) {
+        url = `/audit/verify/${scope}/${scopeId}`;
+      }
+
+      const response = await api.get<ChainIntegrityResult>(url);
+      if (response.data) {
+        setState((prev) => ({ ...prev, integrity: response.data! }));
+      }
+      return response;
+    },
+    []
+  );
 
   return {
     ...state,
-    fetchAuditRecords,
-    fetchAuditRecord,
-    verifyChain,
-    searchAuditByHash,
-    clearVerification,
+    fetchGlobalChain,
+    fetchVotingChain,
+    verifyReceipt,
+    verifyScopedIntegrity,
   };
 }
-
-export default useAudit;

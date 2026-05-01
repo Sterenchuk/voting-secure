@@ -3,15 +3,20 @@
 import React, { useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { useTheme } from "next-themes";
+import { useAuth } from "@/lib/auth/context";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { Button } from "@/components/common/Button";
 import { Input } from "@/components/common/Input";
 import { Card } from "@/components/common/Card";
 import styles from "./page.module.css";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SettingsPage() {
   const { t, language, setLanguage } = useI18n();
   const { theme, setTheme } = useTheme();
+  const { updateProfile } = useAuth();
+  const { toast } = useToast();
+
   const [notifications, setNotifications] = useState({
     emailVoting: true,
     emailSurvey: true,
@@ -28,6 +33,38 @@ export default function SettingsPage() {
 
   const handleNotificationChange = (key: keyof typeof notifications) => {
     setNotifications((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleLanguageChange = async (lang: "en" | "uk") => {
+    setLanguage(lang);
+    try {
+      const res = await updateProfile({ language: lang });
+      if (!res.success) {
+        toast({
+          title: t.common.error,
+          description: res.error?.message || "Failed to update language",
+          variant: "destructive",
+        });
+      }
+    } catch (err) {
+      console.error("Failed to sync language:", err);
+    }
+  };
+
+  const handleThemeChange = async (newTheme: string) => {
+    setTheme(newTheme);
+    try {
+      const res = await updateProfile({ theme: newTheme });
+      if (!res.success) {
+        toast({
+          title: t.common.error,
+          description: res.error?.message || "Failed to update theme",
+          variant: "destructive",
+        });
+      }
+    } catch (err) {
+      console.error("Failed to sync theme:", err);
+    }
   };
 
   return (
@@ -52,7 +89,7 @@ export default function SettingsPage() {
             <div className={styles.themeToggle}>
               <button
                 className={`${styles.themeBtn} ${theme === "light" ? styles.themeBtnActive : ""}`}
-                onClick={() => setTheme("light")}
+                onClick={() => handleThemeChange("light")}
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -69,7 +106,7 @@ export default function SettingsPage() {
               </button>
               <button
                 className={`${styles.themeBtn} ${theme === "dark" ? styles.themeBtnActive : ""}`}
-                onClick={() => setTheme("dark")}
+                onClick={() => handleThemeChange("dark")}
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -85,7 +122,7 @@ export default function SettingsPage() {
               </button>
               <button
                 className={`${styles.themeBtn} ${theme === "system" ? styles.themeBtnActive : ""}`}
-                onClick={() => setTheme("system")}
+                onClick={() => handleThemeChange("system")}
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -119,19 +156,20 @@ export default function SettingsPage() {
             <div className={styles.languageToggle}>
               <button
                 className={`${styles.langBtn} ${language === "en" ? styles.langBtnActive : ""}`}
-                onClick={() => setLanguage("en")}
+                onClick={() => handleLanguageChange("en")}
               >
                 EN
               </button>
               <button
                 className={`${styles.langBtn} ${language === "uk" ? styles.langBtnActive : ""}`}
-                onClick={() => setLanguage("uk")}
+                onClick={() => handleLanguageChange("uk")}
               >
                 UK
               </button>
             </div>
           </div>
         </Card>
+...
 
         <Card className={styles.section}>
           <h3 className={styles.sectionTitle}>{t.settings.notifications}</h3>

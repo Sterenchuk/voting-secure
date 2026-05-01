@@ -106,10 +106,29 @@ export default function VotingsPage() {
       ) : (
         <div className={styles.list}>
           {filteredVotings.map((voting) => {
+            // Prepare preview options including aggregated "Other"
+            const previewOptions = [
+              ...voting.options.map((o) => ({
+                id: o.id,
+                text: o.text,
+                voteCount: o.voteCount,
+                percentage: o.percentage,
+              })),
+            ];
+
+            if (voting.allowOther && voting.otherCount > 0) {
+              previewOptions.push({
+                id: "OTHER",
+                text: t.common.other || "Other",
+                voteCount: voting.otherCount,
+                percentage: voting.totalVotes > 0 ? (voting.otherCount / voting.totalVotes) * 100 : 0,
+              });
+            }
+
             // Lead option = highest voteCount — shown as the "winning" option
             const leadOption =
-              voting.options.length > 0
-                ? [...voting.options].sort(
+              previewOptions.length > 0
+                ? [...previewOptions].sort(
                     (a, b) => b.voteCount - a.voteCount,
                   )[0]
                 : null;
@@ -139,10 +158,20 @@ export default function VotingsPage() {
                           {voting.description}
                         </p>
                       )}
+                      {leadOption && leadOption.voteCount > 0 && (
+                        <div className={styles.leadOption}>
+                          <span className={styles.leadLabel}>
+                            {voting.status === "completed" ? "Winner:" : "Leading:"}
+                          </span>
+                          <span className={styles.leadValue}>
+                            {leadOption.text} ({Math.round(leadOption.percentage)}%)
+                          </span>
+                        </div>
+                      )}
                       {/* Option bars — top 3 options with relative fill */}
                       {voting.totalVotes > 0 && (
                         <div className={styles.optionBars}>
-                          {[...voting.options]
+                          {[...previewOptions]
                             .sort((a, b) => b.voteCount - a.voteCount)
                             .slice(0, 3)
                             .map((opt) => (
@@ -171,7 +200,7 @@ export default function VotingsPage() {
                     <div className={styles.cardStats}>
                       <div className={styles.stat}>
                         <span className={styles.statValue}>
-                          {voting.totalVotes}
+                          {voting.participantsCount}
                         </span>
                         <span className={styles.statLabel}>
                           {t.votings.votes}
