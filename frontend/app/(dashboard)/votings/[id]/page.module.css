@@ -197,6 +197,29 @@
   color: var(--color-text-primary);
 }
 
+.otherInputInline {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.inlineInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  padding: 2px 0;
+  outline: none;
+  min-width: 100px;
+}
+
+.inlineInput:focus {
+  border-bottom-color: var(--color-accent-primary);
+}
+
 .optionPct {
   font-size: var(--text-sm);
   font-weight: 600;
@@ -245,6 +268,29 @@
   padding: var(--space-md);
   background-color: rgba(76, 175, 80, 0.1);
   border-radius: var(--radius-md);
+}
+
+.otherInputWrapper {
+  margin-top: var(--space-xs);
+  padding: 0 var(--space-lg) var(--space-md);
+}
+
+.textarea {
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  resize: vertical;
+  min-height: 80px;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 0 2px rgba(var(--color-accent-primary-rgb, 64, 138, 113), 0.1);
 }
 
 /* ── Finalized result card ── */

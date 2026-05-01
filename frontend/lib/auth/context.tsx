@@ -16,6 +16,8 @@ export interface User {
   avatar?: string;
   role: "user" | "admin" | "auditor";
   createdAt: string;
+  theme?: string;
+  language?: string;
 }
 
 export interface AuthState {
@@ -38,16 +40,20 @@ interface SignUpData {
 }
 
 interface AuthContextType extends AuthState {
-  signIn: (credentials: SignInCredentials) => Promise<{ success: boolean; error?: ApiError | null }>;
-  signUp: (data: SignUpData) => Promise<{ success: boolean; error?: ApiError | null }>;
+  signIn: (
+    credentials: SignInCredentials,
+  ) => Promise<{ success: boolean; error?: ApiError | null }>;
+  signUp: (
+    data: SignUpData,
+  ) => Promise<{ success: boolean; error?: ApiError | null }>;
   signOut: () => Promise<void>;
   checkAuth: () => Promise<void>;
-  updateProfile: (data: Partial<User>) => Promise<{ success: boolean; error?: ApiError | null }>;
+  updateProfile: (
+    data: Partial<User>,
+  ) => Promise<{ success: boolean; error?: ApiError | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const AUTH_STORAGE_KEY = "svs-auth-token";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
@@ -59,25 +65,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuth = useCallback(async () => {
     try {
-      const response = await api.get<User>("/users/me");
+      const response = await api.get<User>("/users/me", { skipRefresh: true });
 
-      if (response.data) {
-        setState({
-          user: response.data,
-          loading: false,
-          error: null,
-          isAuthenticated: true,
-        });
-      } else {
-        setState({
-          user: null,
-          loading: false,
-          error: response.error,
-          isAuthenticated: false,
-        });
-      }
+      setState({
+        user: response.data ?? null,
+        loading: false,
+        error: response.data ? null : response.error,
+        isAuthenticated: !!response.data,
+      });
     } catch {
-      setState((prev) => ({ ...prev, loading: false }));
+      setState({
+        user: null,
+        loading: false,
+        error: null,
+        isAuthenticated: false,
+      });
     }
   }, []);
 
@@ -85,13 +87,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkAuth();
   }, [checkAuth]);
 
+  // Handle global auth expiration
+  useEffect(() => {
+    const handleExpired = () => {
+      setState({
+        user: null,
+        loading: false,
+        error: { message: "Session expired, please sign in again." },
+        isAuthenticated: false,
+      });
+      window.location.href = "/signin";
+    };
+
+    window.addEventListener("auth:expired", handleExpired);
+    return () => window.removeEventListener("auth:expired", handleExpired);
+  }, []);
+
   const signIn = useCallback(async (credentials: SignInCredentials) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
-    const response = await api.post<{ user: User }>(
-      "/auth/login",
-      credentials,
-    );
+    const response = await api.post<{ user: User }>("/auth/login", credentials);
 
     if (response.data) {
       setState({
@@ -116,10 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = useCallback(async (data: SignUpData) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
-    const response = await api.post<{ user: User }>(
-      "/auth/register",
-      data,
-    );
+    const response = await api.post<{ user: User }>("/auth/register", data);
 
     if (response.data) {
       setState({

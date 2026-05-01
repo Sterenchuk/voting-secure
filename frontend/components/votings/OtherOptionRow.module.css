@@ -1,0 +1,93 @@
+.otherRow {
+  list-style: none;
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-border);
+}
+.optionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-xs);
+}
+.optionText {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+.optionPct {
+  font-size: 14px;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+.progressBar {
+  height: 6px;
+  background: var(--color-bg-secondary);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: var(--space-xs);
+}
+.progressFill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.toggleBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  padding: var(--space-xs) 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.15s;
+}
+.toggleBtn:hover {
+  color: var(--color-text-primary);
+}
+.dynamicList {
+  list-style: none;
+  padding: var(--space-sm) 0 0 var(--space-md);
+  margin: var(--space-xs) 0 0;
+  border-left: 2px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.dynamicItem {
+  padding: var(--space-sm);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-sm);
+}
+.dynamicRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-md);
+  margin-bottom: 4px;
+}
+.dynamicText {
+  font-size: 13px;
+  color: var(--color-text-primary);
+  font-style: italic;
+  flex: 1;
+}
+.dynamicMeta {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.subProgressBar {
+  height: 4px;
+  background: var(--color-bg-primary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.subProgressFill {
+  height: 100%;
+  background: var(--color-text-muted);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  opacity: 0.6;
+}

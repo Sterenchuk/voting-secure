@@ -19,7 +19,6 @@ export {
   useSurveys,
   type Survey,
   type SurveyQuestion,
-  type SurveyResponse,
   type CreateSurveyData,
 } from "./useSurveys";
 export {
@@ -28,4 +27,4 @@ export {
   type GroupMember,
   type CreateGroupData,
 } from "./useGroups";
-export { useAudit, type AuditRecord, type AuditVerification } from "./useAudit";
+export { useAudit } from "./useAudit";

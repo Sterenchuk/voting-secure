@@ -28,6 +28,7 @@ export interface ApiOptions {
   credentials?: RequestCredentials;
   timeout?: number;
   sanitize?: boolean;
+  skipRefresh?: boolean;
 }
 
 const DEFAULT_TIMEOUT = 30000;
@@ -64,6 +65,28 @@ async function processResponse<T>(
   return { data, error, status: response.status };
 }
 
+let refreshPromise: Promise<boolean> | null = null;
+
+async function tryRefresh(credentials: RequestCredentials): Promise<boolean> {
+  // Deduplicate concurrent refresh attempts
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = fetch(`${API_BASE_URL}/auth/refresh`, {
+    method: "POST",
+    headers: { "X-Requested-With": "XMLHttpRequest" },
+    credentials,
+  })
+    .then((r) => r.ok)
+    .catch(() => false)
+    .finally(() => {
+      refreshPromise = null;
+    });
+
+  return refreshPromise;
+}
+
+// In apiFetch, replace the 401 block:
+
 // Base fetch function with XSS protection
 async function apiFetch<T>(
   method: string,
@@ -76,6 +99,7 @@ async function apiFetch<T>(
     credentials = "include",
     timeout = DEFAULT_TIMEOUT,
     sanitize = true,
+    skipRefresh = false,
   } = options;
 
   const controller = new AbortController();
@@ -103,36 +127,34 @@ async function apiFetch<T>(
     }
 
     const response = await fetch(fullUrl, requestOptions);
-    
-    // Handle 401 Unauthorized - attempt refresh
-    if (response.status === 401 && !url.includes("/auth/login") && !url.includes("/auth/refresh")) {
-      try {
-        const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
-          method: "POST",
-          headers: { "X-Requested-With": "XMLHttpRequest" },
-          credentials,
-        });
 
-        if (refreshResponse.ok) {
-          // Retry original request
-          const retryResponse = await fetch(fullUrl, requestOptions);
-          return await processResponse<T>(retryResponse, sanitize);
-        } else {
-          // Refresh failed, redirect to signin
-          if (typeof window !== "undefined") {
-            window.location.href = "/signin";
-          }
-        }
-      } catch (err) {
-        if (typeof window !== "undefined") {
-          window.location.href = "/signin";
-        }
+    // Handle 401 Unauthorized - attempt refresh
+    if (
+      response.status === 401 &&
+      !skipRefresh &&
+      !url.includes("/auth/login") &&
+      !url.includes("/auth/refresh") &&
+      !url.includes("/users/me")
+    ) {
+      const refreshed = await tryRefresh(credentials);
+
+      if (refreshed) {
+        const retryResponse = await fetch(fullUrl, requestOptions);
+        return await processResponse<T>(retryResponse, sanitize);
+      } else {
+        // Trigger global logout redirect
+        window.dispatchEvent(new CustomEvent("auth:expired"));
+        return {
+          data: null,
+          error: { message: "Session expired", code: "UNAUTHORIZED" },
+          status: 401,
+        };
       }
     }
 
     // Handle other errors
     if (response.status >= 400 && response.status !== 401) {
-       // You might want specific logic for 403, 404, etc.
+      // You might want specific logic for 403, 404, etc.
     }
 
     return await processResponse<T>(response, sanitize);

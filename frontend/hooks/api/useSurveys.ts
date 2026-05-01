@@ -74,6 +74,7 @@ interface SurveyBallotInput {
 
 interface SubmitSurveyPayload {
   ballots: SurveyBallotInput[];
+  tokenId: string;
 }
 
 export interface CreateSurveyData {
@@ -97,6 +98,7 @@ export interface CreateSurveyData {
 interface SurveysState {
   surveys: Survey[];
   currentSurvey: Survey | null;
+  results: any | null;
   loading: boolean;
   error: ApiError | null;
 }
@@ -158,7 +160,17 @@ const buildBallots = async (
   for (const answer of answers) {
     switch (answer.type) {
       case SurveyQuestionType.SINGLE_CHOICE:
-        if (answer.optionIds?.[0]) {
+        if (answer.text) {
+          ballots.push({
+            questionId: answer.questionId,
+            text: answer.text,
+            ballotHash: await generateSurveyBallotHash(
+              surveyId,
+              answer.questionId,
+              "OTHER",
+            ),
+          });
+        } else if (answer.optionIds?.[0]) {
           ballots.push({
             questionId: answer.questionId,
             optionId: answer.optionIds[0],
@@ -172,6 +184,17 @@ const buildBallots = async (
         break;
 
       case SurveyQuestionType.MULTIPLE_CHOICE:
+        if (answer.text) {
+          ballots.push({
+            questionId: answer.questionId,
+            text: answer.text,
+            ballotHash: await generateSurveyBallotHash(
+              surveyId,
+              answer.questionId,
+              "OTHER",
+            ),
+          });
+        }
         for (const optionId of answer.optionIds ?? []) {
           ballots.push({
             questionId: answer.questionId,
@@ -222,6 +245,7 @@ export function useSurveys() {
   const [state, setState] = useState<SurveysState>({
     surveys: [],
     currentSurvey: null,
+    results: null,
     loading: false,
     error: null,
   });
@@ -275,6 +299,20 @@ export function useSurveys() {
     return response;
   }, []);
 
+  const fetchResults = useCallback(async (id: string) => {
+    const response = await api.get<any>(`/surveys/${id}/results`);
+    if (response.data) {
+      setState((prev) => ({ ...prev, results: response.data }));
+    }
+    return response;
+  }, []);
+
+  const syncResults = useCallback((data: any) => {
+    if (data.results) {
+      setState((prev) => ({ ...prev, results: data.results.results }));
+    }
+  }, []);
+
   const createSurvey = useCallback(async (data: CreateSurveyData) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
@@ -294,13 +332,22 @@ export function useSurveys() {
     return response;
   }, []);
 
+  const requestToken = useCallback(async (surveyId: string) => {
+    setState((prev) => ({ ...prev, loading: true, error: null }));
+    const response = await api.post<{ token: string; tokenId: string }>(
+      `/surveys/${surveyId}/token`,
+    );
+    setState((prev) => ({ ...prev, loading: false, error: response.error }));
+    return response;
+  }, []);
+
   // Mirrors POST /surveys/:id/submit with SubmitSurveyResponseDto
   const submitSurvey = useCallback(
-    async (surveyId: string, answers: SurveyAnswer[]) => {
+    async (surveyId: string, answers: SurveyAnswer[], tokenId: string) => {
       setState((prev) => ({ ...prev, loading: true, error: null }));
 
       const ballots = await buildBallots(surveyId, answers);
-      const payload: SubmitSurveyPayload = { ballots };
+      const payload: SubmitSurveyPayload = { ballots, tokenId };
 
       const response = await api.post<any>(
         `/surveys/${surveyId}/submit`,
@@ -357,7 +404,10 @@ export function useSurveys() {
     ...state,
     fetchSurveys,
     fetchSurvey,
+    fetchResults,
+    syncResults,
     createSurvey,
+    requestToken,
     submitSurvey,
     deleteSurvey,
   };

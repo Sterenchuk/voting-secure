@@ -1,0 +1,31 @@
+.page {
+  padding: var(--space-lg);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+}
+
+.searchCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+}
+
+.resultCard {
+  margin-top: var(--space-lg);
+  padding: var(--space-md);
+  border: 1px solid var(--color-success);
+  background-color: var(--color-bg-success-light);
+}
+
+.error {
+  color: var(--color-error);
+  margin-top: var(--space-sm);
+}

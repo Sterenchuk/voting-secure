@@ -4,13 +4,17 @@ import React from "react";
 import { I18nProvider } from "@/lib/i18n/context";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/auth/context";
+import { PreferenceSync } from "./PreferenceSync";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <I18nProvider>
-      <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-        <AuthProvider>{children}</AuthProvider>
-      </ThemeProvider>
-    </I18nProvider>
+    <AuthProvider>
+      <I18nProvider>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} storageKey="svs-theme">
+          <PreferenceSync />
+          {children}
+        </ThemeProvider>
+      </I18nProvider>
+    </AuthProvider>
   );
 }

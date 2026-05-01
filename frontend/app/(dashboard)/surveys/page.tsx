@@ -132,6 +132,14 @@ export default function SurveysPage() {
                 {survey.description && (
                   <p className={styles.cardDescription}>{survey.description}</p>
                 )}
+                <div className={styles.surveyStats}>
+                  <div className={styles.stat}>
+                    <span className={styles.statValue}>
+                      {survey.responsesCount}
+                    </span>
+                    <span className={styles.statLabel}>{t.votings.votes}</span>
+                  </div>
+                </div>
                 <div className={styles.cardFooter}>
                   <span className={styles.deadline}>
                     <svg
