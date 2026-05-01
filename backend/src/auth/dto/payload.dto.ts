@@ -13,4 +13,10 @@ export class UserPayloadDto {
 
   @IsEnum(Role)
   role: Role;
+
+  @IsString()
+  language: string;
+
+  @IsString()
+  theme: string;
 }

@@ -395,6 +395,38 @@ export class SurveysRepository {
       select: SELECT_SURVEY_BALLOT,
     });
   }
+// _______________SURVEY_TOKENS________________
+
+  async findSurveyToken(tx: PrismaTx, userId: string, surveyId: string) {
+    const connection = tx || this.db;
+    return connection.surveyToken.findUnique({
+      where: { userId_surveyId: { userId, surveyId } },
+      select: { id: true, tokenHash: true, used: true, expiresAt: true },
+    });
+  }
+
+  async consumeSurveyToken(tx: PrismaTx, tokenId: string) {
+    return tx.surveyToken.update({
+      where: { id: tokenId },
+      data: { used: true },
+      select: { id: true },
+    });
+  }
+
+  async createSurveyToken(data: {
+    userId: string;
+    surveyId: string;
+    tokenHash: string;
+    expiresAt: Date;
+  }) {
+    return this.db.surveyToken.upsert({
+      where: { userId_surveyId: { userId: data.userId, surveyId: data.surveyId } },
+      create: data,
+      update: { tokenHash: data.tokenHash, expiresAt: data.expiresAt, used: false },
+      select: { id: true, expiresAt: true },
+    });
+  }
+
 
   // transaction wrappers
   $transaction<T>(fn: (tx: PrismaTx) => Promise<T>): Promise<T> {

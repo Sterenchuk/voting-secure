@@ -10,6 +10,10 @@ export class RedisVotingService {
 
   // ─── AUTH METHODS ──────────────────────────────────────────────────────────
 
+  private voterHash(userId: string, votingId: string): string {
+    return CryptoUtils.hash(`${userId}:${votingId}`);
+  }
+
   async setRefreshToken(
     userId: string,
     token: string,
@@ -55,13 +59,9 @@ export class RedisVotingService {
   async hasUserVoted(votingId: string, userId: string): Promise<boolean> {
     const result = await this.redis.sismember(
       `voting:${votingId}:voters`,
-      userId,
+      this.voterHash(userId, votingId),
     );
     return result === 1;
-  }
-
-  async getResults(votingId: string): Promise<Record<string, string>> {
-    return this.redis.hgetall(`voting:${votingId}:results`);
   }
 
   async performVote(
@@ -70,11 +70,18 @@ export class RedisVotingService {
     userId: string,
   ): Promise<void> {
     const pipeline = this.redis.pipeline();
-    pipeline.sadd(`voting:${votingId}:voters`, userId);
-    optionIds.forEach((id) => {
-      pipeline.hincrby(`voting:${votingId}:results`, id, 1);
-    });
+    pipeline.sadd(
+      `voting:${votingId}:voters`,
+      this.voterHash(userId, votingId),
+    );
+    optionIds.forEach((id) =>
+      pipeline.hincrby(`voting:${votingId}:results`, id, 1),
+    );
     await pipeline.exec();
+  }
+
+  async getResults(votingId: string): Promise<Record<string, string>> {
+    return this.redis.hgetall(`voting:${votingId}:results`);
   }
 
   async clearVotingData(votingId: string): Promise<void> {
@@ -325,5 +332,23 @@ export class RedisVotingService {
 
   async deleteSelections(userId: string, entityId: string): Promise<void> {
     await this.redis.del(`vote_selections:${userId}:${entityId}`);
+  }
+
+  // ─── AUDIT SEQUENCE COUNTERS ───────────────────────────────────────────────
+
+  async nextGlobalSequence(): Promise<number> {
+    return this.redis.incr('audit_seq:global');
+  }
+
+  async nextGroupSequence(groupId: string): Promise<number> {
+    return this.redis.incr(`audit_seq:group:${groupId}`);
+  }
+
+  async nextVotingSequence(votingId: string): Promise<number> {
+    return this.redis.incr(`audit_seq:voting:${votingId}`);
+  }
+
+  async nextSurveySequence(surveyId: string): Promise<number> {
+    return this.redis.incr(`audit_seq:survey:${surveyId}`);
   }
 }

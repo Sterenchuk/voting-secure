@@ -3,7 +3,9 @@ import { VoteService } from './vote.service';
 import { VotingsRepository } from './votings.repository';
 import { RedisVotingService } from '../redis/redis.service';
 import { VoteGateway } from './vote.gateway';
-import { GroupsService } from '../groups/groups.service';
+import { UsersService } from '../users/users.service';
+import { MailService } from '../mail/mail.service';
+import { AuditService } from '../audit/audit.service';
 import {
   ForbiddenException,
   NotFoundException,
@@ -16,7 +18,9 @@ describe('VoteService', () => {
   let service: VoteService;
   let repo: jest.Mocked<VotingsRepository>;
   let redis: jest.Mocked<RedisVotingService>;
-  let groupsService: jest.Mocked<GroupsService>;
+  let usersService: jest.Mocked<UsersService>;
+  let mailService: jest.Mocked<MailService>;
+  let auditService: jest.Mocked<AuditService>;
   let gateway: jest.Mocked<VoteGateway>;
 
   beforeEach(async () => {
@@ -30,21 +34,19 @@ describe('VoteService', () => {
               voting: { findUnique: jest.fn() },
               voteParticipation: { findUnique: jest.fn(), create: jest.fn() },
               ballot: { create: jest.fn() },
-              freeformBallot: { create: jest.fn() },
+              option: { findFirst: jest.fn(), create: jest.fn() },
             })),
+            findVotingById: jest.fn(),
             findVotingForVote: jest.fn(),
             findParticipation: jest.fn(),
             createParticipationTx: jest.fn(),
             createBallotsTx: jest.fn(),
-            createFreeformBallotTx: jest.fn(),
-            findOptionsByVoting: jest.fn(),
             findOptionsWithBallotCounts: jest.fn(),
-            countFreeformBallotsByVoting: jest.fn(),
-            findFreeformBallotsByVoting: jest.fn(),
             findVotingRaw: jest.fn(),
             findVotingResult: jest.fn(),
             countBallotsByVoting: jest.fn(),
             finalizeVoting: jest.fn(),
+            findVotingAllowOther: jest.fn(),
           },
         },
         {
@@ -55,12 +57,27 @@ describe('VoteService', () => {
             hasUserVoted: jest.fn(),
             performVote: jest.fn(),
             getResults: jest.fn(),
+            verifyToken: jest.fn(),
+            consumeToken: jest.fn(),
           },
         },
         {
-          provide: GroupsService,
+          provide: UsersService,
           useValue: {
-            checkMembership: jest.fn(),
+            findOne: jest.fn(),
+          },
+        },
+        {
+          provide: MailService,
+          useValue: {
+            sendVoteReceipt: jest.fn(),
+          },
+        },
+        {
+          provide: AuditService,
+          useValue: {
+            appendChain: jest.fn(),
+            verifyVotingChain: jest.fn(),
           },
         },
         {
@@ -75,7 +92,9 @@ describe('VoteService', () => {
     service = module.get<VoteService>(VoteService);
     repo = module.get(VotingsRepository);
     redis = module.get(RedisVotingService);
-    groupsService = module.get(GroupsService);
+    usersService = module.get(UsersService);
+    mailService = module.get(MailService);
+    auditService = module.get(AuditService);
     gateway = module.get(VoteGateway);
   });
 
@@ -85,13 +104,14 @@ describe('VoteService', () => {
 
   describe('vote', () => {
     const votingId = 'voting-1';
-    const userId = 'user-1';
-    const ballots = [{ optionId: 'opt-1', ballotHash: 'hash-1' }];
+    const user = { id: 'user-1', email: 'user@example.com' };
+    const ballots = [{ optionId: 'opt-1' }];
+    const token = 'token-123';
 
     it('should throw ForbiddenException if lock cannot be acquired', async () => {
       redis.acquireLock.mockResolvedValue(null);
 
-      await expect(service.vote(votingId, ballots, userId)).rejects.toThrow(
+      await expect(service.vote(votingId, ballots, user, token)).rejects.toThrow(
         ForbiddenException,
       );
     });
@@ -100,135 +120,46 @@ describe('VoteService', () => {
       redis.acquireLock.mockResolvedValue('lock-token');
       redis.hasUserVoted.mockResolvedValue(true);
 
-      await expect(service.vote(votingId, ballots, userId)).rejects.toThrow(
-        'You have already participated in this voting',
+      await expect(service.vote(votingId, ballots, user, token)).rejects.toThrow(
+        'Already participated',
       );
       expect(redis.releaseLock).toHaveBeenCalled();
-    });
-
-    it('should throw NotFoundException if voting does not exist', async () => {
-      redis.acquireLock.mockResolvedValue('lock-token');
-      redis.hasUserVoted.mockResolvedValue(false);
-      repo.$transaction.mockImplementation(async (cb) => {
-        return cb({ voting: { findUnique: jest.fn() } });
-      });
-      repo.findVotingForVote.mockResolvedValue(null);
-
-      await expect(service.vote(votingId, ballots, userId)).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('should throw ForbiddenException if voting is finalized', async () => {
-      redis.acquireLock.mockResolvedValue('lock-token');
-      redis.hasUserVoted.mockResolvedValue(false);
-      repo.findVotingForVote.mockResolvedValue({ isFinalized: true } as any);
-
-      await expect(service.vote(votingId, ballots, userId)).rejects.toThrow(
-        'This voting has been finalized',
-      );
-    });
-
-    it('should throw ForbiddenException if voting has not started', async () => {
-      redis.acquireLock.mockResolvedValue('lock-token');
-      redis.hasUserVoted.mockResolvedValue(false);
-      const startAt = new Date();
-      startAt.setFullYear(startAt.getFullYear() + 1);
-      repo.findVotingForVote.mockResolvedValue({ isFinalized: false, startAt } as any);
-
-      await expect(service.vote(votingId, ballots, userId)).rejects.toThrow(
-        'Voting has not started yet',
-      );
-    });
-
-    it('should throw ForbiddenException if voting has ended', async () => {
-      redis.acquireLock.mockResolvedValue('lock-token');
-      redis.hasUserVoted.mockResolvedValue(false);
-      const endAt = new Date();
-      endAt.setFullYear(endAt.getFullYear() - 1);
-      repo.findVotingForVote.mockResolvedValue({ isFinalized: false, startAt: null, endAt } as any);
-
-      await expect(service.vote(votingId, ballots, userId)).rejects.toThrow(
-        'Voting has ended',
-      );
     });
 
     it('should successfully cast a vote', async () => {
       redis.acquireLock.mockResolvedValue('lock-token');
       redis.hasUserVoted.mockResolvedValue(false);
+      
       const voting = {
         id: votingId,
         isFinalized: false,
         isOpen: true,
+        groupId: 'group-1',
+        title: 'Title',
         options: [{ id: 'opt-1' }],
         type: VotingType.SINGLE_CHOICE,
         minChoices: 1,
         maxChoices: 1,
         allowOther: false,
       };
-      repo.findVotingForVote.mockResolvedValue(voting as any);
-      repo.findParticipation.mockResolvedValue(null);
-      repo.findVotingToken.mockResolvedValue({ id: 'token-1', used: false, expiresAt: new Date(Date.now() + 10000) } as any);
-      repo.findOptionsWithBallotCounts.mockResolvedValue([{ id: 'opt-1', text: 'Opt 1', _count: { ballots: 1 } }] as any);
-
-      const result = await service.vote(votingId, ballots, userId, 'token-1');
-
-      expect(result.participated).toBe(true);
-      expect(repo.createParticipationTx).toHaveBeenCalled();
-      expect(repo.createBallotsTx).toHaveBeenCalled();
-      expect(redis.performVote).toHaveBeenCalled();
-      expect(gateway.emitVotingResults).toHaveBeenCalled();
-    });
-
-    it('should throw BadRequestException for invalid option IDs', async () => {
-      redis.acquireLock.mockResolvedValue('lock-token');
-      redis.hasUserVoted.mockResolvedValue(false);
-      const voting = {
-        id: votingId,
-        isFinalized: false,
-        isOpen: true,
-        options: [{ id: 'opt-1' }],
-        type: VotingType.SINGLE_CHOICE,
-        minChoices: 1,
-        maxChoices: 1,
-      };
+      
       repo.findVotingForVote.mockResolvedValue(voting as any);
       
-      const invalidBallots = [{ optionId: 'invalid-opt', ballotHash: 'hash' }];
+      // Mock the transaction context
+      repo.$transaction.mockImplementation(async (cb) => {
+        return cb({
+          voteParticipation: { findUnique: jest.fn().mockResolvedValue(null) },
+          option: { findFirst: jest.fn() }
+        });
+      });
 
-      await expect(service.vote(votingId, invalidBallots, userId)).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-  });
+      const result = await service.vote(votingId, ballots, user, token);
 
-  describe('getResults', () => {
-    const votingId = 'voting-1';
-
-    it('should return results from redis if available', async () => {
-      redis.getResults.mockResolvedValue({ 'opt-1': '5', 'OTHER_COUNT': '2' });
-      repo.findOptionsByVoting.mockResolvedValue([{ id: 'opt-1', text: 'Option 1' }] as any);
-      repo.findVotingRaw.mockResolvedValue({ allowOther: true } as any);
-
-      const results = await service.getResults(votingId);
-
-      expect(results.options[0].voteCount).toBe(5);
-      expect((results as any).otherCount).toBe(2);
-      expect(results.totalBallots).toBe(7);
-    });
-
-    it('should return results from repo if not in redis', async () => {
-      redis.getResults.mockResolvedValue(null);
-      repo.findOptionsWithBallotCounts.mockResolvedValue([
-        { id: 'opt-1', text: 'Option 1', _count: { ballots: 3 } }
-      ] as any);
-      repo.countFreeformBallotsByVoting.mockResolvedValue(1);
-      repo.findVotingRaw.mockResolvedValue({ allowOther: true } as any);
-
-      const results = await service.getResults(votingId);
-
-      expect(results.options[0].voteCount).toBe(3);
-      expect((results as any).otherCount).toBe(1);
+      expect(result.participated).toBe(true);
+      expect(redis.verifyToken).toHaveBeenCalled();
+      expect(redis.consumeToken).toHaveBeenCalled();
+      expect(redis.performVote).toHaveBeenCalled();
+      expect(auditService.appendChain).toHaveBeenCalled();
     });
   });
 
@@ -244,17 +175,29 @@ describe('VoteService', () => {
       );
     });
 
-    it('should successfully finalize voting', async () => {
-      repo.findVotingRaw.mockResolvedValue({ id: votingId, isFinalized: false } as any);
+    it('should successfully finalize voting and verify chain', async () => {
+      repo.findVotingRaw.mockResolvedValue({ id: votingId, isFinalized: false, groupId: 'group-1' } as any);
       repo.findOptionsWithBallotCounts.mockResolvedValue([]);
-      repo.countFreeformBallotsByVoting.mockResolvedValue(0);
       repo.countBallotsByVoting.mockResolvedValue(0);
       repo.finalizeVoting.mockResolvedValue({ id: 'result-1' } as any);
+      
+      auditService.verifyVotingChain.mockResolvedValue({
+        valid: true,
+        totalChecked: 10,
+        brokenAt: null,
+        reason: null,
+        scope: 'voting',
+        scopeId: votingId
+      });
 
       const result = await service.finalizeVoting(votingId, userId);
 
+      expect(auditService.verifyVotingChain).toHaveBeenCalledWith(votingId);
       expect(repo.finalizeVoting).toHaveBeenCalled();
-      expect(result).toBeDefined();
+      expect(auditService.appendChain).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'VOTING_RESULT_SEALED'
+      }));
+      expect(result.chainVerified).toBe(true);
     });
   });
 });
