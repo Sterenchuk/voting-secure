@@ -45,12 +45,12 @@ export class RedisVotingService {
 
   async releaseLock(lockKey: string, token: string): Promise<void> {
     const script = `
-      if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("del", KEYS[1])
-      else
-        return 0
-      end
-    `;
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+          return redis.call("del", KEYS[1])
+        else
+          return 0
+        end
+      `;
     await this.redis.eval(script, 1, lockKey, token);
   }
 
@@ -68,15 +68,20 @@ export class RedisVotingService {
     votingId: string,
     optionIds: string[],
     userId: string,
+    isAbstention = false,
   ): Promise<void> {
     const pipeline = this.redis.pipeline();
     pipeline.sadd(
       `voting:${votingId}:voters`,
       this.voterHash(userId, votingId),
     );
-    optionIds.forEach((id) =>
-      pipeline.hincrby(`voting:${votingId}:results`, id, 1),
-    );
+    if (isAbstention) {
+      pipeline.hincrby(`voting:${votingId}:results`, 'ABSTENTION_COUNT', 1);
+    } else {
+      optionIds.forEach((id) =>
+        pipeline.hincrby(`voting:${votingId}:results`, id, 1),
+      );
+    }
     await pipeline.exec();
   }
 
@@ -305,7 +310,11 @@ export class RedisVotingService {
   async setSelections(
     userId: string,
     entityId: string,
-    selections: { optionIds: string[]; otherText?: string },
+    selections: {
+      optionIds: string[];
+      otherText?: string;
+      isAbstention?: boolean;
+    },
     ttlSeconds = 3600,
   ): Promise<void> {
     await this.redis.set(
@@ -319,7 +328,11 @@ export class RedisVotingService {
   async getSelections(
     userId: string,
     entityId: string,
-  ): Promise<{ optionIds: string[]; otherText?: string } | null> {
+  ): Promise<{
+    optionIds: string[];
+    otherText?: string;
+    isAbstention?: boolean;
+  } | null> {
     const raw = await this.redis.get(`vote_selections:${userId}:${entityId}`);
     if (!raw) return null;
     try {

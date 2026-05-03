@@ -43,7 +43,11 @@ export class VoteService {
   async requestToken(
     votingId: string,
     user: { id: string; email: string; language: string; theme: string },
-    selections: { optionIds: string[]; otherText?: string },
+    selections: {
+      optionIds: string[];
+      otherText?: string;
+      isAbstention?: boolean;
+    },
   ) {
     this.logger.debug(
       `Requesting voting token for user ${user.id} ${user.language} ${user.theme} on voting ${votingId}`,
@@ -139,7 +143,7 @@ export class VoteService {
             'Vote selections expired. Please return to the voting page and try again.',
         };
       }
-      const { optionIds, otherText } = selections;
+      const { optionIds, otherText, isAbstention } = selections;
 
       // get user email for receipt
 
@@ -160,6 +164,7 @@ export class VoteService {
         },
         rawToken,
         otherText,
+        isAbstention,
       );
 
       return {
@@ -185,6 +190,7 @@ export class VoteService {
     user: { id: string; email: string; language: string; theme: string },
     token: string,
     otherText?: string,
+    isAbstention?: boolean,
   ) {
     const lockKey = `vote_lock:${votingId}:${user.id}`;
     let lockToken: string | null = null;
@@ -228,9 +234,14 @@ export class VoteService {
 
         const hasOther = !!trimmedOther;
 
-        if (ballots.length === 0 && !hasOther)
+        if (ballots.length === 0 && !hasOther && !isAbstention)
           throw new BadRequestException(
             'You must select an option or provide an "Other" answer',
+          );
+
+        if (isAbstention && (ballots.length > 0 || hasOther))
+          throw new BadRequestException(
+            'Conflicting vote: Abstention selected along with other options',
           );
 
         if (ballots.length > 0) {
@@ -250,19 +261,41 @@ export class VoteService {
         }
 
         // ── Build hashed ballots ─────────────────────────────────────────────
-        const ballotsHashed = ballots.map((b) => {
+        const ballotsHashed: Array<{
+          optionId: string | null;
+          isAbstention: boolean;
+          ballotHash: string;
+          tokenHashed: string;
+        }> = ballots.map((b) => {
           const receipt = CryptoUtils.generateBallotReceipt(
             votingId,
             b.optionId,
             tokenHashed,
           );
+
           receipts.push(receipt);
           return {
             optionId: b.optionId,
+            isAbstention: false,
             ballotHash: receipt,
             tokenHashed,
           };
         });
+
+        if (isAbstention) {
+          const receipt = CryptoUtils.generateBallotReceipt(
+            votingId,
+            'abstention',
+            tokenHashed,
+          );
+          receipts.push(receipt);
+          ballotsHashed.push({
+            optionId: null,
+            isAbstention: true,
+            ballotHash: receipt,
+            tokenHashed,
+          });
+        }
 
         // ── Participation guard (DB canonical truth) ─────────────────────────
         const existing = await tx.voteParticipation.findUnique({
@@ -294,6 +327,7 @@ export class VoteService {
           receipts.push(otherReceipt);
           ballotsHashed.push({
             optionId: option.id,
+            isAbstention: false,
             ballotHash: otherReceipt,
             tokenHashed,
           });
@@ -308,7 +342,12 @@ export class VoteService {
       await this.redis.consumeToken('voting', user.id, votingId);
 
       try {
-        await this.redis.performVote(votingId, optionIdsToTally, user.id);
+        await this.redis.performVote(
+          votingId,
+          optionIdsToTally,
+          user.id,
+          isAbstention,
+        );
       } catch (err) {
         this.logger.error(
           `Redis vote cache update failed for voting ${votingId}: ${err}`,
@@ -323,6 +362,7 @@ export class VoteService {
             tokenHashed: tokenHashed,
             optionCount: ballots.length,
             hasOther: !!otherText,
+            isAbstention: !!isAbstention,
           },
           votingId,
           groupId,
@@ -380,22 +420,30 @@ export class VoteService {
       this.repo.findVotingAllowOther(votingId),
     ]);
 
+    const options = rawWithCounts ?? [];
     let allOptions: IOptionResult[];
+    let abstentionsCount = 0;
 
     if (cached && Object.keys(cached).length > 0) {
-      allOptions = rawWithCounts.map((o) => ({
+      allOptions = options.map((o) => ({
         id: o.id,
         text: o.text,
         isDynamic: o.isDynamic,
         voteCount: parseInt(cached[o.id] ?? '0'),
       }));
+      abstentionsCount = parseInt(cached['ABSTENTION_COUNT'] ?? '0');
     } else {
-      allOptions = rawWithCounts.map((o) => ({
+      const [dbOptions, dbAbstentions] = await Promise.all([
+        this.repo.findOptionsWithBallotCounts(votingId),
+        this.repo.countAbstentions(votingId),
+      ]);
+      allOptions = dbOptions.map((o) => ({
         id: o.id,
         text: o.text,
         isDynamic: o.isDynamic,
         voteCount: o._count.ballots,
       }));
+      abstentionsCount = dbAbstentions;
     }
 
     const staticOptions = allOptions.filter((o) => !o.isDynamic);
@@ -403,18 +451,15 @@ export class VoteService {
 
     const otherTotal = dynamicOptions.reduce((sum, o) => sum + o.voteCount, 0);
     const staticTotal = staticOptions.reduce((sum, o) => sum + o.voteCount, 0);
-    const totalBallots = staticTotal + otherTotal;
+    const totalBallots = staticTotal + otherTotal + abstentionsCount;
 
-    if (voting?.allowOther) {
-      return {
-        options: staticOptions,
-        totalBallots,
-        otherTotal,
-        dynamicOptions,
-      };
-    }
-
-    return { options: staticOptions, totalBallots };
+    return {
+      options: staticOptions,
+      totalBallots,
+      abstentionsCount,
+      otherTotal: voting?.allowOther ? otherTotal : undefined,
+      dynamicOptions: voting?.allowOther ? dynamicOptions : undefined,
+    };
   }
 
   async getSealedResult(votingId: string) {

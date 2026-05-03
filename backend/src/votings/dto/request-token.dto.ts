@@ -5,6 +5,7 @@ import {
   IsOptional,
   MaxLength,
   ArrayMaxSize,
+  IsBoolean,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
@@ -19,4 +20,8 @@ export class RequestTokenDto {
   @MaxLength(500)
   @Transform(({ value }) => value?.trim())
   otherText?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isAbstention?: boolean;
 }

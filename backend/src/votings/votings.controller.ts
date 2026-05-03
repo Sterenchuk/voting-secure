@@ -120,6 +120,7 @@ export class VotingsController {
       {
         optionIds: dto.optionIds,
         otherText: dto.otherText,
+        isAbstention: dto.isAbstention,
       },
     );
   }
@@ -127,7 +128,7 @@ export class VotingsController {
   // ─── Vote casting ─────────────────────────────────────────────────────────────
 
   /**
-   * GET /votings/:id/confirm-vote?token=...
+   * GET /votings/:id/confirm-vote?token=...&lang=...&theme=...
    * Endpoint for email link confirmation.
    */
   @Get(':id/confirm-vote')
@@ -135,17 +136,19 @@ export class VotingsController {
   async confirmVote(
     @Param('id') votingId: string,
     @Query('token') token: string,
+    @Query('lang') lang: string,
+    @Query('theme') theme: string,
     @Res() res: Response,
   ) {
     const result = await this.voteService.confirmVoteFromEmail(votingId, token);
 
-    const theme = result?.theme ?? 'light';
-    const language = result?.language ?? 'en';
+    const finalTheme = theme ?? 'light';
+    const finalLang = lang ?? 'en';
 
     console.log(
       `Vote confirmation result for voting ${votingId}:`,
-      result.language,
-      result.theme,
+      finalLang,
+      finalTheme,
       result.success,
       result.message,
       result.receipts,
@@ -153,13 +156,13 @@ export class VotingsController {
     const html = result.success
       ? this.successHtml(
           result.receipts ?? [],
-          theme as 'light' | 'dark',
-          language,
+          finalTheme as 'light' | 'dark',
+          finalLang,
         )
       : this.errorHtml(
           result.message ?? 'Verification failed.',
-          theme as 'light' | 'dark',
-          language,
+          finalTheme as 'light' | 'dark',
+          finalLang,
         );
 
     res.status(HttpStatus.OK).type('text/html').send(html);
@@ -189,6 +192,7 @@ export class VotingsController {
       },
       dto.token,
       dto.otherText,
+      dto.isAbstention,
     );
   }
 

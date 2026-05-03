@@ -130,7 +130,7 @@ export class MailService {
     );
     const backendUrl =
       this.configService.get<string>('BACKEND_URL') || 'http://localhost:3001';
-    const confirmUrl = `${backendUrl}/votings/${votingId}/confirm-vote?token=${token}`;
+    const confirmUrl = `${backendUrl}/votings/${votingId}/confirm-vote?token=${token}&lang=${lang}&theme=${theme}`;
     const t = this.getTranslations(lang).votingToken;
     const s = this.getThemeStyles(theme);
 

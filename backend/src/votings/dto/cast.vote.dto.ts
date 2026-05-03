@@ -8,6 +8,7 @@ import {
   ArrayMaxSize,
   ValidateNested,
   IsNotEmpty,
+  IsBoolean,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 
@@ -33,4 +34,8 @@ export class CastVoteDto {
   @MaxLength(500)
   @Transform(({ value }) => value?.trim())
   otherText?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isAbstention?: boolean;
 }

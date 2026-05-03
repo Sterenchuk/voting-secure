@@ -154,7 +154,9 @@ async function main() {
 
         const tally: Record<string, number> = {};
         ballots.forEach((b) => {
-          tally[b.optionId] = (tally[b.optionId] || 0) + 1;
+          if (b.optionId) {
+            tally[b.optionId] = (tally[b.optionId] || 0) + 1;
+          }
         });
 
         const total = ballots.length;

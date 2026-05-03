@@ -18,6 +18,7 @@ import type { VotingUpdateDto } from './dto/voting.update.dto';
 import type { FindVotingQueryDto } from './dto/find.voting.query.dto';
 import { GroupsService } from '../groups/groups.service';
 import { VoteService } from './vote.service';
+import { VotingUser } from './types/voting.user.types';
 
 @Injectable()
 export class VotingsService {
@@ -76,7 +77,14 @@ export class VotingsService {
 
     const votings = await this.repo.findVotings(where, userId);
 
-    return votings.map((v) => ({
+    const votingData = await Promise.all(
+      votings.map(async (v) => ({
+        ...v,
+        abstentionsCount: await this.repo.countAbstentions(v.id),
+      })),
+    );
+
+    return votingData.map((v) => ({
       ...v,
       participantsCount: v._count.participations,
       hasVoted: v.participations && v.participations.length > 0,
@@ -96,8 +104,11 @@ export class VotingsService {
       ? await this.repo.findParticipation(userId, id)
       : null;
 
+    const abstentionsCount = await this.repo.countAbstentions(id);
+
     return {
       ...voting,
+      abstentionsCount,
       hasVoted: !!hasVoted,
       participantsCount: voting._count.participations,
       options: voting.options.map(({ _count, ...opt }) => ({
@@ -153,11 +164,10 @@ export class VotingsService {
   }
 
   async updateOption(
-    votingId: string,
-    optionId: string,
-    text: string,
     userId: string,
+    params: { votingId: string; optionId: string; text: string },
   ) {
+    const { votingId, optionId, text } = params;
     const voting = await this.repo.findVotingRaw(votingId);
     if (!voting) throw new NotFoundException('Voting not found');
 

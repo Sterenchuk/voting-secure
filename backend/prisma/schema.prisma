@@ -219,12 +219,13 @@ model VoteParticipation {
 model Ballot {
   id          String  @id @default(uuid())
   votingId    String
-  optionId    String
+  optionId    String?
+  isAbstention Boolean @default(false)
   ballotHash  String  @unique
   tokenHashed String?
 
-  voting Voting @relation(fields: [votingId], references: [id])
-  option Option @relation(fields: [optionId], references: [id])
+  voting Voting  @relation(fields: [votingId], references: [id])
+  option Option? @relation(fields: [optionId], references: [id])
 
   @@index([votingId])
 }
@@ -358,12 +359,13 @@ model SurveyToken {
 model SurveyBallot {
   id         String  @id @default(uuid())
   questionId String
-  optionId   String
+  optionId   String?
+  isAbstention Boolean @default(false)
   ballotHash String  @unique
   tokenId    String?
 
   question SurveyQuestion @relation(fields: [questionId], references: [id])
-  option   SurveyOption   @relation(fields: [optionId], references: [id])
+  option   SurveyOption?   @relation(fields: [optionId], references: [id])
   token    SurveyToken?   @relation(fields: [tokenId], references: [id])
 
   @@index([questionId])

@@ -178,12 +178,12 @@ export class VotingsRepository {
   async createBallotsTx(
     tx: PrismaTx,
     votingId: string,
-    ballots: { optionId: string; ballotHash: string; tokenHashed: string }[],
+    ballots: { optionId: string | null; isAbstention: boolean; ballotHash: string; tokenHashed: string }[],
   ) {
     return Promise.all(
-      ballots.map(({ optionId, ballotHash, tokenHashed }) =>
+      ballots.map(({ optionId, isAbstention, ballotHash, tokenHashed }) =>
         tx.ballot.create({
-          data: { votingId, optionId, ballotHash, tokenHashed },
+          data: { votingId, optionId, isAbstention, ballotHash, tokenHashed },
           select: SELECT_BALLOT,
         }),
       ),
@@ -193,6 +193,12 @@ export class VotingsRepository {
   async countBallotsByVoting(votingId: string) {
     return this.db.ballot.count({
       where: { votingId },
+    });
+  }
+
+  async countAbstentions(votingId: string) {
+    return this.db.ballot.count({
+      where: { votingId, isAbstention: true },
     });
   }
 
