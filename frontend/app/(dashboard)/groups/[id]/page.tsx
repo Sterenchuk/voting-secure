@@ -4,6 +4,7 @@ import React, { useEffect } from "react";
 import { useParams } from "next/navigation";
 import { useI18n } from "@/lib/i18n/context";
 import { useGroups } from "@/hooks/api/useGroups";
+import { useVotings } from "@/hooks/api/useVotings";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
@@ -12,13 +13,27 @@ import styles from "./page.module.css";
 export default function GroupDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { t } = useI18n();
-  const { currentGroup, fetchGroup, loading } = useGroups();
+  const {
+    currentGroup,
+    fetchGroup,
+    loading: groupLoading,
+    finalizeVoting,
+  } = useGroups();
+  const { votings, fetchVotings, loading: votingLoading } = useVotings();
 
   useEffect(() => {
-    if (id) fetchGroup(id);
-  }, [id, fetchGroup]);
+    if (id) {
+      fetchGroup(id);
+      fetchVotings({ groupId: id });
+    }
+  }, [id, fetchGroup, fetchVotings]);
 
-  if (loading || !currentGroup) {
+  const handleFinalize = async (votingId: string) => {
+    await finalizeVoting(votingId);
+    fetchVotings({ groupId: id });
+  };
+
+  if (groupLoading || !currentGroup) {
     return (
       <div className={styles.loadingState}>
         <div className={styles.spinner} />
@@ -140,9 +155,34 @@ export default function GroupDetailPage() {
             <h2 className={styles.sectionTitle}>{t.groups.votings}</h2>
           </div>
           <Card>
-            <div className={styles.emptySection}>
-              <p>{t.votings.noVotingsDescription}</p>
-            </div>
+            {votingLoading ? (
+              <div className={styles.loadingState}>
+                <div className={styles.spinner} />
+              </div>
+            ) : votings.length === 0 ? (
+              <div className={styles.emptySection}>
+                <p>{t.votings.noVotingsDescription}</p>
+              </div>
+            ) : (
+              <ul className={styles.optionList}>
+                {votings.map((v) => (
+                  <li key={v.id} className={styles.optionItem}>
+                    <div className={styles.optionRow}>
+                      <span className={styles.optionText}>{v.title}</span>
+                      <span className={styles.optionPct}>{v.status}</span>
+                    </div>
+                    {!v.isFinalized && v.status === "completed" && (
+                      <Button size="sm" onClick={() => handleFinalize(v.id)}>
+                        Finalize Voting
+                      </Button>
+                    )}
+                    {v.status !== "completed" && !v.isOpen && (
+                      <span className={styles.note}>Voting in progress</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
         </section>
       </div>

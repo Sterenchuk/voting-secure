@@ -295,6 +295,13 @@ export function useGroups() {
     return response;
   }, []);
 
+  const finalizeVoting = useCallback(async (votingId: string) => {
+    setState((prev) => ({ ...prev, loading: true, error: null }));
+    const response = await api.post(`/votings/${votingId}/finalize`);
+    setState((prev) => ({ ...prev, loading: false, error: response.error }));
+    return response;
+  }, []);
+
   return {
     ...state,
     fetchGroups,
@@ -307,6 +314,7 @@ export function useGroups() {
     leaveGroup,
     changeUserRole,
     deleteGroup,
+    finalizeVoting,
   };
 }
 

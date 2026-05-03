@@ -39,6 +39,7 @@ export interface Voting {
   options: VotingOption[];
   totalVotes: number;
   participantsCount: number;
+  abstentionsCount: number;
   hasVoted?: boolean;
   otherTotal?: number;
   dynamicOptions?: VotingOption[];
@@ -141,6 +142,7 @@ const mapVoting = (v: any): Voting => {
     options,
     totalVotes,
     participantsCount,
+    abstentionsCount: v.abstentionsCount ?? 0,
     hasVoted: v.hasVoted,
     otherTotal,
     dynamicOptions,
@@ -247,12 +249,12 @@ export function useVotings() {
   }, []);
 
   const requestToken = useCallback(
-    async (votingId: string, optionIds: string[], otherText?: string) => {
+    async (votingId: string, optionIds: string[], otherText?: string, isAbstention?: boolean) => {
       setState((prev) => ({ ...prev, loading: true, error: null }));
       const response = await api.post<{
         status: string;
         message: string;
-      }>(`/votings/${votingId}/token`, { optionIds, otherText });
+      }>(`/votings/${votingId}/token`, { optionIds, otherText, isAbstention });
       setState((prev) => ({ ...prev, loading: false, error: response.error }));
       return response;
     },
@@ -267,6 +269,7 @@ export function useVotings() {
           token: data.token,
           ballots: data.optionIds.map((id) => ({ optionId: id })),
           otherText: data.otherText,
+          isAbstention: data.isAbstention,
         },
       );
 
@@ -333,9 +336,10 @@ export function useVotings() {
         }));
 
         const otherTotal = results.otherTotal ?? 0;
+        const abstentionsCount = results.abstentionsCount ?? 0;
 
         const totalVotes =
-          updatedOptions.reduce((sum, o) => sum + o.voteCount, 0) + otherTotal;
+          updatedOptions.reduce((sum, o) => sum + o.voteCount, 0) + otherTotal + abstentionsCount;
 
         updatedOptions.forEach((o) => {
           o.percentage = totalVotes > 0 ? (o.voteCount / totalVotes) * 100 : 0;
@@ -347,6 +351,7 @@ export function useVotings() {
           totalVotes,
           otherTotal,
           dynamicOptions: updatedDynamicOptions,
+          abstentionsCount,
         };
 
         return {

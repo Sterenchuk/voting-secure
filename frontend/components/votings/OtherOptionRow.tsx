@@ -11,7 +11,12 @@ interface Props {
   showResults: boolean;
 }
 
-export function OtherOptionRow({ otherTotal, totalVotes, dynamicOptions, showResults }: Props) {
+export function OtherOptionRow({
+  otherTotal,
+  totalVotes,
+  dynamicOptions,
+  showResults,
+}: Props) {
   const [expanded, setExpanded] = useState(false);
 
   const pct = totalVotes > 0 ? Math.round((otherTotal / totalVotes) * 100) : 0;
@@ -32,26 +37,37 @@ export function OtherOptionRow({ otherTotal, totalVotes, dynamicOptions, showRes
       )}
 
       {showResults && dynamicOptions.length > 0 && (
-        <button className={styles.toggleBtn} onClick={() => setExpanded(e => !e)}>
-          {expanded ? '▲' : '▼'} {expanded ? 'Hide' : 'Show'} responses ({dynamicOptions.length})
+        <button
+          className={styles.toggleBtn}
+          onClick={() => setExpanded((e) => !e)}
+        >
+          {expanded ? "▲" : "▼"} {expanded ? "Hide" : "Show"} responses (
+          {dynamicOptions.length})
         </button>
       )}
 
       {expanded && (
         <ul className={styles.dynamicList}>
-          {sorted.map(opt => {
-            const subPct = totalVotes > 0 ? Math.round((opt.voteCount / totalVotes) * 100) : 0;
+          {sorted.map((opt) => {
+            const subPct =
+              totalVotes > 0
+                ? Math.round((opt.voteCount / totalVotes) * 100)
+                : 0;
 
             return (
               <li key={opt.id} className={styles.dynamicItem}>
                 <div className={styles.dynamicRow}>
                   <span className={styles.dynamicText}>"{opt.text}"</span>
                   <span className={styles.dynamicMeta}>
-                    {opt.voteCount} {opt.voteCount === 1 ? 'vote' : 'votes'} · {subPct}%
+                    {opt.voteCount} {opt.voteCount === 1 ? "vote" : "votes"} ·{" "}
+                    {subPct}%
                   </span>
                 </div>
                 <div className={styles.subProgressBar}>
-                  <div className={styles.subProgressFill} style={{ width: `${subPct}%` }} />
+                  <div
+                    className={styles.subProgressFill}
+                    style={{ width: `${subPct}%` }}
+                  />
                 </div>
               </li>
             );
