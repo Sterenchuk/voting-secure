@@ -70,8 +70,8 @@ export default function VotingChainExplorerPage() {
 
   const breadcrumbs = [
     { label: t.common.dashboard, href: "/dashboard" },
-    { label: t.common.votings, href: "/votings" },
-    { label: id.slice(0, 8), href: `/votings/${id}` },
+    { label: "Audit Hub", href: "/audit" },
+    { label: id.slice(0, 8), href: `/audit/votings/${id}` },
     { label: "Audit Chain" },
   ];
 

@@ -6,16 +6,26 @@ import { mailTranslations, MailLanguage } from './mail-translations';
 @Injectable()
 export class MailService {
   private transporter: nodemailer.Transporter;
-
   constructor(private configService: ConfigService) {
+    const host = this.configService.get<string>('MAIL_HOST');
+    const port = this.configService.getOrThrow<number>('MAIL_PORT');
+    const secure = this.configService.get<string>('MAIL_SECURE') === 'true';
+
+    const user = this.configService.get<string>('MAIL_USER');
+    const pass = this.configService.get<string>('MAIL_PASS');
+
     this.transporter = nodemailer.createTransport({
-      host: this.configService.get<string>('MAIL_HOST'),
-      port: this.configService.getOrThrow<number>('MAIL_PORT'),
-      secure: this.configService.get<string>('MAIL_SECURE') === 'true',
-      auth: {
-        user: this.configService.get<string>('MAIL_USER'),
-        pass: this.configService.get<string>('MAIL_PASS'),
-      },
+      host,
+      port,
+      secure,
+      ...(user && pass
+        ? {
+            auth: {
+              user,
+              pass,
+            },
+          }
+        : {}),
     });
   }
 

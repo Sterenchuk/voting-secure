@@ -1,17 +1,39 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
+import { useVotings } from "@/hooks/api/useVotings";
 import styles from "./StatsCards.module.css";
 
 export function StatsCards() {
   const { t } = useI18n();
+  const { fetchGlobalStats } = useVotings();
+  const [statsData, setStatsData] = useState({ totalVotes: 0, activeVotings: 0 });
+
+  useEffect(() => {
+    fetchGlobalStats().then(res => {
+      if (res.data) {
+        setStatsData(res.data);
+      }
+    });
+    
+    // Refresh stats every 30 seconds
+    const interval = setInterval(() => {
+      fetchGlobalStats().then(res => {
+        if (res.data) {
+          setStatsData(res.data);
+        }
+      });
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [fetchGlobalStats]);
 
   const stats = [
     {
       label: t.dashboard.stats.totalVotes,
-      value: "1,247",
-      change: "+12%",
+      value: statsData.totalVotes.toLocaleString(),
+      change: "+2%", // Hardcoded for now, could be dynamic with trends
       changeType: "positive" as const,
       icon: (
         <svg
@@ -26,8 +48,24 @@ export function StatsCards() {
       ),
     },
     {
+      label: t.dashboard.stats.activePolls,
+      value: statsData.activeVotings.toString(),
+      change: "Live",
+      changeType: "positive" as const,
+      icon: (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+        </svg>
+      ),
+    },
+    {
       label: t.dashboard.stats.participation,
-      value: "78%",
+      value: "82%",
       change: "+5%",
       changeType: "positive" as const,
       icon: (
@@ -40,22 +78,6 @@ export function StatsCards() {
           <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
           <circle cx="9" cy="7" r="4" />
           <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
-        </svg>
-      ),
-    },
-    {
-      label: t.dashboard.stats.activePolls,
-      value: "8",
-      change: "+2",
-      changeType: "positive" as const,
-      icon: (
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
         </svg>
       ),
     },

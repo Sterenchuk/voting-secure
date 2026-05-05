@@ -7,6 +7,7 @@ import { User } from '@prisma/client';
 import { handlePrismaError } from '../common/utils/prisma-error';
 import { hashPassword } from '../common/utils/hash-password';
 import { Role } from '../common/enums/role';
+import { CryptoUtils } from '../common/utils/crypto-utils';
 
 //DTOS
 import { UserCreateDto } from './dto/user.create.dto';
@@ -17,12 +18,21 @@ import { UserResponseDto, SELECT_USER_FIELDS } from './dto/user.response.dto';
 export class UsersService {
   constructor(private readonly databaseService: DatabaseService) {}
 
+  private decryptUserEmail<T extends { email: string }>(user: T): T {
+    if (user && user.email) {
+      user.email = CryptoUtils.decrypt(user.email);
+    }
+    return user;
+  }
+
   async findAll(): Promise<UserResponseDto[]> {
-    return this.databaseService.user
+    const users = await this.databaseService.user
       .findMany({
         select: SELECT_USER_FIELDS,
       })
       .catch((e) => handlePrismaError(e, 'Finding all users'));
+
+    return users.map((u) => this.decryptUserEmail(u));
   }
 
   async findOne(id: string): Promise<UserResponseDto> {
@@ -37,20 +47,21 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    return user;
+    return this.decryptUserEmail(user);
   }
 
   async findOneByEmail(email: string): Promise<User> {
+    const emailHash = CryptoUtils.getBlindIndex(email);
     const user = await this.databaseService.user
       .findUnique({
-        where: { email },
+        where: { emailHash },
       })
       .catch((e) => handlePrismaError(e, 'Finding user by email'));
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    return user;
+    return this.decryptUserEmail(user);
   }
 
   async create(
@@ -58,16 +69,23 @@ export class UsersService {
     role?: Role,
   ): Promise<UserResponseDto> {
     const hashedPassword = await hashPassword(userCreateDto.password);
-    return this.databaseService.user
+    const encryptedEmail = CryptoUtils.encrypt(userCreateDto.email);
+    const emailHash = CryptoUtils.getBlindIndex(userCreateDto.email);
+
+    const user = await this.databaseService.user
       .create({
         data: {
           ...userCreateDto,
+          email: encryptedEmail,
+          emailHash: emailHash,
           password: hashedPassword,
           role: role,
         },
         select: SELECT_USER_FIELDS,
       })
       .catch((e) => handlePrismaError(e, 'Creating user'));
+
+    return this.decryptUserEmail(user);
   }
 
   async update(
@@ -83,17 +101,26 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
+    const updateData: any = { ...userUpdateDto };
+
     if (userUpdateDto.password) {
-      userUpdateDto.password = await hashPassword(userUpdateDto.password);
+      updateData.password = await hashPassword(userUpdateDto.password);
     }
 
-    return this.databaseService.user
+    if (userUpdateDto.email) {
+      updateData.email = CryptoUtils.encrypt(userUpdateDto.email);
+      updateData.emailHash = CryptoUtils.getBlindIndex(userUpdateDto.email);
+    }
+
+    const user = await this.databaseService.user
       .update({
         where: { id },
-        data: userUpdateDto,
+        data: updateData,
         select: SELECT_USER_FIELDS,
       })
       .catch((e) => handlePrismaError(e, 'Updating user'));
+
+    return this.decryptUserEmail(user);
   }
 
   async delete(id: string) {
@@ -111,12 +138,14 @@ export class UsersService {
   }
 
   async upgradeToAdmin(id: string): Promise<UserResponseDto> {
-    return this.databaseService.user
+    const user = await this.databaseService.user
       .update({
         where: { id },
         data: { role: Role.ADMIN },
         select: SELECT_USER_FIELDS,
       })
       .catch((e) => handlePrismaError(e, 'Upgrading user to admin'));
+
+    return this.decryptUserEmail(user);
   }
 }

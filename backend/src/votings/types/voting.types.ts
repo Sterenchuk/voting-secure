@@ -45,6 +45,7 @@ export interface ICreateVotingData {
   startAt?: Date;
   endAt?: Date;
   options: string[];
+  broadcastInterval?: number;
 }
 
 export interface IUpdateVotingData {
@@ -58,6 +59,8 @@ export interface IUpdateVotingData {
   maxChoices?: number;
   startAt?: Date;
   endAt?: Date;
+  broadcastInterval?: number;
+  lastBroadcastAt?: Date;
 }
 
 export interface IVotingWhereInput {
@@ -138,6 +141,7 @@ export interface IVotingResult {
 // Rec(2004)11: only participation status is returned, never the choice made
 export interface IUserVoteStatus {
   participated: boolean;
+  receipts?: string[];
 }
 
 // ─── WebSocket events ─────────────────────────────────────────────────────────

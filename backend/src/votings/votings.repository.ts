@@ -35,6 +35,8 @@ export const SELECT_VOTING = {
   endAt: true,
   finalizedAt: true,
   createdAt: true,
+  broadcastInterval: true,
+  lastBroadcastAt: true,
 } as const;
 
 export const SELECT_VOTING_WITH_OPTIONS = {
@@ -85,9 +87,25 @@ export class VotingsRepository {
     });
   }
 
-  async findVotings(where: IVotingWhereInput, userId?: string) {
+  async findVotings(
+    where: IVotingWhereInput,
+    userId?: string,
+    isAdmin = false,
+    isAuditor = false,
+  ) {
+    const visibilityFilter =
+      isAdmin || isAuditor || !userId
+        ? {}
+        : {
+            OR: [{ isOpen: true }, { group: { users: { some: { userId } } } }],
+          };
+
     return this.db.voting.findMany({
-      where: { ...where, deletedAt: null },
+      where: {
+        ...where,
+        deletedAt: null,
+        ...visibilityFilter,
+      },
       select: {
         ...SELECT_VOTING,
         options: { select: SELECT_OPTION_WITH_VOTE_COUNT },
@@ -105,9 +123,25 @@ export class VotingsRepository {
     });
   }
 
-  async findVotingById(id: string) {
-    return this.db.voting.findUnique({
-      where: { id, deletedAt: null },
+  async findVotingById(
+    id: string,
+    userId?: string,
+    isAdmin = false,
+    isAuditor = false,
+  ) {
+    const visibilityFilter =
+      isAdmin || isAuditor || !userId
+        ? {}
+        : {
+            OR: [{ isOpen: true }, { group: { users: { some: { userId } } } }],
+          };
+
+    return this.db.voting.findFirst({
+      where: {
+        id,
+        deletedAt: null,
+        ...visibilityFilter,
+      },
       select: {
         ...SELECT_VOTING,
         options: { select: SELECT_OPTION_WITH_VOTE_COUNT },
@@ -211,6 +245,14 @@ export class VotingsRepository {
     });
   }
 
+  async getParticipationStats(votingId: string) {
+    return this.db.voteParticipation.findMany({
+      where: { votingId },
+      select: { createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
   async createParticipationTx(tx: PrismaTx, userId: string, votingId: string) {
     return tx.voteParticipation.create({
       data: { userId, votingId },
@@ -261,6 +303,14 @@ export class VotingsRepository {
         sealedAt: true,
       },
     });
+  }
+
+  async getGlobalStats() {
+    const [totalVotings, totalBallots] = await Promise.all([
+      this.db.voting.count({ where: { deletedAt: null } }),
+      this.db.ballot.count(),
+    ]);
+    return { totalVotings, totalBallots };
   }
 
   // ─── Transaction wrapper ──────────────────────────────────────────────────────

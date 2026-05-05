@@ -111,6 +111,9 @@ export interface VerifyResult {
   totalChecked: number;
   brokenAt: number | null;
   reason: string | null;
+  expectedHash?: string;
+  foundHash?: string;
+  tamperedBlock?: any;
 }
 
 export interface ScopedVerifyResult extends VerifyResult {

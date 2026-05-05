@@ -18,7 +18,7 @@ import type { VotingUpdateDto } from './dto/voting.update.dto';
 import type { FindVotingQueryDto } from './dto/find.voting.query.dto';
 import { GroupsService } from '../groups/groups.service';
 import { VoteService } from './vote.service';
-import { VotingUser } from './types/voting.user.types';
+import { Role } from '../common/enums/role';
 
 @Injectable()
 export class VotingsService {
@@ -62,12 +62,13 @@ export class VotingsService {
       startAt,
       endAt: dto.endAt ? new Date(dto.endAt) : undefined,
       options: dto.options,
+      broadcastInterval: dto.broadcastInterval ?? 1,
     };
 
     return this.repo.createVoting(userId, data);
   }
 
-  async findAll(dto: FindVotingQueryDto, userId?: string) {
+  async findAll(dto: FindVotingQueryDto, userId?: string, role?: Role) {
     const where: IVotingWhereInput = { deletedAt: null };
     if (dto.groupId) where.groupId = dto.groupId;
     if (dto.title) where.title = { contains: dto.title, mode: 'insensitive' };
@@ -75,7 +76,9 @@ export class VotingsService {
     if (dto.endAt) where.endAt = { lte: new Date(dto.endAt) };
     if (dto.isOpen !== undefined) where.isOpen = dto.isOpen;
 
-    const votings = await this.repo.findVotings(where, userId);
+    const isAdmin = role === Role.ADMIN;
+    const isAuditor = role === Role.AUDITOR;
+    const votings = await this.repo.findVotings(where, userId, isAdmin, isAuditor);
 
     const votingData = await Promise.all(
       votings.map(async (v) => ({
@@ -95,8 +98,10 @@ export class VotingsService {
     }));
   }
 
-  async findOne(id: string, userId?: string) {
-    const voting = await this.repo.findVotingById(id);
+  async findOne(id: string, userId?: string, role?: Role) {
+    const isAdmin = role === Role.ADMIN;
+    const isAuditor = role === Role.AUDITOR;
+    const voting = await this.repo.findVotingById(id, userId, isAdmin, isAuditor);
     if (!voting || (voting as any).deletedAt)
       throw new NotFoundException('Voting not found');
 
@@ -152,6 +157,7 @@ export class VotingsService {
       maxChoices: dto.maxChoices,
       startAt,
       endAt: dto.endAt ? new Date(dto.endAt) : undefined,
+      broadcastInterval: dto.broadcastInterval,
     };
 
     const updated = await this.repo.updateVoting(id, data);

@@ -32,6 +32,8 @@ import { AuditVerifyGuard } from '../audit/audit-verify.guard';
 import { VerifyResult } from '../audit/types/audit.types';
 import { AuditService } from '../audit/audit.service';
 import { UserPayloadDto } from '../auth/dto/payload.dto';
+import { EmlGenerator } from '../common/utils/eml-generator';
+import { RedisVotingService } from '../redis/redis.service';
 
 @UseGuards(JwtAuthGuard)
 @Controller('votings')
@@ -40,7 +42,22 @@ export class VotingsController {
     private readonly votingsService: VotingsService,
     private readonly voteService: VoteService,
     private readonly auditService: AuditService,
+    private readonly redisService: RedisVotingService,
   ) {}
+
+  // ─── Global Dashboard Stats ──────────────────────────────────────────────────
+
+  @Get('global/stats')
+  @Public()
+  async getGlobalStats() {
+    return this.redisService.getGlobalStats();
+  }
+
+  @Get('global/trends')
+  @Public()
+  async getGlobalTrends() {
+    return this.redisService.getGlobalTrends();
+  }
 
   // ─── Voting CRUD ──────────────────────────────────────────────────────────────
 
@@ -52,8 +69,21 @@ export class VotingsController {
       title: res.title,
     }),
   })
-  create(@Body() dto: VotingCreateDto, @CurrentUser() user: UserPayloadDto) {
-    return this.votingsService.create(user.sub, dto);
+  async create(
+    @Body() dto: VotingCreateDto,
+    @CurrentUser() user: UserPayloadDto,
+  ) {
+    const voting = await this.votingsService.create(user.sub, dto);
+
+    // Update global active votings count
+    const stats = await this.votingsService.findAll(
+      { isOpen: true },
+      user.sub,
+      user.role,
+    );
+    await this.redisService.updateActiveVotingsCount(stats.length);
+
+    return voting;
   }
 
   @Get()
@@ -61,12 +91,12 @@ export class VotingsController {
     @Query() dto: FindVotingQueryDto,
     @CurrentUser() user: UserPayloadDto,
   ) {
-    return this.votingsService.findAll(dto, user.sub);
+    return this.votingsService.findAll(dto, user.sub, user.role);
   }
 
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: UserPayloadDto) {
-    return this.votingsService.findOne(id, user.sub);
+    return this.votingsService.findOne(id, user.sub, user.role);
   }
 
   @Patch(':id')
@@ -77,12 +107,22 @@ export class VotingsController {
       updatedFields: res,
     }),
   })
-  update(
+  async update(
     @Param('id') id: string,
     @Body() dto: VotingUpdateDto,
     @CurrentUser() user: UserPayloadDto,
   ) {
-    return this.votingsService.update(id, dto, user.sub);
+    const voting = await this.votingsService.update(id, dto, user.sub);
+
+    // Update global active votings count
+    const stats = await this.votingsService.findAll(
+      { isOpen: true },
+      user.sub,
+      user.role,
+    );
+    await this.redisService.updateActiveVotingsCount(stats.length);
+
+    return voting;
   }
 
   @Delete(':id')
@@ -92,17 +132,20 @@ export class VotingsController {
       votingId: req.params.id,
     }),
   })
-  delete(@Param('id') id: string, @CurrentUser() user: UserPayloadDto) {
-    return this.votingsService.delete(id, user.sub);
+  async delete(@Param('id') id: string, @CurrentUser() user: UserPayloadDto) {
+    await this.votingsService.delete(id, user.sub);
+
+    // Update global active votings count
+    const stats = await this.votingsService.findAll(
+      { isOpen: true },
+      user.sub,
+      user.role,
+    );
+    await this.redisService.updateActiveVotingsCount(stats.length);
   }
 
   // ─── Token ────────────────────────────────────────────────────────────────────
 
-  /**
-   * POST /votings/:id/token
-   * Issues a single-use voting token sent to the user's email.
-   * Rec(2004)11 §47 — decouples authentication from ballot casting.
-   */
   @Post(':id/token')
   requestToken(
     @Param('id') votingId: string,
@@ -127,10 +170,6 @@ export class VotingsController {
 
   // ─── Vote casting ─────────────────────────────────────────────────────────────
 
-  /**
-   * GET /votings/:id/confirm-vote?token=...&lang=...&theme=...
-   * Endpoint for email link confirmation.
-   */
   @Get(':id/confirm-vote')
   @Public()
   async confirmVote(
@@ -145,14 +184,6 @@ export class VotingsController {
     const finalTheme = theme ?? 'light';
     const finalLang = lang ?? 'en';
 
-    console.log(
-      `Vote confirmation result for voting ${votingId}:`,
-      finalLang,
-      finalTheme,
-      result.success,
-      result.message,
-      result.receipts,
-    );
     const html = result.success
       ? this.successHtml(
           result.receipts ?? [],
@@ -168,13 +199,6 @@ export class VotingsController {
     res.status(HttpStatus.OK).type('text/html').send(html);
   }
 
-  /**
-   * POST /votings/:id/vote
-   * Casts a vote. Requires the raw token string from email.
-   * BALLOT_CAST is audited directly inside VoteService — NOT via decorator.
-   * Reason: requires null userId (§26), receipts, and chain context
-   * that are only available inside the service transaction scope.
-   */
   @Post(':id/vote')
   vote(
     @Param('id') votingId: string,
@@ -198,20 +222,11 @@ export class VotingsController {
 
   // ─── Results ──────────────────────────────────────────────────────────────────
 
-  /**
-   * GET /votings/:id/results
-   * Live aggregated results — visible to everyone.
-   */
   @Get(':id/results')
   getResults(@Param('id') votingId: string) {
     return this.voteService.getResults(votingId);
   }
 
-  /**
-   * GET /votings/:id/results/admin
-   * Live results including dynamic (other) option breakdown.
-   * Restricted to ADMIN and AUDITOR.
-   */
   @Get(':id/results/admin')
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN, Role.AUDITOR)
@@ -219,36 +234,83 @@ export class VotingsController {
     return this.voteService.getResults(votingId, true);
   }
 
-  /**
-   * GET /votings/:id/results/sealed
-   * Immutable sealed tally — only available after finalization (Rec §56).
-   */
   @Get(':id/results/sealed')
   getSealedResult(@Param('id') votingId: string) {
     return this.voteService.getSealedResult(votingId);
   }
 
+  @Get(':id/participation-stats')
+  getParticipationStats(@Param('id') votingId: string) {
+    return this.voteService.getParticipationStats(votingId);
+  }
+
+  @Get(':id/results/eml')
+  async downloadEml(
+    @Param('id') votingId: string,
+    @CurrentUser() user: UserPayloadDto,
+    @Res() res: Response,
+  ) {
+    const voting = await this.votingsService.findOne(
+      votingId,
+      user.sub,
+      user.role,
+    );
+    const results = await this.voteService.getResults(
+      votingId,
+      user.role === Role.ADMIN,
+    );
+
+    const stats = await this.voteService.getParticipationStats(votingId);
+
+    const xml = EmlGenerator.generateEML510(voting, results, stats);
+
+    res.set({
+      'Content-Type': 'application/xml',
+      'Content-Disposition': `attachment; filename="voting-${votingId}-results.xml"`,
+    });
+
+    return res.status(HttpStatus.OK).send(xml);
+  }
+
+  @Get(':id/results/csv')
+  async downloadCsv(
+    @Param('id') votingId: string,
+    @CurrentUser() user: UserPayloadDto,
+    @Res() res: Response,
+  ) {
+    const results = await this.voteService.getResults(votingId, true);
+
+    let csv = 'Option,Votes\n';
+    results.options.forEach((opt) => {
+      csv += `"${opt.text}",${opt.voteCount}\n`;
+    });
+
+    if (results.dynamicOptions) {
+      results.dynamicOptions.forEach((opt) => {
+        csv += `"${opt.text} (Other)",${opt.voteCount}\n`;
+      });
+    }
+
+    csv += `Abstentions,${results.abstentionsCount}\n`;
+    csv += `Total,${results.totalBallots}\n`;
+
+    res.set({
+      'Content-Type': 'text/csv',
+      'Content-Disposition': `attachment; filename="voting-${votingId}-results.csv"`,
+    });
+
+    return res.status(HttpStatus.OK).send(csv);
+  }
+
   // ─── Finalization ─────────────────────────────────────────────────────────────
 
-  /**
-   * POST /votings/:id/finalize
-   * Seals results into an immutable VotingResult row.
-   * Restricted to ADMIN.
-   */
   @Post(':id/finalize')
-  @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN)
   finalize(@Param('id') votingId: string, @CurrentUser() user: UserPayloadDto) {
     return this.voteService.finalizeVoting(votingId, user.sub);
   }
 
   // ─── User participation status ────────────────────────────────────────────────
 
-  /**
-   * GET /votings/:id/my-vote
-   * Returns whether the user has voted — never what they voted.
-   * Rec(2004)11: choices must never be revealed after the fact.
-   */
   @Get(':id/my-vote')
   getUserVote(
     @Param('id') votingId: string,
@@ -264,7 +326,6 @@ export class VotingsController {
   verifyReceipt(
     @Param('id') votingId: string,
     @Query('hash') hash: string,
-    @CurrentUser() user: UserPayloadDto,
   ) {
     return this.voteService.verifyReceipt(votingId, hash);
   }
@@ -328,6 +389,21 @@ export class VotingsController {
       margin-bottom: 0.75rem;
       text-align: left;
     }
+    .btn {
+      display: inline-block;
+      margin-top: 1.5rem;
+      padding: 0.75rem 1.5rem;
+      background: #059669;
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #047857; }
     .footer {
       font-size: 14px;
       color: #9ca3af;
@@ -346,10 +422,27 @@ export class VotingsController {
       <div class="label">${labels.receiptsLabel}</div>
       ${receipts.map((r) => `<div class="receipt">${r}</div>`).join('')}
     </div>
+    <button class="btn" onclick="downloadReceipt()">${labels.downloadBtn}</button>
     <div class="footer">
       ${labels.successFooter}
     </div>
   </div>
+  <script>
+    function downloadReceipt() {
+      const data = {
+        votedAt: new Date().toISOString(),
+        receipts: ${JSON.stringify(receipts)},
+        disclaimer: "This is a cryptographic proof of your vote. Keep it secure and private."
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'vote-receipt-' + new Date().getTime() + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
 </body>
 </html>
 `;
@@ -393,16 +486,6 @@ export class VotingsController {
     .icon { font-size: 3.5rem; margin-bottom: 1.5rem; }
     h1 { color: ${isDark ? '#f87171' : '#dc2626'}; margin: 0 0 1rem; font-size: 1.75rem; }
     p { color: ${isDark ? '#9ca3af' : '#4b5563'}; line-height: 1.6; margin: 0; }
-    .btn {
-      display: inline-block;
-      background: ${isDark ? '#e5e7eb' : '#111827'};
-      color: ${isDark ? '#111827' : 'white'};
-      padding: 0.75rem 1.5rem;
-      border-radius: 6px;
-      text-decoration: none;
-      font-weight: 500;
-      font-size: 14px;
-    }
   </style>
 </head>
 <body>
@@ -429,6 +512,7 @@ export class VotingsController {
         successBody:
           'Your choices have been securely recorded and added to the public audit chain.',
         receiptsLabel: 'Digital Ballot Receipts',
+        downloadBtn: 'Download Receipt (JSON)',
         successFooter:
           'A copy has been sent to your email.<br/>You can safely close this window now.',
         errorTitle: 'Vote Failed',
@@ -442,6 +526,7 @@ export class VotingsController {
         successBody:
           'Ваші вибори надійно зафіксовано та додано до публічного ланцюжка аудиту.',
         receiptsLabel: 'Цифрові квитанції бюлетеня',
+        downloadBtn: 'Завантажити квитанцію (JSON)',
         successFooter:
           'Копію надіслано на вашу електронну пошту.<br/>Це вікно можна закрити.',
         errorTitle: 'Помилка голосування',
@@ -449,7 +534,6 @@ export class VotingsController {
         errorHint:
           'Поверніться на сторінку голосування та запросіть новий токен.',
       },
-      // add more locales as needed
     };
 
     return translations[language] ?? translations['en'];

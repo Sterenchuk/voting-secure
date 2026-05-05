@@ -15,9 +15,12 @@ interface RequestUser extends UserPayloadDto {
 
 /**
  * Guards GET /audit/verify and GET /audit/verify/:groupId.
+ * 
+ * NOTE: For :groupId routes, this should be used AFTER GroupRoleGuard
+ * which populates the user.groupRoles object.
  *
  * Access rules:
- *   • Platform ADMIN → full chain, any groupId or none.
+ *   • Platform ADMIN or AUDITOR → full chain, any groupId or none.
  *   • Group OWNER or ADMIN → only their own groupId (must match :groupId param).
  *   • Everyone else → 403.
  */
@@ -28,17 +31,15 @@ export class AuditVerifyGuard implements CanActivate {
       .switchToHttp()
       .getRequest<Request & { user?: RequestUser }>();
     const user = req.user;
-    const groupId = Array.isArray(req.params?.groupId)
-      ? req.params.groupId[0]
-      : (req.params?.groupId ?? null);
+    const groupId = req.params?.groupId ?? null;
 
     if (!user) throw new ForbiddenException('Unauthenticated');
 
-    // Platform admin — full access.
-    if (user.role === Role.ADMIN) return true;
+    // Platform admin or Auditor — full access.
+    if (user.role === Role.ADMIN || user.role === Role.AUDITOR) return true;
 
     // Group-scoped access — must supply a groupId and hold OWNER or ADMIN there.
-    if (groupId) {
+    if (groupId && typeof groupId === 'string') {
       const groupRole = user.groupRoles?.[groupId];
       if (groupRole === GroupRole.OWNER || groupRole === GroupRole.ADMIN) {
         return true;

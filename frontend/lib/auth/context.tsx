@@ -99,9 +99,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.location.href = "/signin";
     };
 
+    const handleRefreshed = () => {
+      checkAuth();
+    };
+
     window.addEventListener("auth:expired", handleExpired);
-    return () => window.removeEventListener("auth:expired", handleExpired);
-  }, []);
+    window.addEventListener("auth:refreshed", handleRefreshed);
+    return () => {
+      window.removeEventListener("auth:expired", handleExpired);
+      window.removeEventListener("auth:refreshed", handleRefreshed);
+    };
+  }, [checkAuth]);
 
   const signIn = useCallback(async (credentials: SignInCredentials) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));

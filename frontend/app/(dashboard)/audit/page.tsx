@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAudit, AuditLogEntry } from "@/hooks/api/useAudit";
+import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { useAudit } from "@/hooks/api/useAudit";
+import { useVotings } from "@/hooks/api/useVotings";
+import { useSurveys } from "@/hooks/api/useSurveys";
+import { useAuth } from "@/lib/auth/context";
 import { TTL_ACTIONS } from "@/types/audit";
 import {
   Card,
@@ -29,29 +33,50 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { useI18n } from "@/lib/i18n/context";
 import {
-  Search,
   ShieldCheck,
   ShieldAlert,
   Eye,
   RefreshCcw,
-  ExternalLink,
-  ChevronRight,
   Database,
   User,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function AuditExplorerPage() {
-  const { blocks, totalCount, loading, integrity, fetchGlobalChain, verifyScopedIntegrity } = useAudit();
+  const router = useRouter();
+  const { user } = useAuth();
+  const { t } = useI18n();
+  const { blocks, loading, integrity, fetchGlobalChain, verifyScopedIntegrity } = useAudit();
+  const { votings, fetchVotings, loading: votingsLoading } = useVotings();
+  const { surveys, fetchSurveys, loading: surveysLoading } = useSurveys();
+  
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [search, setSearch] = useState("");
+  const [hash, setHash] = useState("");
+  
+  // Filters
+  const [showVotings, setShowVotings] = useState(true);
+  const [showSurveys, setShowSurveys] = useState(true);
+  const [groupFilter, setGroupFilter] = useState("");
+
+  const isAuthorized = user?.role === "admin" || user?.role === "auditor";
 
   useEffect(() => {
-    fetchGlobalChain(page, pageSize);
-  }, [page, pageSize, fetchGlobalChain]);
+    fetchVotings({ isOpen: true });
+    fetchSurveys({ isOpen: true });
+    if (isAuthorized) {
+      fetchGlobalChain(page, pageSize);
+    }
+  }, [page, pageSize, fetchGlobalChain, fetchVotings, fetchSurveys, isAuthorized]);
 
   const onRefresh = () => {
     fetchGlobalChain(page, pageSize);
@@ -65,180 +90,220 @@ export default function AuditExplorerPage() {
     b.userId?.includes(search)
   );
 
+  const filteredChains = useMemo(() => {
+    const list = [
+      ...(showVotings ? votings.filter(v => v.isOpen).map(v => ({ id: v.id, title: v.title, type: 'Voting', groupId: v.groupId })) : []),
+      ...(showSurveys ? surveys.filter(s => s.isOpen).map(s => ({ id: s.id, title: s.title, type: 'Survey', groupId: s.groupId })) : []),
+    ];
+    return groupFilter ? list.filter(item => item.groupId.includes(groupFilter)) : list;
+  }, [votings, surveys, showVotings, showSurveys, groupFilter]);
+
+  const handleVerify = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (hash.trim()) {
+      router.push(`/audit/verify?hash=${encodeURIComponent(hash.trim())}`);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6 p-6">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Audit Explorer</h1>
-          <p className="text-muted-foreground">
-            Monitor the immutable cryptographic ledger of all platform actions.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
-            <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh Chain
-          </Button>
-          <Button size="sm" onClick={() => verifyScopedIntegrity()}>
-            <ShieldCheck className="mr-2 h-4 w-4" />
-            Verify Integrity
-          </Button>
-        </div>
+      <div className="mb-6 text-center">
+        <h1 className="text-3xl font-bold tracking-tight">Audit Center</h1>
+        <p className="text-muted-foreground mt-2">Public vote verification and platform integrity monitoring.</p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-4">
-        <Card className="md:col-span-1">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Chain Status</CardTitle>
+      <div className="grid gap-6 md:grid-cols-1">
+        <Card>
+          <CardHeader>
+            <CardTitle>Filters</CardTitle>
           </CardHeader>
-          <CardContent>
-            {integrity ? (
-              <div className="flex items-center gap-2">
-                {integrity.valid ? (
-                  <Badge className="bg-emerald-500 hover:bg-emerald-600">
-                    <ShieldCheck className="mr-1 h-3 w-3" /> Secure
-                  </Badge>
-                ) : (
-                  <Badge variant="destructive">
-                    <ShieldAlert className="mr-1 h-3 w-3" /> Broken
-                  </Badge>
-                )}
-                <span className="text-xs text-muted-foreground">
-                  {integrity.totalChecked} checked
-                </span>
+          <CardContent className="grid gap-4">
+            <div className="flex gap-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox id="showVotings" checked={showVotings} onCheckedChange={(checked) => setShowVotings(!!checked)} />
+                <Label htmlFor="showVotings">Votings</Label>
               </div>
-            ) : (
-              <Badge variant="outline" className="text-muted-foreground">
-                Click Verify
-              </Badge>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="md:col-span-1">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Blocks</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalCount}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="md:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Search Ledger</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search action, ID, or hash..."
-                className="pl-8"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+              <div className="flex items-center space-x-2">
+                <Checkbox id="showSurveys" checked={showSurveys} onCheckedChange={(checked) => setShowSurveys(!!checked)} />
+                <Label htmlFor="showSurveys">Surveys</Label>
+              </div>
             </div>
+            <Input 
+              placeholder="Filter by Group ID..." 
+              value={groupFilter} 
+              onChange={(e) => setGroupFilter(e.target.value)} 
+            />
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Unified Audit Log</CardTitle>
-          <CardDescription>
-            One hash chain linking all platform activity for complete accountability.
-          </CardDescription>
+          <CardTitle>Available Audit Chains</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[80px]">Seq</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Subject</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Timestamp</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredBlocks.map((block) => (
-                  <TableRow key={block.sequence}>
-                    <TableCell className="font-mono font-bold text-blue-500">
-                      #{block.sequence}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={TTL_ACTIONS.includes(block.action as any) ? "default" : "secondary"} className="font-mono text-[10px]">
-                        {block.action}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-0.5">
-                        {block.votingId && (
-                          <span className="flex items-center text-[10px] text-muted-foreground">
-                             Voting: {block.votingId.slice(0, 8)}...
-                          </span>
-                        )}
-                        {block.surveyId && (
-                          <span className="flex items-center text-[10px] text-muted-foreground">
-                             Survey: {block.surveyId.slice(0, 8)}...
-                          </span>
-                        )}
-                        {block.groupId && (
-                          <span className="flex items-center text-[10px] text-muted-foreground">
-                             Group: {block.groupId.slice(0, 8)}...
-                          </span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {block.userId ? (
-                        <div className="flex items-center text-[10px]">
-                           <User className="h-3 w-3 mr-1" /> {block.userId.slice(0, 8)}...
-                        </div>
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground italic">Anonymous</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {format(new Date(block.createdAt), "MMM d, HH:mm:ss")}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-2xl">
-                          <DialogHeader>
-                            <DialogTitle className="flex items-center gap-2">
-                              <Database className="h-5 w-5" />
-                              Block #{block.sequence} Details
-                            </DialogTitle>
-                            <DialogDescription className="font-mono text-[10px] break-all">
-                              Hash: {block.hash}<br/>
-                              Prev: {block.prevHash}
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="mt-4">
-                            <ScrollArea className="h-[300px] w-full rounded border bg-muted p-4">
-                                <pre className="text-xs leading-relaxed">
-                                  {JSON.stringify(block.payload, null, 2)}
-                                </pre>
-                            </ScrollArea>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          {votingsLoading || surveysLoading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : (
+            <div className="grid gap-2">
+              {filteredChains.map(item => (
+                <div 
+                  key={item.id} 
+                  className="flex items-center justify-between p-3 rounded border border-muted-foreground/20 hover:bg-muted/50 cursor-pointer transition-colors"
+                  onClick={() => router.push(`/audit/${item.type.toLowerCase()}s/audit-chain/${item.id}`)}
+                >
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline">{item.type}</Badge>
+                    <span className="text-sm font-medium">{item.title}</span>
+                  </div>
+                  <Button variant="ghost" size="sm">
+                    {t.common.view}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {isAuthorized && (
+        <>
+          {integrity && (
+            <Alert variant={integrity.valid ? "default" : "destructive"} className="mb-4">
+              <div className="flex items-center gap-2">
+                {integrity.valid ? (
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4" />
+                )}
+                <AlertTitle>
+                  Chain Integrity Status: {integrity.valid ? "Valid" : "Compromised"}
+                </AlertTitle>
+              </div>
+              <AlertDescription>
+                {integrity.valid ? (
+                  `Verified ${integrity.totalChecked} blocks. All links are secure.`
+                ) : (
+                  `Break detected at sequence #${integrity.brokenAt}. Reason: ${integrity.reason}`
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex items-center justify-between mt-8">
+            <h2 className="text-xl font-bold">Administrative Audit Explorer</h2>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
+                <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => verifyScopedIntegrity("global", undefined, false)} disabled={loading}>
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                Verify (Fast)
+              </Button>
+              <Button size="sm" onClick={() => verifyScopedIntegrity("global", undefined, true)} disabled={loading}>
+                <ShieldAlert className="mr-2 h-4 w-4" />
+                Deep Verify (Full)
+              </Button>
+            </div>
+          </div>
+
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle>Unified Audit Log</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[80px]">Seq</TableHead>
+                      <TableHead>Action</TableHead>
+                      <TableHead>Subject</TableHead>
+                      <TableHead>User</TableHead>
+                      <TableHead>Timestamp</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredBlocks.map((block) => (
+                      <TableRow key={block.sequence}>
+                        <TableCell className="font-mono font-bold text-blue-500">
+                          #{block.sequence}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={TTL_ACTIONS.includes(block.action as any) ? "default" : "secondary"} className="font-mono text-[10px]">
+                            {block.action}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-0.5">
+                            {block.votingId && (
+                              <span className="flex items-center text-[10px] text-muted-foreground">
+                                Voting: {block.votingId.slice(0, 8)}...
+                              </span>
+                            )}
+                            {block.surveyId && (
+                              <span className="flex items-center text-[10px] text-muted-foreground">
+                                Survey: {block.surveyId.slice(0, 8)}...
+                              </span>
+                            )}
+                            {block.groupId && (
+                              <span className="flex items-center text-[10px] text-muted-foreground">
+                                Group: {block.groupId.slice(0, 8)}...
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {block.userId ? (
+                            <div className="flex items-center text-[10px]">
+                              <User className="h-3 w-3 mr-1" /> {block.userId.slice(0, 8)}...
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground italic">Anonymous</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {format(new Date(block.createdAt), "MMM d, HH:mm:ss")}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-2xl">
+                              <DialogHeader>
+                                <DialogTitle className="flex items-center gap-2">
+                                  <Database className="h-5 w-5" />
+                                  Block #{block.sequence} Details
+                                </DialogTitle>
+                                <DialogDescription className="font-mono text-[10px] break-all">
+                                  Hash: {block.hash}<br/>
+                                  Prev: {block.prevHash}
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="mt-4">
+                                <ScrollArea className="h-[300px] w-full rounded border bg-muted p-4">
+                                    <pre className="text-xs leading-relaxed">
+                                      {JSON.stringify(block.payload, null, 2)}
+                                    </pre>
+                                </ScrollArea>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

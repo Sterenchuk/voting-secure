@@ -30,27 +30,30 @@ export class AuthController {
   private setAuthCookies(
     response: Response,
     accessToken: string,
-    refreshToken: string,
+    refreshToken?: string,
+    rememberMe: boolean = false,
   ) {
     const isProd = this.configService.get<string>('NODE_ENV') === 'production';
 
-    response.cookie('access_token', accessToken, {
+    const commonOptions = {
       httpOnly: true,
       secure: isProd,
-      sameSite: 'strict',
-      maxAge: 15 * 60 * 1000, // 15 minutes
+      sameSite: 'strict' as const,
       path: '/',
       signed: true,
+    };
+
+    response.cookie('access_token', accessToken, {
+      ...commonOptions,
+      ...(rememberMe ? { maxAge: 15 * 60 * 1000 } : {}),
     });
 
-    response.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      path: '/',
-      signed: true,
-    });
+    if (refreshToken) {
+      response.cookie('refresh_token', refreshToken, {
+        ...commonOptions,
+        ...(rememberMe ? { maxAge: 7 * 24 * 60 * 60 * 1000 } : {}),
+      });
+    }
   }
 
   @HttpCode(HttpStatus.OK)
@@ -68,8 +71,9 @@ export class AuthController {
     const result = await this.authService.signIn(
       signInDto.email,
       signInDto.password,
+      signInDto.rememberMe,
     );
-    this.setAuthCookies(res, result.accessToken, result.refreshToken);
+    this.setAuthCookies(res, result.accessToken, result.refreshToken, signInDto.rememberMe);
 
     // Attach user for the AuditInterceptor
     req.user = { sub: result.user.id };
@@ -92,14 +96,9 @@ export class AuthController {
     const refreshToken = req.signedCookies['refresh_token'];
     const result = await this.authService.refresh(refreshToken);
 
-    res.cookie('access_token', result.accessToken, {
-      httpOnly: true,
-      secure: this.configService.get<string>('NODE_ENV') === 'production',
-      sameSite: 'strict',
-      maxAge: 15 * 60 * 1000,
-      path: '/',
-      signed: true,
-    });
+    // If we are refreshing, we assume it was a remembered session 
+    // because non-remembered sessions don't have a refresh token (per our signIn logic)
+    this.setAuthCookies(res, result.accessToken, refreshToken, true);
 
     return {
       success: true,
@@ -120,7 +119,8 @@ export class AuthController {
     @Req() req: any,
   ) {
     const result = await this.authService.register(registerDto, Role.USER);
-    this.setAuthCookies(res, result.accessToken, result.refreshToken);
+    // Registration always sets refresh token for now
+    this.setAuthCookies(res, result.accessToken, result.refreshToken, true);
 
     // Attach user for the AuditInterceptor
     req.user = { sub: result.user.id };

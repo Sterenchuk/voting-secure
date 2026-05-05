@@ -76,7 +76,12 @@ async function tryRefresh(credentials: RequestCredentials): Promise<boolean> {
     headers: { "X-Requested-With": "XMLHttpRequest" },
     credentials,
   })
-    .then((r) => r.ok)
+    .then((r) => {
+      if (r.ok) {
+        window.dispatchEvent(new CustomEvent("auth:refreshed"));
+      }
+      return r.ok;
+    })
     .catch(() => false)
     .finally(() => {
       refreshPromise = null;
@@ -140,6 +145,14 @@ async function apiFetch<T>(
 
       if (refreshed) {
         const retryResponse = await fetch(fullUrl, requestOptions);
+        if (retryResponse.status === 401) {
+          window.dispatchEvent(new CustomEvent("auth:expired"));
+          return {
+            data: null,
+            error: { message: "Session expired", code: "UNAUTHORIZED" },
+            status: 401,
+          };
+        }
         return await processResponse<T>(retryResponse, sanitize);
       } else {
         // Trigger global logout redirect

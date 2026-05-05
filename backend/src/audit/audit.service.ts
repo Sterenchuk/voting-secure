@@ -3,8 +3,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as crypto from 'crypto';
 
-import { AuditChain, AuditChainDocumentHydrated } from './schemas/audit-chain.schema';
+import {
+  AuditChain,
+  AuditChainDocumentHydrated,
+} from './schemas/audit-chain.schema';
 import { AuditSecurity } from './schemas/audit-security.schema';
+import { AuditVerification } from './schemas/audit-verification.schema';
 import {
   AuditChainContext,
   AuditSecurityContext,
@@ -80,8 +84,33 @@ export class AuditService implements OnModuleInit {
     @InjectModel(AuditSecurity.name)
     private readonly securityModel: Model<AuditSecurity>,
 
+    @InjectModel(AuditVerification.name)
+    private readonly verificationModel: Model<AuditVerification>,
+
     private readonly redis: RedisVotingService,
   ) {}
+
+  // ─── Persistence: Verification Marker ───────────────────────────────────────
+
+  async setLastVerifiedSequence(
+    scope: 'global' | 'group' | 'voting' | 'survey',
+    scopeId: string | null,
+    sequence: number,
+  ): Promise<void> {
+    await this.verificationModel.findOneAndUpdate(
+      { scope, scopeId },
+      { lastVerifiedSequence: sequence, updatedAt: new Date() },
+      { upsert: true, new: true },
+    );
+  }
+
+  async getLastVerifiedSequence(
+    scope: 'global' | 'group' | 'voting' | 'survey',
+    scopeId: string | null,
+  ): Promise<number | null> {
+    const doc = await this.verificationModel.findOne({ scope, scopeId }).lean();
+    return doc ? doc.lastVerifiedSequence : null;
+  }
 
   // ── Bootstrap ───────────────────────────────────────────────────────────────
 
@@ -97,7 +126,9 @@ export class AuditService implements OnModuleInit {
       // We use ioredis directly via the service to access 'set' with 'NX'
       const client = (this.redis as any).redis;
       await client.set('audit_seq:global', (last as any).sequence, 'NX');
-      this.logger.log(`audit_seq:global initialised to ${(last as any).sequence}`);
+      this.logger.log(
+        `audit_seq:global initialised to ${(last as any).sequence}`,
+      );
     }
   }
 
@@ -149,18 +180,32 @@ export class AuditService implements OnModuleInit {
       // 1. Fetch sequence numbers atomically from Redis
       const [globalSeq, groupSeq, votingSeq, surveySeq] = await Promise.all([
         this.redis.nextGlobalSequence(),
-        ctx.groupId ? this.redis.nextGroupSequence(ctx.groupId) : Promise.resolve(null),
-        ctx.votingId ? this.redis.nextVotingSequence(ctx.votingId) : Promise.resolve(null),
-        ctx.surveyId ? this.redis.nextSurveySequence(ctx.surveyId) : Promise.resolve(null),
+        ctx.groupId
+          ? this.redis.nextGroupSequence(ctx.groupId)
+          : Promise.resolve(null),
+        ctx.votingId
+          ? this.redis.nextVotingSequence(ctx.votingId)
+          : Promise.resolve(null),
+        ctx.surveyId
+          ? this.redis.nextSurveySequence(ctx.surveyId)
+          : Promise.resolve(null),
       ]);
 
       // 2. Fetch previous hashes from MongoDB
-      const [globalPrev, groupPrev, votingPrev, surveyPrev] = await Promise.all([
-        this.getPrevHash('global', null),
-        ctx.groupId ? this.getPrevHash('group', ctx.groupId) : Promise.resolve(null),
-        ctx.votingId ? this.getPrevHash('voting', ctx.votingId) : Promise.resolve(null),
-        ctx.surveyId ? this.getPrevHash('survey', ctx.surveyId) : Promise.resolve(null),
-      ]);
+      const [globalPrev, groupPrev, votingPrev, surveyPrev] = await Promise.all(
+        [
+          this.getPrevHash('global', null),
+          ctx.groupId
+            ? this.getPrevHash('group', ctx.groupId)
+            : Promise.resolve(null),
+          ctx.votingId
+            ? this.getPrevHash('voting', ctx.votingId)
+            : Promise.resolve(null),
+          ctx.surveyId
+            ? this.getPrevHash('survey', ctx.surveyId)
+            : Promise.resolve(null),
+        ],
+      );
 
       const createdAt = new Date();
 
@@ -224,6 +269,7 @@ export class AuditService implements OnModuleInit {
     sequence?: number;
     blockHash?: string;
     prevHash?: string;
+    timestamp?: Date;
   }> {
     const doc = await this.chainModel
       .findOne({
@@ -241,6 +287,7 @@ export class AuditService implements OnModuleInit {
       sequence: (doc as any).sequence,
       blockHash: (doc as any).hash,
       prevHash: (doc as any).prevHash,
+      timestamp: (doc as any).createdAt,
     };
   }
 
@@ -255,8 +302,18 @@ export class AuditService implements OnModuleInit {
    * sequence order. On very large datasets consider running this as a
    * background job rather than a synchronous HTTP response.
    */
-  async verifyChain(groupId?: string | null): Promise<VerifyResult> {
-    const filter = groupId ? { groupId } : {};
+  async verifyChain(
+    groupId?: string | null,
+    forceFull = false,
+  ): Promise<ScopedVerifyResult> {
+    const filter: any = groupId ? { groupId } : {};
+    const scope = groupId ? 'group' : 'global';
+    const scopeId = groupId || null;
+
+    const lastVerified = await this.getLastVerifiedSequence(scope, scopeId);
+    if (lastVerified && !forceFull) {
+      filter['sequence'] = { $gt: lastVerified };
+    }
 
     const cursor = this.chainModel
       .find(filter)
@@ -281,6 +338,7 @@ export class AuditService implements OnModuleInit {
     let totalChecked = 0;
     let expectedPrevHash = groupId ? null : 'GENESIS';
     let prevSequence: number | null = null;
+    let headSequence = lastVerified || 0;
 
     for await (const raw of cursor) {
       const doc = raw as any;
@@ -292,11 +350,15 @@ export class AuditService implements OnModuleInit {
         doc.sequence !== prevSequence + 1 &&
         !groupId
       ) {
+        // Reset verified marker if break detected
+        await this.setLastVerifiedSequence(scope, scopeId, 0);
         return {
           valid: false,
           totalChecked,
           brokenAt: doc.sequence,
           reason: `Sequence gap: expected ${prevSequence + 1}, got ${doc.sequence}. Possible deletion.`,
+          scope,
+          scopeId: scopeId ?? undefined,
         };
       }
 
@@ -316,11 +378,18 @@ export class AuditService implements OnModuleInit {
       });
 
       if (expected !== doc.hash) {
+        // Reset verified marker if tampering detected
+        await this.setLastVerifiedSequence(scope, scopeId, 0);
         return {
           valid: false,
           totalChecked,
           brokenAt: doc.sequence,
           reason: `Hash mismatch at sequence ${doc.sequence}. Entry has been tampered.`,
+          expectedHash: expected,
+          foundHash: doc.hash,
+          tamperedBlock: doc,
+          scope,
+          scopeId: scopeId ?? undefined,
         };
       }
 
@@ -330,16 +399,25 @@ export class AuditService implements OnModuleInit {
         expectedPrevHash !== null &&
         doc.prevHash !== expectedPrevHash
       ) {
+        // Reset verified marker if break detected
+        await this.setLastVerifiedSequence(scope, scopeId, 0);
         return {
           valid: false,
           totalChecked,
           brokenAt: doc.sequence,
           reason: `prevHash mismatch at sequence ${doc.sequence}. Chain link broken.`,
+          scope,
+          scopeId: scopeId ?? undefined,
         };
       }
 
       expectedPrevHash = doc.hash;
       prevSequence = doc.sequence;
+      headSequence = doc.sequence;
+    }
+
+    if (headSequence > (lastVerified || 0)) {
+      await this.setLastVerifiedSequence(scope, scopeId, headSequence);
     }
 
     return {
@@ -347,6 +425,8 @@ export class AuditService implements OnModuleInit {
       totalChecked,
       brokenAt: null,
       reason: null,
+      scope,
+      scopeId: scopeId ?? undefined,
     };
   }
 
@@ -413,6 +493,9 @@ export class AuditService implements OnModuleInit {
           totalChecked,
           brokenAt: doc.votingSequence,
           reason: `Hash mismatch at votingSequence ${doc.votingSequence}. Entry tampered.`,
+          expectedHash: expected,
+          foundHash: doc.hash,
+          tamperedBlock: doc,
           scope: 'voting',
           scopeId: votingId,
         };
@@ -428,6 +511,7 @@ export class AuditService implements OnModuleInit {
           totalChecked,
           brokenAt: doc.votingSequence,
           reason: `votingPrevHash mismatch at sequence ${doc.votingSequence}. Chain link broken.`,
+          tamperedBlock: doc,
           scope: 'voting',
           scopeId: votingId,
         };
@@ -510,6 +594,9 @@ export class AuditService implements OnModuleInit {
           totalChecked,
           brokenAt: doc.groupSequence,
           reason: `Hash mismatch at groupSequence ${doc.groupSequence}. Entry tampered.`,
+          expectedHash: expected,
+          foundHash: doc.hash,
+          tamperedBlock: doc,
           scope: 'group',
           scopeId: groupId,
         };
@@ -522,6 +609,7 @@ export class AuditService implements OnModuleInit {
           totalChecked,
           brokenAt: doc.groupSequence,
           reason: `groupPrevHash mismatch at sequence ${doc.groupSequence}. Chain link broken.`,
+          tamperedBlock: doc,
           scope: 'group',
           scopeId: groupId,
         };
@@ -604,6 +692,9 @@ export class AuditService implements OnModuleInit {
           totalChecked,
           brokenAt: doc.surveySequence,
           reason: `Hash mismatch at surveySequence ${doc.surveySequence}. Entry tampered.`,
+          expectedHash: expected,
+          foundHash: doc.hash,
+          tamperedBlock: doc,
           scope: 'survey',
           scopeId: surveyId,
         };
@@ -619,6 +710,7 @@ export class AuditService implements OnModuleInit {
           totalChecked,
           brokenAt: doc.surveySequence,
           reason: `surveyPrevHash mismatch at sequence ${doc.surveySequence}. Chain link broken.`,
+          tamperedBlock: doc,
           scope: 'survey',
           scopeId: surveyId,
         };

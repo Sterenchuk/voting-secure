@@ -12,6 +12,7 @@ import { Request } from 'express';
 import { AuditService } from './audit.service';
 import { AUDIT_KEY, AuditMeta } from './audit.decorator';
 import { SecurityAction } from '../common/enums/audit.actions';
+import { ChainAction } from './types/audit.types';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -46,13 +47,13 @@ export class AuditInterceptor implements NestInterceptor {
   ): Promise<void> {
     const { action, extractPayload } = meta;
     const payload = extractPayload ? extractPayload(response, req) : {};
-    const userId = req.user?.sub ?? null;
+    const currentUserId = req.user?.sub ?? null;
 
     if (Object.values(SecurityAction).includes(action as any)) {
       await this.auditService.appendSecurity({
         action: action as SecurityAction,
         payload,
-        userId,
+        userId: currentUserId,
         ip: req.ip,
         userAgent: req.headers['user-agent'],
       } as any);
@@ -63,9 +64,17 @@ export class AuditInterceptor implements NestInterceptor {
     const params = req.params ?? {};
     const body = req.body ?? {};
 
+    // ANONYMITY POLICY: userId MUST be null for ballot casting actions
+    const isAnonymous = 
+      action === ChainAction.BALLOT_CAST || 
+      action === ChainAction.SURVEY_BALLOT_CAST;
+    
+    const auditUserId = isAnonymous ? null : currentUserId;
+
     await this.auditService.appendChain({
       action: action as any,
       payload,
+      userId: auditUserId,
       groupId: res.groupId ?? params.groupId ?? body.groupId ?? null,
       votingId: res.votingId ?? params.id ?? body.votingId ?? null,
       surveyId: res.surveyId ?? params.id ?? body.surveyId ?? null,

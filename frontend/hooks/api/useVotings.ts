@@ -72,6 +72,7 @@ export interface CastVoteData {
 export interface CastVoteResponse {
   participated: true;
   receipts: string[];
+  emailSent: boolean;
   proof: {
     verifyUrl: string;
     chainUrl: string;
@@ -117,9 +118,14 @@ const mapVoting = (v: any): Voting => {
 
   const now = new Date();
   const startAt = v.startAt ? new Date(v.startAt) : null;
+  const endAt = v.endAt ? new Date(v.endAt) : null;
   let status: Voting["status"] = "draft";
+
   if (v.isFinalized) status = "completed";
-  else if (v.isOpen) status = "active";
+  else if (v.isOpen) {
+    if (endAt && now > endAt) status = "completed";
+    else status = "active";
+  }
   else if (startAt && startAt > now) status = "upcoming";
 
   return {
@@ -385,6 +391,18 @@ export function useVotings() {
     }>(`/votings/${votingId}/verify-receipt?hash=${encodeURIComponent(hash)}`);
   }, []);
 
+  const fetchParticipationStats = useCallback(async (id: string) => {
+    return api.get<Array<{ time: string; votes: number }>>(`/votings/${id}/participation-stats`);
+  }, []);
+
+  const fetchGlobalStats = useCallback(async () => {
+    return api.get<{ totalVotes: number; activeVotings: number }>("/votings/global/stats");
+  }, []);
+
+  const fetchGlobalTrends = useCallback(async () => {
+    return api.get<Array<{ timestamp: string; count: number }>>("/votings/global/trends");
+  }, []);
+
   return {
     ...state,
     fetchVotings,
@@ -399,6 +417,9 @@ export function useVotings() {
     syncResults,
     updateVotingState,
     verifyReceipt,
+    fetchParticipationStats,
+    fetchGlobalStats,
+    fetchGlobalTrends,
   };
 }
 

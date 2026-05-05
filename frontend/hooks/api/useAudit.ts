@@ -35,6 +35,8 @@ export interface ChainIntegrityResult {
   totalChecked: number;
   brokenAt: number | null;
   reason: string | null;
+  expectedHash?: string;
+  foundHash?: string;
   scope?: "global" | "group" | "voting" | "survey";
   scopeId?: string;
 }
@@ -58,9 +60,10 @@ export function useAudit() {
 
   const fetchGlobalChain = useCallback(async (page = 1, pageSize = 20) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
-    const response = await api.get<{ records: AuditLogEntry[]; totalCount: number }>(
-      `/audit?page=${page}&pageSize=${pageSize}`
-    );
+    const response = await api.get<{
+      records: AuditLogEntry[];
+      totalCount: number;
+    }>(`/audit?page=${page}&pageSize=${pageSize}`);
 
     if (response.data) {
       setState((prev) => ({
@@ -77,7 +80,10 @@ export function useAudit() {
 
   const fetchVotingChain = useCallback(async (votingId: string) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
-    const response = await api.get<AuditLogEntry[]>(`/audit/votings/${votingId}/audit-chain`);
+    const response = await api.get<AuditLogEntry[]>(
+      `/audit/votings/audit-chain/${votingId}`,
+    );
+
 
     if (response.data) {
       setState((prev) => ({
@@ -94,15 +100,23 @@ export function useAudit() {
 
   const verifyReceipt = useCallback(async (votingId: string, hash: string) => {
     return api.get<VerifyReceiptResult>(
-      `/votings/${votingId}/verify-receipt?hash=${hash}`
+      `/votings/${votingId}/verify-receipt?hash=${encodeURIComponent(hash)}`,
     );
   }, []);
 
   const verifyScopedIntegrity = useCallback(
-    async (scope: "global" | "group" | "voting" | "survey" = "global", scopeId?: string) => {
+    async (
+      scope: "global" | "group" | "voting" | "survey" = "global",
+      scopeId?: string,
+      forceFull = false,
+    ) => {
       let url = "/audit/verify";
       if (scope !== "global" && scopeId) {
         url = `/audit/verify/${scope}/${scopeId}`;
+      }
+
+      if (forceFull) {
+        url += (url.includes("?") ? "&" : "?") + "forceFull=true";
       }
 
       const response = await api.get<ChainIntegrityResult>(url);
@@ -111,7 +125,7 @@ export function useAudit() {
       }
       return response;
     },
-    []
+    [],
   );
 
   return {

@@ -49,6 +49,10 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string): Promise<{ accessToken: string }> {
+    if (!refreshToken) {
+      throw new UnauthorizedException('No refresh token provided');
+    }
+
     try {
       const payload = this.jwtService.verify(refreshToken);
       const userId = payload.sub;
@@ -129,7 +133,7 @@ export class AuthService {
     };
   }
 
-  async signIn(email: string, password: string): Promise<ResponseDto> {
+  async signIn(email: string, password: string, rememberMe: boolean = false): Promise<ResponseDto> {
     const user = await this.usersService.findOneByEmail(email);
 
     if ((await verifyPassword(user.password, password)) === false) {
@@ -152,7 +156,7 @@ export class AuthService {
 
     return {
       accessToken,
-      refreshToken: await this.generateRefreshToken(user.id),
+      refreshToken: rememberMe ? await this.generateRefreshToken(user.id) : undefined,
       user: {
         id: user.id,
         email: user.email,

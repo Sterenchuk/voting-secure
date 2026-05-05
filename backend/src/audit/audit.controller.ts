@@ -5,10 +5,14 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Query,
 } from '@nestjs/common';
 
 import { AuditService } from './audit.service';
 import { AuditVerifyGuard } from './audit-verify.guard';
+import { GroupRoleGuard } from '../common/guards/group-role.guard';
+import { GroupRoles } from '../common/decorators/group-roles.decorator';
+import { GroupRole } from '../common/enums/group-role';
 import { VerifyResult, ScopedVerifyResult } from './types/audit.types';
 import { Public } from '../common/decorators/public.decorator';
 
@@ -16,30 +20,28 @@ import { Public } from '../common/decorators/public.decorator';
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
-  @Get('votings/:id/audit-chain')
-  @Public()
-  getAuditChain(@Param('id') votingId: string) {
-    return this.auditService.getVotingChain(votingId);
-  }
-
   // ── Global (platform admin only) ──────────────────────────────────────────
 
   @Get('verify')
   @UseGuards(AuditVerifyGuard)
   @HttpCode(HttpStatus.OK)
-  verifyFullChain(): Promise<VerifyResult> {
-    return this.auditService.verifyChain();
+  verifyFullChain(
+    @Query('forceFull') forceFull?: string,
+  ): Promise<VerifyResult> {
+    return this.auditService.verifyChain(null, forceFull === 'true');
   }
 
   // ── Group scope ───────────────────────────────────────────────────────────
 
   @Get('verify/group/:groupId')
-  @UseGuards(AuditVerifyGuard)
+  @UseGuards(GroupRoleGuard, AuditVerifyGuard)
+  @GroupRoles(GroupRole.OWNER, GroupRole.ADMIN)
   @HttpCode(HttpStatus.OK)
   verifyGroupChain(
     @Param('groupId') groupId: string,
+    @Query('forceFull') forceFull?: string,
   ): Promise<ScopedVerifyResult> {
-    return this.auditService.verifyGroupChain(groupId);
+    return this.auditService.verifyChain(groupId, forceFull === 'true');
   }
 
   // ── Voting scope (public — participants can verify their own voting) ───────
@@ -62,5 +64,11 @@ export class AuditController {
     @Param('surveyId') surveyId: string,
   ): Promise<ScopedVerifyResult> {
     return this.auditService.verifySurveyChain(surveyId);
+  }
+
+  @Get('votings/audit-chain/:id')
+  @Public()
+  getAuditChain(@Param('id') votingId: string) {
+    return this.auditService.getVotingChain(votingId);
   }
 }

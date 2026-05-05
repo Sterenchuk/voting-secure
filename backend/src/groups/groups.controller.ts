@@ -60,13 +60,21 @@ export class GroupsController {
   }
 
   @Get(':id/members')
-  async findGroupMembers(@Param('id') groupId: string): Promise<any[]> {
-    return this.groupsService.findMembers(groupId);
+  async findGroupMembers(
+    @Param('id') groupId: string,
+    @CurrentUser('sub') userId: UserPayloadDto['sub'],
+    @CurrentUser('role') role: Role,
+  ): Promise<any[]> {
+    return this.groupsService.findMembers(groupId, userId, role);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: UuidDto['id']): Promise<GroupResponseDto> {
-    return this.groupsService.findOne(id);
+  findOne(
+    @Param('id') id: UuidDto['id'],
+    @CurrentUser('sub') userId: UserPayloadDto['sub'],
+    @CurrentUser('role') role: Role,
+  ): Promise<GroupResponseDto> {
+    return this.groupsService.findOne(id, userId, role);
   }
 
   @Patch(':id')
@@ -80,9 +88,10 @@ export class GroupsController {
   update(
     @Param('id') id: UuidDto['id'],
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
+    @CurrentUser('role') role: Role,
     @Body() groupUpdateDto: GroupUpdateDto,
   ): Promise<GroupResponseDto> {
-    return this.groupsService.update(userId, id, groupUpdateDto);
+    return this.groupsService.update(userId, id, groupUpdateDto, role);
   }
 
   @Patch(':id/add/users')

@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useI18n } from "@/lib/i18n/context";
+import { useAuth } from "@/lib/auth/context";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import styles from "./Sidebar.module.css";
 
@@ -64,9 +65,10 @@ const SettingsIcon = () => (
 
 export function Sidebar() {
   const { t } = useI18n();
+  const { user } = useAuth();
   const pathname = usePathname();
 
-  const navItems = [
+  let navItems = [
     { href: "/dashboard", label: t.nav.dashboard, icon: <DashboardIcon /> },
     { href: "/votings", label: t.nav.votings, icon: <VotingsIcon /> },
     { href: "/surveys", label: t.nav.surveys, icon: <SurveysIcon /> },
@@ -74,10 +76,16 @@ export function Sidebar() {
     { href: "/audit", label: t.nav.audit, icon: <AuditIcon /> },
   ];
 
-  const bottomItems = [
+  let bottomItems = [
     { href: "/profile", label: t.nav.profile, icon: <ProfileIcon /> },
     { href: "/settings", label: t.nav.settings, icon: <SettingsIcon /> },
   ];
+
+  // Filter for Auditor role
+  if (user?.role === "auditor") {
+    navItems = navItems.filter((item) => item.href === "/audit");
+    bottomItems = [];
+  }
 
   const isActive = (path: string) => {
     if (path === "/dashboard") return pathname === "/dashboard";

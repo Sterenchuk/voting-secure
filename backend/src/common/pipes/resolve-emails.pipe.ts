@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
+import { CryptoUtils } from '../utils/crypto-utils';
 
 @Injectable()
 export class ResolveEmailsPipe implements PipeTransform {
@@ -18,14 +19,12 @@ export class ResolveEmailsPipe implements PipeTransform {
     
     if (emailKey) {
       const emailValue = value[emailKey];
+      const emailHash = CryptoUtils.getBlindIndex(emailValue);
       const user = await this.database.user.findUnique({
-        where: { email: emailValue },
+        where: { emailHash },
         select: { id: true },
       });
 
-      // For login/register, we might not find the user yet, so we don't ALWAYS throw.
-      // But for Group actions (ChangeRole), we usually want to throw.
-      // Strategy: Attach the ID if found. The controller/service handles the "not found" logic.
       if (user) {
         value.targetUserId = user.id;
       }
@@ -35,15 +34,16 @@ export class ResolveEmailsPipe implements PipeTransform {
     if (value.userEmails && Array.isArray(value.userEmails)) {
       if (value.userEmails.length === 0) return value;
 
+      const emailHashes = value.userEmails.map(e => CryptoUtils.getBlindIndex(e));
       const users = await this.database.user.findMany({
-        where: { email: { in: value.userEmails } },
-        select: { id: true, email: true },
+        where: { emailHash: { in: emailHashes } },
+        select: { id: true, emailHash: true },
       });
 
       if (users.length !== value.userEmails.length) {
-        const foundEmails = users.map((u) => u.email);
+        const foundHashes = users.map((u) => u.emailHash);
         const missingEmails = value.userEmails.filter(
-          (e) => !foundEmails.includes(e),
+          (e) => !foundHashes.includes(CryptoUtils.getBlindIndex(e)),
         );
         throw new NotFoundException(
           `Users not found: ${missingEmails.join(', ')}`,

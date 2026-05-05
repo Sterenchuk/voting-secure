@@ -9,6 +9,7 @@ import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
 import styles from "./page.module.css";
+import { Calendar, Users, CheckCircle2, Clock } from "lucide-react";
 
 export default function GroupDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -28,7 +29,9 @@ export default function GroupDetailPage() {
     }
   }, [id, fetchGroup, fetchVotings]);
 
-  const handleFinalize = async (votingId: string) => {
+  const handleFinalize = async (e: React.MouseEvent, votingId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
     await finalizeVoting(votingId);
     fetchVotings({ groupId: id });
   };
@@ -49,6 +52,13 @@ export default function GroupDetailPage() {
   ];
 
   const members = currentGroup.users ?? [];
+
+  const statusLabel: Record<string, string> = {
+    active: t.votings.filterActive,
+    upcoming: t.votings.filterScheduled,
+    completed: t.votings.filterCompleted,
+    draft: t.votings.filterScheduled,
+  };
 
   return (
     <div className={styles.page}>
@@ -113,7 +123,7 @@ export default function GroupDetailPage() {
               variant="secondary"
               size="sm"
               as="link"
-              href={`/groups/${id}/members`}
+              href={`/groups/${id}/settings`}
             >
               {t.groups.manage}
             </Button>
@@ -164,20 +174,55 @@ export default function GroupDetailPage() {
                 <p>{t.votings.noVotingsDescription}</p>
               </div>
             ) : (
-              <ul className={styles.optionList}>
+              <ul className={styles.votingList}>
                 {votings.map((v) => (
-                  <li key={v.id} className={styles.optionItem}>
-                    <div className={styles.optionRow}>
-                      <span className={styles.optionText}>{v.title}</span>
-                      <span className={styles.optionPct}>{v.status}</span>
+                  <li key={v.id} className={styles.votingItem}>
+                    <div className={styles.votingMain}>
+                      <a
+                        href={`/votings/${v.id}`}
+                        className={styles.votingTitle}
+                      >
+                        {v.title}
+                      </a>
+                      <span
+                        className={`${styles.statusBadge} ${styles[`status_${v.status}`]}`}
+                      >
+                        {statusLabel[v.status]}
+                      </span>
                     </div>
+
+                    <div className={styles.votingMeta}>
+                      <span className={styles.metaItem}>
+                        <Calendar />
+                        {new Date(v.createdAt).toLocaleDateString()}
+                      </span>
+                      {v.endAt && (
+                        <span className={styles.metaItem}>
+                          <Clock />
+                          {new Date(v.endAt).toLocaleDateString()}
+                        </span>
+                      )}
+                      <span className={styles.metaItem}>
+                        <Users />
+                        {v.participantsCount} {t.votings.votes}
+                      </span>
+                      {v.isFinalized && (
+                        <span className={styles.metaItem}>
+                          <CheckCircle2 className="text-emerald-500" />
+                          Finalized
+                        </span>
+                      )}
+                    </div>
+
                     {!v.isFinalized && v.status === "completed" && (
-                      <Button size="sm" onClick={() => handleFinalize(v.id)}>
-                        Finalize Voting
-                      </Button>
-                    )}
-                    {v.status !== "completed" && !v.isOpen && (
-                      <span className={styles.note}>Voting in progress</span>
+                      <div style={{ marginTop: "var(--space-sm)" }}>
+                        <Button
+                          size="sm"
+                          onClick={(e) => handleFinalize(e, v.id)}
+                        >
+                          Finalize Results
+                        </Button>
+                      </div>
                     )}
                   </li>
                 ))}

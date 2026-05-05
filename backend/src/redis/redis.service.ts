@@ -82,6 +82,14 @@ export class RedisVotingService {
         pipeline.hincrby(`voting:${votingId}:results`, id, 1),
       );
     }
+    
+    // Track global stats for dashboard
+    pipeline.incr('global:vote_count');
+    
+    // Track trends (votes per hour)
+    const hourKey = new Date().toISOString().substring(0, 13);
+    pipeline.hincrby('global:trends', hourKey, 1);
+    
     await pipeline.exec();
   }
 
@@ -95,6 +103,34 @@ export class RedisVotingService {
     if (lockKeys.length > 0) pipeline.del(...lockKeys);
     pipeline.del(`voting:${votingId}:results`, `voting:${votingId}:voters`);
     await pipeline.exec();
+  }
+
+  // ─── GLOBAL DASHBOARD METHODS ──────────────────────────────────────────────
+
+  async getGlobalStats() {
+    const [totalVotes, activeVotings] = await Promise.all([
+      this.redis.get('global:vote_count'),
+      this.redis.get('global:active_votings'),
+    ]);
+    return {
+      totalVotes: parseInt(totalVotes || '0', 10),
+      activeVotings: parseInt(activeVotings || '0', 10),
+    };
+  }
+
+  async getGlobalTrends() {
+    const trends = await this.redis.hgetall('global:trends');
+    // Sort keys (dates) to ensure chronological order for the graph
+    return Object.keys(trends)
+      .sort()
+      .map((key) => ({
+        timestamp: key,
+        count: parseInt(trends[key], 10),
+      }));
+  }
+
+  async updateActiveVotingsCount(count: number): Promise<void> {
+    await this.redis.set('global:active_votings', count);
   }
 
   // ─── SURVEY RESULT CACHE ───────────────────────────────────────────────────
@@ -180,12 +216,6 @@ export class RedisVotingService {
   }
 
   // ─── UNIFIED TOKEN METHODS (VOTING + SURVEY) ───────────────────────────────
-  //
-  // Forward key:  token:{type}:{userId}:{entityId}  → tokenHash
-  // Reverse key:  token_reverse:{tokenHash}          → { userId, entityId, type }
-  //
-  // The reverse key allows email-link confirmation to look up the userId
-  // from just the raw token — satisfying Rec(2004)11 §47 without a DB table.
 
   private tokenKey(
     type: 'voting' | 'survey',
@@ -199,11 +229,6 @@ export class RedisVotingService {
     return `token_reverse:${hash}`;
   }
 
-  /**
-   * Issues a new token. If a token already exists for this user+entity,
-   * it is overwritten (Redis SET replaces automatically).
-   * Returns the raw token string — must be sent via email, never via API response.
-   */
   async issueToken(
     type: 'voting' | 'survey',
     userId: string,
@@ -229,10 +254,6 @@ export class RedisVotingService {
     return token;
   }
 
-  /**
-   * Looks up token metadata from just the raw token string.
-   * Used by email-link confirmation endpoint which has no userId.
-   */
   async lookupTokenByHash(
     hash: string,
   ): Promise<{ userId: string; entityId: string; type: string } | null> {
@@ -246,10 +267,6 @@ export class RedisVotingService {
     }
   }
 
-  /**
-   * Verifies a submitted token against the stored hash.
-   * Used during the normal vote flow where userId is known from JWT.
-   */
   async verifyToken(
     type: 'voting' | 'survey',
     userId: string,
@@ -264,10 +281,6 @@ export class RedisVotingService {
       throw new ForbiddenException('Invalid token');
   }
 
-  /**
-   * Consumes (deletes) a token — both forward and reverse keys.
-   * Call after the vote is committed to enforce single-use.
-   */
   async consumeToken(
     type: 'voting' | 'survey',
     userId: string,
@@ -290,9 +303,6 @@ export class RedisVotingService {
     );
   }
 
-  /**
-   * Returns the stored hash for a token — used to cross-check in email confirmation.
-   */
   async getStoredHash(
     type: 'voting' | 'survey',
     userId: string,
@@ -302,10 +312,6 @@ export class RedisVotingService {
   }
 
   // ─── SELECTION METHODS ─────────────────────────────────────────────────────
-  //
-  // Stores user's vote selections when they click "Cast Vote" on the page.
-  // Retrieved when the email link is clicked to confirm the vote.
-  // TTL matches the token TTL — both expire together.
 
   async setSelections(
     userId: string,
@@ -347,7 +353,7 @@ export class RedisVotingService {
     await this.redis.del(`vote_selections:${userId}:${entityId}`);
   }
 
-  // ─── AUDIT SEQUENCE COUNTERS ───────────────────────────────────────────────
+  // ─── AUDIT SEQUENCE COUNTERS & VERIFICATION MARKERS ───────────────────────
 
   async nextGlobalSequence(): Promise<number> {
     return this.redis.incr('audit_seq:global');
@@ -363,5 +369,72 @@ export class RedisVotingService {
 
   async nextSurveySequence(surveyId: string): Promise<number> {
     return this.redis.incr(`audit_seq:survey:${surveyId}`);
+  }
+
+  async setLastVerifiedSequence(
+    scope: 'global' | 'group' | 'voting' | 'survey',
+    scopeId: string | null,
+    sequence: number,
+  ): Promise<void> {
+    const key = scopeId ? `audit_ver:${scope}:${scopeId}` : `audit_ver:${scope}`;
+    await this.redis.set(key, sequence.toString());
+  }
+
+  async getLastVerifiedSequence(
+    scope: 'global' | 'group' | 'voting' | 'survey',
+    scopeId: string | null,
+  ): Promise<number | null> {
+    const key = scopeId ? `audit_ver:${scope}:${scopeId}` : `audit_ver:${scope}`;
+    const val = await this.redis.get(key);
+    return val ? parseInt(val, 10) : null;
+  }
+
+  // ─── SNAPSHOT CACHING ──────────────────────────────────────────────────────
+
+  async setSnapshot(key: string, data: any, ttlSeconds: number): Promise<void> {
+    await this.redis.set(key, JSON.stringify(data), 'EX', ttlSeconds);
+  }
+
+  async getSnapshot<T>(key: string): Promise<T | null> {
+    const raw = await this.redis.get(key);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      this.logger.error(`Failed to parse snapshot for key: ${key}`);
+      return null;
+    }
+  }
+
+  // ─── TEMPORARY RECEIPT STORAGE ─────────────────────────────────────────────
+
+  async setTemporaryReceipts(
+    votingId: string,
+    userId: string,
+    receipts: string[],
+    ttlSeconds = 300,
+  ): Promise<void> {
+    await this.redis.set(
+      `vote_receipts:${votingId}:${userId}`,
+      JSON.stringify(receipts),
+      'EX',
+      ttlSeconds,
+    );
+  }
+
+  async getTemporaryReceipts(
+    votingId: string,
+    userId: string,
+  ): Promise<string[] | null> {
+    const raw = await this.redis.get(`vote_receipts:${votingId}:${userId}`);
+    if (!raw) return null;
+    try {
+      const receipts = JSON.parse(raw);
+      // Consume after retrieval - COMMENTED OUT FOR PERSISTENCE (Plan 4.1)
+      // await this.redis.del(`vote_receipts:${votingId}:${userId}`);
+      return receipts;
+    } catch {
+      return null;
+    }
   }
 }

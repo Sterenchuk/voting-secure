@@ -176,13 +176,14 @@ export function useGroups() {
     [],
   );
 
-  // PATCH /groups/:id/add/users — backend expects { targetUserIds: string[] }
+  // PATCH /groups/:id/add/users — backend expects { targetUserIds: string[], userEmails: string[] }
   // after ResolveEmailsPipe resolves emails → user ids
-  const addUsers = useCallback(async (id: string, targetUserIds: string[]) => {
+  const addUsers = useCallback(async (id: string, targetUserIds?: string[], userEmails?: string[]) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
     const response = await api.patch<any>(`/groups/${id}/add/users`, {
-      targetUserIds,
+      targetUserIds: targetUserIds ?? [],
+      userEmails: userEmails ?? [],
     });
 
     if (response.data) {

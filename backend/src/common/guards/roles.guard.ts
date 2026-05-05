@@ -21,8 +21,16 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const { user } = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest();
+    const { user, method } = request;
+
     if (!user) throw new ForbiddenException('No user found in request');
+
+    // AUDITOR bypass: GET allowed, mutations strictly blocked
+    if (user.role === Role.AUDITOR) {
+      if (method === 'GET') return true;
+      throw new ForbiddenException('Auditors are limited to read-only access');
+    }
 
     const hasRole = requiredRoles.includes(user.role);
     if (!hasRole) {

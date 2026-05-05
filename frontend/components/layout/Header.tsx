@@ -16,10 +16,16 @@ interface HeaderProps {
 export function Header({ isAuthenticated = false, userName }: HeaderProps) {
   const { t, language, setLanguage } = useI18n();
   const { theme, setTheme } = useTheme();
-  const { updateProfile } = useAuth();
+  const { updateProfile, signOut } = useAuth();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+
+  const handleSignOut = async () => {
+    setUserMenuOpen(
+      false);
+    await signOut();
+  };
 
   const toggleTheme = () => {
     const newTheme = theme === "dark" ? "light" : "dark";
@@ -168,7 +174,7 @@ export function Header({ isAuthenticated = false, userName }: HeaderProps) {
                     {t.nav.settings}
                   </Link>
                   <hr className={styles.dropdownDivider} />
-                  <button className={styles.dropdownItem}>
+                  <button className={styles.dropdownItem} onClick={handleSignOut}>
                     {t.nav.signOut}
                   </button>
                 </div>

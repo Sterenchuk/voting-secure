@@ -114,7 +114,6 @@ export class VoteService {
     try {
       const hash = CryptoUtils.hashToken(rawToken);
 
-      // look up who owns this token
       const tokenMeta = await this.redis.lookupTokenByHash(hash);
       if (!tokenMeta || tokenMeta.entityId !== votingId) {
         return { success: false, message: 'Invalid or expired voting token.' };
@@ -151,7 +150,6 @@ export class VoteService {
       this.logger.debug(
         `Confirming vote for user ${userId} ${user.language} ${user.theme} on voting ${votingId}`,
       );
-      await this.redis.deleteSelections(userId, votingId);
 
       const result = await this.vote(
         votingId,
@@ -166,6 +164,8 @@ export class VoteService {
         otherText,
         isAbstention,
       );
+
+      await this.redis.deleteSelections(userId, votingId);
 
       return {
         success: true,
@@ -339,7 +339,13 @@ export class VoteService {
         }
       });
 
-      await this.redis.consumeToken('voting', user.id, votingId);
+      try {
+        await this.redis.consumeToken('voting', user.id, votingId);
+      } catch (err) {
+        this.logger.error(
+          `Failed to consume token after committed vote: ${err}`,
+        );
+      }
 
       try {
         await this.redis.performVote(
@@ -348,6 +354,8 @@ export class VoteService {
           user.id,
           isAbstention,
         );
+
+        await this.redis.setTemporaryReceipts(votingId, user.id, receipts, 300);
       } catch (err) {
         this.logger.error(
           `Redis vote cache update failed for voting ${votingId}: ${err}`,
@@ -377,7 +385,6 @@ export class VoteService {
         this.logger.debug(
           `Sending receipt email to user ${user.language} ${user.theme} for voting ${votingId}`,
         );
-        await new Promise((resolve) => setTimeout(resolve, 1500));
 
         await this.mailService.sendVoteReceipt(
           user.email,
@@ -400,7 +407,7 @@ export class VoteService {
         receipts,
         proof: {
           verifyUrl: `/votings/${votingId}/verify-receipt`,
-          chainUrl: `/audit/votings/${votingId}/audit-chain`,
+          chainUrl: `/audit/votings/audit-chain/${votingId}`,
         },
       };
     } finally {
@@ -410,14 +417,59 @@ export class VoteService {
 
   // ─── Results ──────────────────────────────────────────────────────────────────
 
+  async getParticipationStats(votingId: string) {
+    const data = await this.repo.getParticipationStats(votingId);
+    // Group by 5-minute intervals for the chart
+    const stats: Record<string, number> = {};
+    data.forEach((p) => {
+      const date = new Date(p.createdAt);
+      date.setSeconds(0);
+      date.setMilliseconds(0);
+      const minutes = date.getMinutes();
+      date.setMinutes(minutes - (minutes % 5));
+      const key = date.toISOString();
+      stats[key] = (stats[key] || 0) + 1;
+    });
+
+    return Object.entries(stats).map(([time, votes]) => ({ time, votes }));
+  }
+
   async getResults(
     votingId: string,
     includeRawOther = false,
-  ): Promise<IVotingResults> {
-    const [cached, rawWithCounts, voting] = await Promise.all([
+  ): Promise<IVotingResults & { isClosed: boolean }> {
+    const cacheKey = `results:snapshot:${votingId}`;
+
+    const voting = await this.repo.findVotingById(votingId);
+    if (!voting) throw new NotFoundException('Voting not found');
+
+    const isClosed = voting.endAt ? new Date() > new Date(voting.endAt) : false;
+
+    if (!isClosed) {
+      const broadcastIntervalMs = (voting.broadcastInterval ?? 1) * 3600 * 1000;
+      const lastBroadcast = voting.lastBroadcastAt
+        ? new Date(voting.lastBroadcastAt)
+        : new Date(voting.createdAt);
+      const nextBroadcastAt = new Date(
+        lastBroadcast.getTime() + broadcastIntervalMs,
+      );
+
+      const snapshot = await this.redis.getSnapshot<
+        IVotingResults & { isClosed: boolean }
+      >(cacheKey);
+
+      if (new Date() < nextBroadcastAt && snapshot) {
+        return snapshot;
+      }
+
+      if (new Date() >= nextBroadcastAt) {
+        await this.repo.updateVoting(votingId, { lastBroadcastAt: new Date() });
+      }
+    }
+
+    const [cached, rawWithCounts] = await Promise.all([
       this.redis.getResults(votingId),
       this.repo.findOptionsWithBallotCounts(votingId),
-      this.repo.findVotingAllowOther(votingId),
     ]);
 
     const options = rawWithCounts ?? [];
@@ -453,13 +505,19 @@ export class VoteService {
     const staticTotal = staticOptions.reduce((sum, o) => sum + o.voteCount, 0);
     const totalBallots = staticTotal + otherTotal + abstentionsCount;
 
-    return {
+    const results = {
       options: staticOptions,
       totalBallots,
       abstentionsCount,
       otherTotal: voting?.allowOther ? otherTotal : undefined,
       dynamicOptions: voting?.allowOther ? dynamicOptions : undefined,
+      isClosed,
     };
+
+    // Cache snapshot
+    await this.redis.setSnapshot(cacheKey, results, 7200);
+
+    return results;
   }
 
   async getSealedResult(votingId: string) {
@@ -521,7 +579,13 @@ export class VoteService {
     userId: string,
   ): Promise<IUserVoteStatus> {
     const participation = await this.repo.findParticipation(userId, votingId);
-    return { participated: !!participation };
+    if (!participation) return { participated: false };
+
+    const receipts = await this.redis.getTemporaryReceipts(votingId, userId);
+    return {
+      participated: true,
+      receipts: receipts || undefined,
+    };
   }
 
   broadcastResults(votingId: string, results: IVotingResults) {

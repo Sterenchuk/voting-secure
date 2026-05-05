@@ -10,6 +10,7 @@ import {
   Min,
   MinLength,
   MaxLength,
+  Max,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { VotingType } from '../types/voting.types';
@@ -64,4 +65,10 @@ export class VotingCreateDto {
   @IsOptional()
   @IsDateString()
   endAt?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(24)
+  broadcastInterval?: number;
 }

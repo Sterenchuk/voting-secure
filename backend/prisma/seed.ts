@@ -9,6 +9,7 @@ import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { CryptoUtils } from '../src/common/utils/crypto-utils';
 
 // ─── Prisma Setup ─────────────────────────────────────────────────────────────
 
@@ -35,11 +36,18 @@ async function main() {
   const userMap = new Map<string, string>();
 
   for (const userData of USERS_DATA) {
+    const encryptedEmail = CryptoUtils.encrypt(userData.email);
+    const emailHash = CryptoUtils.getBlindIndex(userData.email);
+
     const user = await prisma.user.upsert({
-      where: { email: userData.email },
-      update: {},
+      where: { emailHash: emailHash },
+      update: {
+        email: encryptedEmail,
+      },
       create: {
         ...userData,
+        email: encryptedEmail,
+        emailHash: emailHash,
         password: hashedPassword,
         isEmailVerified: true,
       },

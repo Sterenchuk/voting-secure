@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n/context";
+import { useAuth } from "@/lib/auth/context";
 import { useVotings, CastVoteResponse } from "@/hooks/api/useVotings";
+import { useAudit } from "@/hooks/api/useAudit";
 import { useVotingUpdates } from "@/hooks/useSocket";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { Button } from "@/components/common/Button";
@@ -12,16 +14,30 @@ import { VotingType } from "@/types/voting";
 import { api } from "@/hooks/api/useApi";
 import { OtherOptionRow } from "@/components/votings/OtherOptionRow";
 import styles from "./page.module.css";
+import { ShieldCheck, Lock, ExternalLink, FileDown, TrendingUp, Table, FileCode } from "lucide-react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 export default function VotingDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const { t } = useI18n();
+  const { user } = useAuth();
+  const { verifyScopedIntegrity } = useAudit();
   const {
     currentVoting,
     fetchVoting,
     fetchResults,
     syncResults,
     requestToken,
+    fetchParticipationStats,
     loading,
   } = useVotings();
 
@@ -34,38 +50,62 @@ export default function VotingDetailPage() {
   const [tokenRequested, setTokenRequested] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voteReceipt, setVoteReceipt] = useState<CastVoteResponse | null>(null);
+  const [participationStats, setParticipationStats] = useState<Array<{ time: string; votes: number }>>([]);
+
+  const isAdminOrAuditor = user?.role === "admin" || user?.role === "auditor";
 
   // Subscribe to real-time updates
   useVotingUpdates(id, (data) => {
     syncResults(data);
+    if (id) {
+      fetchParticipationStats(id).then(res => {
+        if (res.data) setParticipationStats(res.data);
+      });
+    }
   });
 
   useEffect(() => {
     if (id) {
       fetchVoting(id);
       fetchResults(id);
+      fetchParticipationStats(id).then(res => {
+        if (res.data) setParticipationStats(res.data);
+      });
     }
-  }, [id, fetchVoting, fetchResults]);
+  }, [id, fetchVoting, fetchResults, fetchParticipationStats]);
 
   // Poll for completion
   useEffect(() => {
     if (!tokenRequested || submitted || !id) return;
 
     const interval = setInterval(async () => {
-      const res = await api.get<{ participated: boolean }>(
+      const res = await api.get<{ participated: boolean; receipts?: string[] }>(
         `/votings/${id}/my-vote`,
       );
       if (res.data?.participated) {
         setSubmitted(true);
         setTokenRequested(false);
+        if (res.data.receipts) {
+          setVoteReceipt({
+            participated: true,
+            receipts: res.data.receipts,
+            emailSent: false,
+            proof: {
+              verifyUrl: `/votings/${id}/verify-receipt`,
+              chainUrl: `/audit/votings/audit-chain/${id}`,
+            },
+          });
+        }
         clearInterval(interval);
         await fetchVoting(id);
         await fetchResults(id);
+        const statsRes = await fetchParticipationStats(id);
+        if (statsRes.data) setParticipationStats(statsRes.data);
       }
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [tokenRequested, submitted, id, fetchVoting, fetchResults]);
+  }, [tokenRequested, submitted, id, fetchVoting, fetchResults, fetchParticipationStats]);
 
   if (loading || !currentVoting) {
     return (
@@ -175,6 +215,14 @@ export default function VotingDetailPage() {
     URL.revokeObjectURL(url);
   };
 
+  const downloadCsvResults = () => {
+    window.location.href = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost/api'}/votings/${id}/results/csv`;
+  };
+
+  const downloadEmlResults = () => {
+    window.location.href = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost/api'}/votings/${id}/results/eml`;
+  };
+
   const status = currentVoting.status;
   const statusLabel: Record<string, string> = {
     active: t.votings.filterActive,
@@ -188,6 +236,14 @@ export default function VotingDetailPage() {
     { label: t.common.votings, href: "/votings" },
     { label: currentVoting.title },
   ];
+
+  const trendData = participationStats.map(s => {
+    const d = s.time ? new Date(s.time) : new Date(NaN);
+    return {
+      time: !isNaN(d.getTime()) ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Invalid',
+      votes: s.votes
+    };
+  }).filter(d => d.time !== 'Invalid');
 
   return (
     <div className={styles.page}>
@@ -209,7 +265,7 @@ export default function VotingDetailPage() {
             <p className={styles.description}>{currentVoting.description}</p>
           )}
           <div className={styles.meta}>
-            {currentVoting.startAt && (
+            {currentVoting.startAt && !isNaN(new Date(currentVoting.startAt).getTime()) && (
               <span className={styles.metaItem}>
                 <svg
                   viewBox="0 0 24 24"
@@ -225,7 +281,7 @@ export default function VotingDetailPage() {
                   <line x1="3" y1="10" x2="21" y2="10" />
                 </svg>
                 {new Date(currentVoting.startAt).toLocaleDateString()}
-                {currentVoting.endAt && (
+                {currentVoting.endAt && !isNaN(new Date(currentVoting.endAt).getTime()) && (
                   <> – {new Date(currentVoting.endAt).toLocaleDateString()}</>
                 )}
               </span>
@@ -245,7 +301,7 @@ export default function VotingDetailPage() {
               {participantsCount} {t.votings.votes}
             </span>
             <a
-              href={`/votings/${id}/chain`}
+              href={`/audit/votings/audit-chain/${id}`}
               className={styles.metaItem}
               style={{
                 color: "var(--color-primary)",
@@ -270,11 +326,108 @@ export default function VotingDetailPage() {
       </div>
 
       <Card className={styles.optionsCard}>
+        {alreadyVoted && (
+          <div className="mb-6 p-4 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="h-6 w-6 text-emerald-600" />
+              <div>
+                <h3 className="font-semibold text-emerald-900">
+                  Participation Confirmed
+                </h3>
+                <p className="text-sm text-emerald-700">
+                  Your vote is securely recorded on the audit chain.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => router.push(`/audit/verify?votingId=${id}`)}
+              >
+                Verify My Vote
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {isAdminOrAuditor && (
+          <div className="mb-6 p-4 rounded-lg bg-slate-50 border border-slate-200 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Lock className="h-6 w-6 text-slate-600" />
+                <div>
+                  <h3 className="font-semibold text-slate-900">
+                    Audit Administrative
+                  </h3>
+                  <p className="text-sm text-slate-700">
+                    Verify full integrity of this voting chain.
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                onClick={() => verifyScopedIntegrity("voting", id)}
+              >
+                Verify Voting Chain
+              </Button>
+            </div>
+            {(isFinalized || alreadyVoted) && (
+              <div className="flex gap-2 border-t pt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={downloadCsvResults}
+                  className="flex items-center gap-2"
+                >
+                  <Table className="h-4 w-4" /> Export CSV Table
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={downloadEmlResults}
+                  className="flex items-center gap-2"
+                >
+                  <FileCode className="h-4 w-4" /> Export XML Report (EML 510)
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
         <h2 className={styles.sectionTitle}>
           {isFinalized || alreadyVoted
             ? t.votings.viewResults
             : t.votings.castVote}
         </h2>
+
+        {(isFinalized || alreadyVoted) && trendData.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-4 text-slate-600">
+              <TrendingUp className="h-5 w-5" />
+              <h3 className="font-semibold">Voting Tendencies (Activity over Time)</h3>
+            </div>
+            <div className="h-[250px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="time" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="votes"
+                    stroke="#3b82f6"
+                    strokeWidth={3}
+                    dot={{ r: 4, fill: '#3b82f6' }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
         {isMultiple && canVote && currentVoting.minChoices > 1 && (
           <p className={styles.hint}>
             {t.votings.votes}: {currentVoting.minChoices}

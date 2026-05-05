@@ -1,6 +1,6 @@
 export class ResponseDto {
   accessToken: string;
-  refreshToken: string;
+  refreshToken?: string;
   user: {
     id: string;
     email: string;
