@@ -174,7 +174,25 @@ export class AuditService implements OnModuleInit {
       .lean();
   }
 
-  // ── Public: append to chain ───────────────────────────────────────────────
+  async getSurveyChain(surveyId: string) {
+    return this.chainModel
+      .find({ surveyId })
+      .sort({ surveySequence: 1 })
+      .select({
+        sequence: 1,
+        surveySequence: 1,
+        action: 1,
+        payload: 1,
+        hash: 1,
+        prevHash: 1,
+        surveyPrevHash: 1,
+        createdAt: 1,
+      })
+      .lean();
+  }
+
+  // ── Public: append to chain ──
+─────────────────────────────────────────────
   async appendChain(ctx: AuditChainContext): Promise<void> {
     try {
       // 1. Fetch sequence numbers atomically from Redis

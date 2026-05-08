@@ -9,6 +9,7 @@ import { SurveysRepository } from './surveys.repository';
 import { RedisModule } from '../redis/redis.module';
 import { JwtModule } from '@nestjs/jwt';
 import { UsersModule } from '../users/users.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { UsersModule } from '../users/users.module';
     RedisModule,
     JwtModule,
     UsersModule,
+    AuditModule,
   ],
   providers: [
     SurveysService,

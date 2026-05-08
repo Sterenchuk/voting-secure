@@ -74,7 +74,7 @@ interface SurveyBallotInput {
 
 interface SubmitSurveyPayload {
   ballots: SurveyBallotInput[];
-  tokenId: string;
+  token?: string;
 }
 
 export interface CreateSurveyData {
@@ -334,20 +334,43 @@ export function useSurveys() {
 
   const requestToken = useCallback(async (surveyId: string) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
-    const response = await api.post<{ token: string; tokenId: string }>(
+    const response = await api.post<{ token: string }>(
       `/surveys/${surveyId}/token`,
     );
     setState((prev) => ({ ...prev, loading: false, error: response.error }));
     return response;
   }, []);
 
+  const getMyStatus = useCallback(async (surveyId: string) => {
+    return api.get<{ submitted: boolean; receipts?: string[] }>(
+      `/surveys/${surveyId}/my-status`,
+    );
+  }, []);
+
+  const fetchParticipationStats = useCallback(async (surveyId: string) => {
+    return api.get<Array<{ time: string; votes: number }>>(
+      `/surveys/${surveyId}/participation-stats`,
+    );
+  }, []);
+
+  const finalizeSurvey = useCallback(async (surveyId: string) => {
+    setState((prev) => ({ ...prev, loading: true, error: null }));
+    const response = await api.post<any>(`/surveys/${surveyId}/finalize`);
+    setState((prev) => ({ ...prev, loading: false, error: response.error }));
+    return response;
+  }, []);
+
+  const verifyReceipt = useCallback(async (surveyId: string, hash: string) => {
+    return api.get<any>(`/surveys/${surveyId}/verify-receipt?hash=${hash}`);
+  }, []);
+
   // Mirrors POST /surveys/:id/submit with SubmitSurveyResponseDto
   const submitSurvey = useCallback(
-    async (surveyId: string, answers: SurveyAnswer[], tokenId: string) => {
+    async (surveyId: string, answers: SurveyAnswer[], token?: string) => {
       setState((prev) => ({ ...prev, loading: true, error: null }));
 
       const ballots = await buildBallots(surveyId, answers);
-      const payload: SubmitSurveyPayload = { ballots, tokenId };
+      const payload: SubmitSurveyPayload = { ballots, token };
 
       const response = await api.post<any>(
         `/surveys/${surveyId}/submit`,
@@ -408,6 +431,10 @@ export function useSurveys() {
     syncResults,
     createSurvey,
     requestToken,
+    getMyStatus,
+    fetchParticipationStats,
+    finalizeSurvey,
+    verifyReceipt,
     submitSurvey,
     deleteSurvey,
   };

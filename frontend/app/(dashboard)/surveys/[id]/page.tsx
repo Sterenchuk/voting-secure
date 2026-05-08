@@ -1,19 +1,35 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n/context";
+import { useAuth } from "@/lib/auth/context";
 import { useSurveys, SurveyAnswer } from "@/hooks/api/useSurveys";
+import { useAudit } from "@/hooks/api/useAudit";
 import { useSurveyUpdates } from "@/hooks/useSocket";
 import { SurveyQuestionType } from "@/types/survey";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
+import { SurveyAuditStatus } from "@/components/surveys/SurveyAuditStatus";
+import { TrendingUp } from "lucide-react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import styles from "./page.module.css";
 
 export default function SurveyDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const { t } = useI18n();
+  const { user } = useAuth();
+  const { verifyScopedIntegrity } = useAudit();
   const {
     currentSurvey,
     fetchSurvey,
@@ -21,6 +37,8 @@ export default function SurveyDetailPage() {
     syncResults,
     submitSurvey,
     requestToken,
+    getMyStatus,
+    fetchParticipationStats,
     loading,
     results,
   } = useSurveys();
@@ -33,18 +51,38 @@ export default function SurveyDetailPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [participationStats, setParticipationStats] = useState<
+    Array<{ time: string; votes: number }>
+  >([]);
+  const [receipts, setReceipts] = useState<string[] | null>(null);
+
+  const isAdminOrAuditor = user?.role === "admin" || user?.role === "auditor";
 
   // Subscribe to real-time updates
   useSurveyUpdates(id, (data) => {
     syncResults(data);
+    if (id) {
+      fetchParticipationStats(id).then((res) => {
+        if (res.data) setParticipationStats(res.data);
+      });
+    }
   });
 
   useEffect(() => {
     if (id) {
       fetchSurvey(id);
       fetchResults(id);
+      getMyStatus(id).then((res) => {
+        if (res.data?.submitted) {
+          setSubmitted(true);
+          if (res.data.receipts) setReceipts(res.data.receipts);
+        }
+      });
+      fetchParticipationStats(id).then((res) => {
+        if (res.data) setParticipationStats(res.data);
+      });
     }
-  }, [id, fetchSurvey, fetchResults]);
+  }, [id, fetchSurvey, fetchResults, getMyStatus, fetchParticipationStats]);
 
   if (loading || !currentSurvey) {
     return (
@@ -59,6 +97,18 @@ export default function SurveyDetailPage() {
   const alreadyParticipated = currentSurvey.hasParticipated || submitted;
   const canSubmit =
     currentSurvey.isOpen && !currentSurvey.isFinalized && !alreadyParticipated;
+
+  const trendData = participationStats
+    .map((s) => {
+      const d = s.time ? new Date(s.time) : new Date(NaN);
+      return {
+        time: !isNaN(d.getTime())
+          ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          : "Invalid",
+        votes: s.votes,
+      };
+    })
+    .filter((d) => d.time !== "Invalid");
 
   const toggleShowOther = (questionId: string) => {
     setShowAllOtherForQuestion((prev) => ({
@@ -139,14 +189,42 @@ export default function SurveyDetailPage() {
         );
       }
 
-      // 2. Submit with Token ID
-      await submitSurvey(id, Object.values(answers), tokenRes.data.tokenId);
-      setSubmitted(true);
+      // 2. Submit with Token
+      const submitRes = await submitSurvey(id, Object.values(answers), tokenRes.data.token);
+      if (submitRes.data?.success) {
+        setSubmitted(true);
+        if (submitRes.data.receipts) setReceipts(submitRes.data.receipts);
+      }
     } catch (e: any) {
       setError(e?.message ?? t.common.error);
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const downloadReceipt = () => {
+    if (!receipts) return;
+    const data = JSON.stringify(
+      {
+        surveyId: id,
+        surveyTitle: currentSurvey.title,
+        submittedAt: new Date().toISOString(),
+        receipts: receipts,
+        proof: {
+          verifyUrl: `/surveys/${id}/verify`,
+          chainUrl: `/audit/surveys/audit-chain/${id}`,
+        },
+      },
+      null,
+      2,
+    );
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `survey-receipt-${id.slice(0, 8)}-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const status = currentSurvey.isFinalized
@@ -224,25 +302,63 @@ export default function SurveyDetailPage() {
         </div>
       </div>
 
-      {submitted ? (
-        <Card className={styles.successCard}>
-          <div className={styles.successIcon}>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              width="32"
-              height="32"
-            >
-              <path d="M9 12l2 2 4-4" />
-              <path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+      <Card className={styles.contentCard}>
+        <SurveyAuditStatus 
+          survey={currentSurvey}
+          isAdminOrAuditor={isAdminOrAuditor}
+          onVerifyChain={() => verifyScopedIntegrity("survey", id)}
+        />
+
+        {submitted && (
+          <div className={styles.receiptSection}>
+            <h3 className={styles.receiptTitle}>✓ {t.surveys.participationConfirmed || "Response Confirmed"}</h3>
+            <p className={styles.receiptText}>{t.votings.receiptSentEmail || "Your response has been securely recorded."}</p>
+            {receipts && (
+              <Button size="sm" variant="outline" onClick={downloadReceipt}>
+                {t.votings.downloadReceipt || "Download Receipt"}
+              </Button>
+            )}
           </div>
-          <h2>{t.common.submit}</h2>
-          <p>{t.surveys.viewResults}</p>
-        </Card>
-      ) : (
+        )}
+
+        {trendData.length > 0 && (alreadyParticipated || currentSurvey.isFinalized) && (
+          <div className={styles.trendChart}>
+            <div className={styles.trendHeader}>
+              <TrendingUp className={styles.trendIcon} />
+              <h3 className={styles.trendTitle}>
+                {t.votings.votingTendencies || "Submission Trends"}
+              </h3>
+            </div>
+            <div className={styles.chartContainer}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={trendData}
+                  margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="time" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: "8px",
+                      border: "none",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="votes"
+                    stroke="var(--color-accent-primary)"
+                    strokeWidth={3}
+                    dot={{ r: 4, fill: "var(--color-accent-primary)" }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
         <div className={styles.questionList}>
           {questions.map((question, idx) => {
             const isMultiple =
@@ -280,7 +396,7 @@ export default function SurveyDetailPage() {
                       const optionResult = questionResults?.options?.find(
                         (o: any) => o.id === opt.id,
                       );
-                      const voteCount = optionResult?.voteCount || 0;
+                      const voteCount = optionResult?.count || 0;
                       const pct =
                         totalQuestionVotes > 0
                           ? Math.round((voteCount / totalQuestionVotes) * 100)
@@ -463,7 +579,7 @@ export default function SurveyDetailPage() {
                                         fontSize: "var(--text-xs)",
                                       }}
                                     >
-                                      {a.text}
+                                      {a.text || a}
                                     </div>
                                   ),
                                 )}
@@ -478,14 +594,16 @@ export default function SurveyDetailPage() {
 
                 {question.type === SurveyQuestionType.FREEFORM && (
                   <>
-                    <textarea
-                      className={styles.textarea}
-                      placeholder={t.common.submit}
-                      value={answers[question.id]?.text ?? ""}
-                      onChange={(e) => setTextAnswer(question.id, e.target.value)}
-                      disabled={!canSubmit}
-                      rows={4}
-                    />
+                    {canSubmit && (
+                      <textarea
+                        className={styles.textarea}
+                        placeholder={t.common.submit}
+                        value={answers[question.id]?.text ?? ""}
+                        onChange={(e) => setTextAnswer(question.id, e.target.value)}
+                        disabled={!canSubmit}
+                        rows={4}
+                      />
+                    )}
                     {showResults && (
                       <div style={{ marginTop: "var(--space-sm)" }}>
                         <Button
@@ -519,7 +637,7 @@ export default function SurveyDetailPage() {
                                     border: "1px solid var(--color-border)",
                                   }}
                                 >
-                                  {a.text}
+                                  {a.text || a}
                                 </div>
                               ),
                             )}
@@ -537,25 +655,35 @@ export default function SurveyDetailPage() {
                         <span>{question.scaleConfig.scaleMin}</span>
                         <span>{question.scaleConfig.scaleMax}</span>
                       </div>
-                      <input
-                        type="range"
-                        className={styles.scaleInput}
-                        min={question.scaleConfig.scaleMin}
-                        max={question.scaleConfig.scaleMax}
-                        step={question.scaleConfig.step}
-                        value={
-                          answers[question.id]?.scale ??
-                          question.scaleConfig.scaleMin
-                        }
-                        onChange={(e) =>
-                          setScaleAnswer(question.id, Number(e.target.value))
-                        }
-                        disabled={!canSubmit}
-                      />
-                      <div className={styles.scaleValue}>
-                        {answers[question.id]?.scale ??
-                          question.scaleConfig.scaleMin}
-                      </div>
+                      {canSubmit && (
+                        <input
+                          type="range"
+                          className={styles.scaleInput}
+                          min={question.scaleConfig.scaleMin}
+                          max={question.scaleConfig.scaleMax}
+                          step={question.scaleConfig.step}
+                          value={
+                            answers[question.id]?.scale ??
+                            question.scaleConfig.scaleMin
+                          }
+                          onChange={(e) =>
+                            setScaleAnswer(question.id, Number(e.target.value))
+                          }
+                          disabled={!canSubmit}
+                        />
+                      )}
+                      {canSubmit && (
+                        <div className={styles.scaleValue}>
+                          {answers[question.id]?.scale ??
+                            question.scaleConfig.scaleMin}
+                        </div>
+                      )}
+                      {showResults && (
+                        <div className={styles.scaleResults}>
+                           {/* Add scale distribution visualization if needed */}
+                           <p>{t.surveys.totalResponses || "Total Responses"}: {totalQuestionVotes}</p>
+                        </div>
+                      )}
                     </div>
                   )}
               </Card>
@@ -575,7 +703,7 @@ export default function SurveyDetailPage() {
             </div>
           )}
         </div>
-      )}
+      </Card>
     </div>
   );
 }

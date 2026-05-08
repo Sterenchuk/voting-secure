@@ -68,7 +68,13 @@ export class AuditController {
 
   @Get('votings/audit-chain/:id')
   @Public()
-  getAuditChain(@Param('id') votingId: string) {
+  getVotingAuditChain(@Param('id') votingId: string) {
     return this.auditService.getVotingChain(votingId);
+  }
+
+  @Get('surveys/audit-chain/:id')
+  @Public()
+  getSurveyAuditChain(@Param('id') surveyId: string) {
+    return this.auditService.getSurveyChain(surveyId);
   }
 }

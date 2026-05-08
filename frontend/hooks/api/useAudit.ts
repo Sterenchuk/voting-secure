@@ -132,6 +132,32 @@ export function useAudit() {
     ...state,
     fetchGlobalChain,
     fetchVotingChain,
+    fetchSurveyChain,
+    verifyReceipt,
+    verifyScopedIntegrity,
+  };
+}
+  if (scope !== "global" && scopeId) {
+        url = `/audit/verify/${scope}/${scopeId}`;
+      }
+
+      if (forceFull) {
+        url += (url.includes("?") ? "&" : "?") + "forceFull=true";
+      }
+
+      const response = await api.get<ChainIntegrityResult>(url);
+      if (response.data) {
+        setState((prev) => ({ ...prev, integrity: response.data! }));
+      }
+      return response;
+    },
+    [],
+  );
+
+  return {
+    ...state,
+    fetchGlobalChain,
+    fetchVotingChain,
     verifyReceipt,
     verifyScopedIntegrity,
   };

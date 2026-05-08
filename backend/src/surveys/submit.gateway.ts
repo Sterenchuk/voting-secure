@@ -115,6 +115,30 @@ export class SubmitGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
+   * Explicitly request latest results without rejoining the room.
+   */
+  @SubscribeMessage(WS_EVENTS.GET_RESULTS)
+  async handleGetResults(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: { surveyId: string },
+  ) {
+    try {
+      const survey = await (this.submitService as any).repo.findSurveyById(
+        data.surveyId,
+      );
+      if (survey) {
+        const results = await this.submitService.getResults(
+          data.surveyId,
+          survey.questions.map((q) => q.id),
+        );
+        client.emit(WS_EVENTS.SURVEY_RESULTS, results);
+      }
+    } catch (e) {
+      this.logger.error(`Error sending results on request: ${e}`);
+    }
+  }
+
+  /**
    * Allows a user to leave a survey room.
    */
   @SubscribeMessage(WS_EVENTS.LEAVE_SURVEY)

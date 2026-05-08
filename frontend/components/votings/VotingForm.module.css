@@ -1,0 +1,158 @@
+.formSection {
+  margin-top: var(--space-xl);
+}
+
+.hint {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-md);
+  font-style: italic;
+}
+
+.optionList {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.optionItem {
+  padding: var(--space-md);
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  transition: all var(--transition-fast);
+}
+
+.optionClickable {
+  cursor: pointer;
+}
+
+.optionClickable:hover {
+  border-color: var(--color-accent-primary);
+  background-color: var(--color-bg-tertiary);
+}
+
+.optionSelected {
+  border-color: var(--color-accent-primary);
+  background-color: rgba(59, 130, 246, 0.05);
+}
+
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.optionControl {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.optionControlSelected {
+  background-color: var(--color-accent-primary);
+  border-color: var(--color-accent-primary);
+  color: white;
+}
+
+.radioInner {
+  width: 10px;
+  height: 10px;
+  background-color: white;
+  border-radius: 50%;
+}
+
+.optionText {
+  flex: 1;
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.otherInputInline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex: 1;
+}
+
+.inlineInput {
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  padding: 2px 4px;
+  font-size: var(--text-base);
+  color: var(--color-text-primary);
+  flex: 1;
+  min-width: 0;
+}
+
+.inlineInput:focus {
+  outline: none;
+  border-bottom-color: var(--color-accent-primary);
+}
+
+.errorMsg {
+  color: var(--color-error);
+  font-size: var(--text-sm);
+  margin-top: var(--space-md);
+  text-align: center;
+}
+
+.submitRow {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-xl);
+}
+
+.emailCheck {
+  text-align: center;
+  width: 100%;
+  padding: var(--space-md);
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--radius-lg);
+}
+
+.emailCheckHeader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.spinnerSmall {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-bg-tertiary);
+  border-top-color: var(--color-accent-primary);
+  border-radius: 50%;
+  animation: spin 10.4s linear infinite;
+}
+
+.emailCheckText {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-md);
+}
+
+.emailCheckActions {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: center;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

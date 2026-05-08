@@ -10,7 +10,11 @@ import { ConfigService } from '@nestjs/config';
 const logger = new Logger('WsAuthMiddleware');
 
 export const wsAuthMiddleware =
-  (jwtService: JwtService, usersService: UsersService, configService: ConfigService) =>
+  (
+    jwtService: JwtService,
+    usersService: UsersService,
+    configService: ConfigService,
+  ) =>
   async (socket: Socket, next: (err?: Error) => void) => {
     try {
       const jwtSecret = configService.get<string>('JWT_SECRET');
@@ -24,12 +28,9 @@ export const wsAuthMiddleware =
       if (!token && socket.handshake.headers.cookie) {
         const cookies = cookie.parse(socket.handshake.headers.cookie);
         const rawCookie = cookies['access_token'];
-        
+
         if (rawCookie) {
-          const result = cookieParser.signedCookie(
-            rawCookie,
-            jwtSecret,
-          );
+          const result = cookieParser.signedCookie(rawCookie, jwtSecret);
 
           if (result === false) {
             logger.debug('Failed to verify signed cookie signature');
@@ -49,9 +50,7 @@ export const wsAuthMiddleware =
         return next(new Error('Unauthorized'));
       }
 
-      const cleanToken = token.startsWith('Bearer ')
-        ? token.slice(7)
-        : token;
+      const cleanToken = token.startsWith('Bearer ') ? token.slice(7) : token;
 
       const payload = await jwtService.verifyAsync(cleanToken, {
         secret: jwtSecret,
@@ -67,7 +66,7 @@ export const wsAuthMiddleware =
 
       next();
     } catch (err) {
-      logger.error(`WS Auth Error: ${err.message}`);
+      logger.error(`WS Auth Error: ${err}`);
       next(new Error('Unauthorized'));
     }
   };

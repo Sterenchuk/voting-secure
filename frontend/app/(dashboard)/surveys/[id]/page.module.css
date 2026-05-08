@@ -381,6 +381,68 @@
   margin: 0;
 }
 
+.contentCard {
+  padding: var(--space-xl);
+  margin-bottom: var(--space-xl);
+  border: none;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.receiptSection {
+  padding: var(--space-lg);
+  background-color: rgba(16, 185, 129, 0.05);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-xl);
+  text-align: center;
+}
+
+.receiptTitle {
+  color: var(--color-success);
+  margin-bottom: var(--space-xs);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.receiptText {
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-md);
+  font-size: var(--text-sm);
+}
+
+.trendChart {
+  margin-bottom: var(--space-2xl);
+  padding: var(--space-lg);
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+}
+
+.trendHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.trendIcon {
+  color: var(--color-accent-primary);
+  width: 20px;
+  height: 20px;
+}
+
+.trendTitle {
+  font-size: var(--text-base);
+  font-weight: 600;
+  margin: 0;
+}
+
+.chartContainer {
+  height: 200px;
+  width: 100%;
+}
+
 @media (max-width: 640px) {
   .title {
     font-size: var(--text-2xl);

@@ -163,4 +163,48 @@ export class SurveysController {
 
     return this.submitService.getResults(id, questionIds, includeRaw);
   }
+
+  @Get(':id/participation-stats')
+  async getParticipationStats(@Param('id', ParseUUIDPipe) id: string) {
+    return this.submitService.getParticipationStats(id);
+  }
+
+  @Post(':id/finalize')
+  @Audit({
+    action: ChainAction.SURVEY_FINALIZED,
+    extractPayload: (res: any) => ({
+      surveyId: res.id,
+      finalizedAt: res.finalizedAt,
+    }),
+  })
+  async finalize(
+    @CurrentUser() user: UserPayloadDto,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.submitService.finalizeSurvey(id, user.sub);
+  }
+
+  @Get(':id/my-status')
+  async getMyStatus(
+    @CurrentUser() user: UserPayloadDto,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.submitService.getUserSurveyStatus(id, user.sub);
+  }
+
+  @Post(':id/token')
+  async requestToken(
+    @CurrentUser() user: UserPayloadDto,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.submitService.requestToken(id, user.sub);
+  }
+
+  @Get(':id/verify-receipt')
+  async verifyReceipt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('hash') hash: string,
+  ) {
+    return this.submitService.verifyReceipt(id, hash);
+  }
 }
