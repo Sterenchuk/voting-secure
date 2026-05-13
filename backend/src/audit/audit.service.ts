@@ -192,7 +192,6 @@ export class AuditService implements OnModuleInit {
   }
 
   // ── Public: append to chain ──
-─────────────────────────────────────────────
   async appendChain(ctx: AuditChainContext): Promise<void> {
     try {
       // 1. Fetch sequence numbers atomically from Redis
@@ -243,20 +242,20 @@ export class AuditService implements OnModuleInit {
 
       await this.chainModel.create({
         sequence: globalSeq,
-        groupSequence: groupSeq,
-        votingSequence: votingSeq,
-        surveySequence: surveySeq,
+        groupSequence: groupSeq ?? undefined,
+        votingSequence: votingSeq ?? undefined,
+        surveySequence: surveySeq ?? undefined,
         action: ctx.action,
         payload: ctx.payload,
-        userId: ctx.userId ?? null,
-        groupId: ctx.groupId ?? null,
-        votingId: ctx.votingId ?? null,
-        surveyId: ctx.surveyId ?? null,
+        userId: ctx.userId ?? undefined,
+        groupId: ctx.groupId ?? undefined,
+        votingId: ctx.votingId ?? undefined,
+        surveyId: ctx.surveyId ?? undefined,
         createdAt,
         prevHash: globalPrev,
-        groupPrevHash: groupPrev,
-        votingPrevHash: votingPrev,
-        surveyPrevHash: surveyPrev,
+        groupPrevHash: groupPrev ?? undefined,
+        votingPrevHash: votingPrev ?? undefined,
+        surveyPrevHash: surveyPrev ?? undefined,
         hash,
       });
     } catch (err) {
@@ -280,33 +279,74 @@ export class AuditService implements OnModuleInit {
   // ── Public: verify chain ─────────────────────────────────────────────────
 
   async findBallotReceipt(
-    votingId: string,
-    hash: string,
-  ): Promise<{
-    found: boolean;
-    sequence?: number;
-    blockHash?: string;
-    prevHash?: string;
-    timestamp?: Date;
-  }> {
-    const doc = await this.chainModel
-      .findOne({
-        votingId,
-        action: ChainAction.BALLOT_CAST,
-        'payload.ballotHashes': hash,
-      })
-      .select({ sequence: 1, hash: 1, prevHash: 1 })
-      .lean();
+    entityId: string,
+    hashes: string | string[],
+    type: 'voting' | 'survey' = 'voting',
+  ): Promise<
+    Array<{
+      hash: string;
+      found: boolean;
+      sequence?: number;
+      blockHash?: string;
+      prevHash?: string;
+      timestamp?: Date;
+    }>
+  > {
+    let hashArray: string[] = [];
+    if (Array.isArray(hashes)) {
+      hashArray = hashes;
+    } else if (typeof hashes === 'string') {
+      hashArray = hashes
+        .split(',')
+        .map((h) => h.trim())
+        .filter(Boolean);
+    }
 
-    if (!doc) return { found: false };
+    const results: Array<{
+      hash: string;
+      found: boolean;
+      sequence?: number;
+      blockHash?: string;
+      prevHash?: string;
+      timestamp?: Date;
+    }> = [];
 
-    return {
-      found: true,
-      sequence: (doc as any).sequence,
-      blockHash: (doc as any).hash,
-      prevHash: (doc as any).prevHash,
-      timestamp: (doc as any).createdAt,
-    };
+    for (const h of hashArray) {
+      const filter: any = {
+        action:
+          type === 'voting'
+            ? ChainAction.BALLOT_CAST
+            : ChainAction.SURVEY_BALLOT_CAST,
+      };
+
+      if (type === 'voting') {
+        filter.votingId = entityId;
+        filter['payload.ballotHashes'] = h;
+      } else {
+        filter.surveyId = entityId;
+        filter['payload.ballotHashes'] = h;
+      }
+
+      const doc = await this.chainModel
+        .findOne(filter)
+        .select({ sequence: 1, hash: 1, prevHash: 1, createdAt: 1 })
+        .lean();
+
+      if (!doc) {
+        results.push({ hash: h, found: false });
+      } else {
+        results.push({
+          hash: h,
+          found: true,
+          sequence: (doc as any).sequence,
+          blockHash: (doc as any).hash,
+          prevHash: (doc as any).prevHash,
+          timestamp: (doc as any).createdAt,
+        });
+      }
+    }
+
+    return results;
   }
 
   /**

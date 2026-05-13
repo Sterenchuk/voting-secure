@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Param,
   UseGuards,
   HttpCode,
@@ -15,8 +16,10 @@ import { GroupRoles } from '../common/decorators/group-roles.decorator';
 import { GroupRole } from '../common/enums/group-role';
 import { VerifyResult, ScopedVerifyResult } from './types/audit.types';
 import { Public } from '../common/decorators/public.decorator';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 @Controller('audit')
+@UseGuards(JwtAuthGuard)
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 

@@ -1,6 +1,6 @@
 {
   "name": "voting-secure-backend",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "description": "This is the backend for the secure voting system. It is built with NestJS, Prisma, Redis and webSockets.",
   "author": "Oleksandr Sterenchuk",
   "private": true,

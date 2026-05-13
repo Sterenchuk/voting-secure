@@ -155,9 +155,10 @@
     isOpen      Boolean    @default(false)
     deletedAt   DateTime?
 
-    allowOther Boolean @default(false)
-    minChoices Int     @default(1)
-    maxChoices Int?
+    allowOther   Boolean @default(false)
+    allowAbstain Boolean @default(true)
+    minChoices   Int     @default(1)
+    maxChoices   Int?
 
     createdAt   DateTime  @default(now())
     updatedAt   DateTime  @updatedAt
@@ -256,9 +257,10 @@
     groupId     String
     group       Group   @relation(fields: [groupId], references: [id])
 
-    isOpen      Boolean   @default(false)
-    isFinalized Boolean   @default(false)
-    deletedAt   DateTime?
+    isOpen       Boolean   @default(false)
+    isFinalized  Boolean   @default(false)
+    allowAbstain Boolean   @default(true)
+    deletedAt    DateTime?
     createdAt   DateTime  @default(now())
     updatedAt   DateTime  @updatedAt
     startAt     DateTime?

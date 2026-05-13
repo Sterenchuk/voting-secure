@@ -11,12 +11,15 @@ config();
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly usersService: UsersService) {
     super({
-      jwtFromRequest: (req) => {
-        if (req && req.signedCookies) {
-          return req.signedCookies['access_token'];
-        }
-        return null;
-      },
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        (req) => {
+          if (req && req.signedCookies) {
+            return req.signedCookies['access_token'];
+          }
+          return null;
+        },
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ]),
       ignoreExpiration: false,
       secretOrKey: process.env.JWT_SECRET,
     });

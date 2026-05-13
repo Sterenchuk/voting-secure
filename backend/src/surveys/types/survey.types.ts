@@ -32,6 +32,7 @@ export interface ISurvey {
   groupId: string;
   isOpen: boolean;
   isFinalized: boolean;
+  allowAbstain: boolean;
   startAt: Date | null;
   endAt: Date | null;
   finalizedAt: Date | null;
@@ -50,9 +51,21 @@ export interface ICreateSurveyData {
   groupId: string;
   isOpen?: boolean;
   isFinalized?: boolean;
+  allowAbstain?: boolean;
   startAt?: Date;
   endAt?: Date;
   surveyQuestions: ICreateSurveyQuestionData[];
+}
+
+export interface IUpdateSurveyData {
+  title?: string;
+  description?: string;
+  isOpen?: boolean;
+  isFinalized?: boolean;
+  allowAbstain?: boolean;
+  startAt?: Date;
+  endAt?: Date;
+  finalizedAt?: Date;
 }
 
 export interface ISurveyWhereInput {
@@ -96,6 +109,7 @@ export interface ISurveyOption {
   questionId: string;
   text: string;
   order: number;
+  isDynamic: boolean;
 }
 
 export interface ICreateSurveyOptionData {
@@ -108,7 +122,8 @@ export interface ICreateSurveyOptionData {
 export interface ISurveyBallot {
   id: string;
   questionId: string;
-  optionId: string;
+  optionId: string | null;
+  isAbstention: boolean;
   ballotHash: string;
   tokenId?: string;
 }
@@ -125,7 +140,7 @@ export interface ISurveyBallotInput {
   questionId: string;
   optionId?: string;
   text?: string;
-  ballotHash: string;
+  isAbstention?: boolean;
 }
 
 // ─── Participation ────────────────────────────────────────────────────────────
@@ -156,8 +171,18 @@ export interface ISurveyResults {
   results: IQuestionResult[];
 }
 
+export interface ISurveyResult {
+  id: string;
+  surveyId: string;
+  tally: Record<string, any>;
+  totalResponses: number;
+  tallyHash: string;
+  sealedAt: Date;
+}
+
 // ─── User survey status ───────────────────────────────────────────────────────
 
 export interface IUserSurveyStatus {
   submitted: boolean;
+  receipts?: string[];
 }

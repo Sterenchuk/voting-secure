@@ -4,7 +4,6 @@ import {
   NotFoundException,
   Inject,
   forwardRef,
-  BadRequestException,
   ConflictException,
   Logger,
 } from '@nestjs/common';
@@ -15,12 +14,14 @@ import { SubmitGateway } from './submit.gateway';
 import { AuditService } from '../audit/audit.service';
 import { ChainAction } from '../audit/types/audit.types';
 import { CryptoUtils } from '../common/utils/crypto-utils';
+import { MailService } from '../mail/mail.service';
 import {
   ISurveyBallotInput,
   ISurveyResults,
   IQuestionResult,
   SurveyQuestionType,
 } from './types/survey.types';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class SubmitService {
@@ -31,22 +32,48 @@ export class SubmitService {
     private readonly groupService: GroupsService,
     private readonly redis: RedisVotingService,
     private readonly auditService: AuditService,
+    private readonly mailService: MailService,
     @Inject(forwardRef(() => SubmitGateway))
     private readonly gateway: SubmitGateway,
+    private readonly usersService: UsersService,
   ) {}
 
-  async requestToken(surveyId: string, userId: string) {
+  async requestToken(
+    surveyId: string,
+    user: { id: string; email: string; language?: string; theme?: string },
+    selections: {
+      ballots: ISurveyBallotInput[];
+      isPractice?: boolean;
+    },
+  ) {
     const survey = await this.repo.findSurveyById(surveyId);
     if (!survey) throw new NotFoundException('Survey not found');
 
-    const hasSubmitted = await this.redis.hasUserSubmittedSurvey(
-      surveyId,
-      userId,
-    );
-    if (hasSubmitted)
-      throw new ConflictException('Already participated in this survey');
+    if (!selections.isPractice) {
+      const hasSubmitted = await this.redis.hasUserSubmittedSurvey(
+        surveyId,
+        user.id,
+      );
+      if (hasSubmitted)
+        throw new ConflictException('Already participated in this survey');
+    }
 
-    const token = await this.redis.issueToken('survey', userId, surveyId, 3600);
+    const token = await this.redis.issueToken(
+      'survey',
+      user.id,
+      surveyId,
+      3600,
+      selections.isPractice,
+    );
+
+    // Store full ballot payload for the email-confirmation flow via a single,
+    // typed Redis method — no duplicate writes, no raw redis access.
+    await this.redis.setSurveySelections(
+      user.id,
+      surveyId,
+      { ballots: selections.ballots, isPractice: selections.isPractice },
+      3600,
+    );
 
     try {
       await this.auditService.appendChain({
@@ -54,16 +81,75 @@ export class SubmitService {
         payload: {
           surveyId,
           expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
+          isPractice: selections.isPractice,
         },
-        userId: userId,
+        userId: user.id,
         surveyId,
         groupId: survey.groupId,
       });
     } catch (err) {
-      this.logger.error('Failed to write audit log for survey token request', err);
+      this.logger.error(
+        'Failed to write audit log for survey token request',
+        err,
+      );
     }
 
-    return { status: 'Success', token };
+    if (selections.isPractice) {
+      // For practice mode return the token directly so the caller can submit
+      // without going through the email-confirmation flow.
+      return { status: 'Success', token };
+    }
+
+    await this.mailService.sendSurveyToken(
+      user.email,
+      token,
+      survey.title,
+      surveyId,
+      user.language ?? 'en',
+      user.theme ?? 'light',
+    );
+
+    return { status: 'Success' };
+  }
+
+  async confirmSurveyFromEmail(surveyId: string, token: string) {
+    const hash = CryptoUtils.hashToken(token);
+    const meta = await this.redis.lookupTokenByHash(hash);
+
+    if (!meta || meta.entityId !== surveyId || meta.type !== 'survey') {
+      return { success: false, message: 'Invalid or expired token.' };
+    }
+
+    // Use the typed Redis method — no raw redis access needed.
+    const selections = await this.redis.getSurveySelections(
+      meta.userId,
+      surveyId,
+    );
+    if (!selections) {
+      return { success: false, message: 'Submission data not found.' };
+    }
+
+    const user = await this.usersService.findOne(meta.userId);
+    if (!user) return { success: false, message: 'User not found.' };
+
+    try {
+      const result = await this.submitResponse(
+        surveyId,
+        user.id,
+        selections.ballots,
+        token,
+        false,
+        selections.isPractice,
+      );
+
+      // Clean up stored selections now that the submission has been processed.
+      await this.redis.deleteSurveySelections(user.id, surveyId);
+
+      return { success: true, receipts: result.receipts };
+    } catch (err) {
+      this.logger.error(`Email confirmation for survey failed: ${err}`);
+      return { success: false, message: err };
+    }
   }
 
   async submitResponse(
@@ -71,38 +157,52 @@ export class SubmitService {
     userId: string,
     ballots: ISurveyBallotInput[],
     token?: string,
+    isAbstention = false,
+    isPractice = false,
   ) {
     const survey = await this.repo.findSurveyRawById(surveyId);
     if (!survey) throw new NotFoundException('Survey not found');
-    if (!survey.isOpen) throw new ForbiddenException('Survey is closed');
     if (survey.isFinalized) throw new ForbiddenException('Survey is finalized');
 
+    if (!isPractice && !survey.isOpen)
+      throw new ForbiddenException('Survey is closed');
+
     const now = new Date();
-    if (survey.endAt && now > survey.endAt) {
+    if (!isPractice && survey.endAt && now > survey.endAt) {
       throw new ForbiddenException('Survey has ended');
     }
 
     await this.groupService.checkMembership(userId, survey.groupId);
 
-    const alreadySubmitted = await this.redis.hasUserSubmittedSurvey(
-      surveyId,
-      userId,
-    );
-    if (alreadySubmitted) {
-      throw new ForbiddenException('You have already submitted this survey');
+    if (!isPractice) {
+      const alreadySubmitted = await this.redis.hasUserSubmittedSurvey(
+        surveyId,
+        userId,
+      );
+      if (alreadySubmitted) {
+        throw new ForbiddenException('You have already submitted this survey');
+      }
     }
 
     let tokenHashed: string | undefined;
+    let actualIsPractice = isPractice;
+
     if (token) {
-      await this.redis.verifyToken('survey', userId, surveyId, token);
+      const tokenMeta = await this.redis.verifyToken(
+        'survey',
+        userId,
+        surveyId,
+        token,
+      );
       tokenHashed = CryptoUtils.hashToken(token);
+      actualIsPractice = tokenMeta.isPractice || isPractice;
     }
 
     const receipts: string[] = [];
     const dbBallots = ballots.map((b) => {
       const receipt = CryptoUtils.generateBallotReceipt(
         surveyId,
-        b.optionId || b.questionId, // Simplified for survey
+        b.optionId || b.questionId,
         tokenHashed || userId,
       );
       receipts.push(receipt);
@@ -114,15 +214,30 @@ export class SubmitService {
       };
     });
 
-    await this.repo.$transaction(async (tx) => {
-      const existing = await this.repo.checkParticipation(userId, surveyId);
-      if (existing) {
-        throw new ForbiddenException('You have already submitted this survey');
-      }
+    if (isAbstention) {
+      const receipt = CryptoUtils.generateBallotReceipt(
+        surveyId,
+        'abstention',
+        tokenHashed || userId,
+      );
+      receipts.push(receipt);
+    }
 
-      await this.repo.addParticipation(tx, userId, surveyId);
-      await this.repo.createBallotsTx(tx, dbBallots);
-    });
+    if (!actualIsPractice) {
+      await this.repo.$transaction(async (tx) => {
+        const existing = await this.repo.checkParticipation(userId, surveyId);
+        if (existing) {
+          throw new ForbiddenException(
+            'You have already submitted this survey',
+          );
+        }
+
+        await this.repo.addParticipation(tx, userId, surveyId);
+        if (!isAbstention) {
+          await this.repo.createBallotsTx(tx, surveyId, dbBallots);
+        }
+      });
+    }
 
     const redisAnswers = ballots.map((b) => ({
       questionId: b.questionId,
@@ -130,46 +245,67 @@ export class SubmitService {
       hasOther: !!b.text && !b.optionId,
     }));
 
-    await this.redis.performSurveySubmission(surveyId, userId, redisAnswers);
+    await this.redis.performSurveySubmission(
+      surveyId,
+      userId,
+      redisAnswers,
+      isAbstention,
+      actualIsPractice,
+    );
 
     if (token) {
       await this.redis.consumeToken('survey', userId, surveyId);
     }
 
-    try {
-      await this.redis.setTemporaryReceipts(surveyId, userId, receipts, 300);
-    } catch (err) {
-      this.logger.error(`Redis survey receipt cache update failed: ${err}`);
-    }
+    if (!actualIsPractice) {
+      try {
+        await this.redis.setTemporaryReceipts(surveyId, userId, receipts, 300);
+      } catch (err) {
+        this.logger.error(`Redis survey receipt cache update failed: ${err}`);
+      }
 
-    try {
-      await this.auditService.appendChain({
-        action: ChainAction.SURVEY_BALLOT_CAST,
-        payload: {
-          ballotHashes: receipts,
-          questionCount: ballots.length,
-        },
+      try {
+        await this.auditService.appendChain({
+          action: ChainAction.SURVEY_BALLOT_CAST,
+          payload: {
+            ballotHashes: receipts,
+            questionCount: ballots.length,
+            isAbstention,
+          },
+          surveyId,
+          groupId: survey.groupId,
+        });
+      } catch (err) {
+        this.logger.error(
+          `Audit chain write failed for SURVEY_BALLOT_CAST: ${err}`,
+        );
+      }
+
+      // Fetch user via UsersService — no raw DB access via groupService.
+      const user = await this.usersService.findOne(userId);
+      if (user) {
+        await this.mailService.sendVoteReceipt(
+          user.email,
+          survey.title,
+          surveyId,
+          receipts,
+          user.language,
+          user.theme,
+        );
+      }
+
+      const results = await this.getResults(
         surveyId,
-        groupId: survey.groupId,
-      });
-    } catch (err) {
-      this.logger.error(`Audit chain write failed for SURVEY_BALLOT_CAST: ${err}`);
+        survey.questions.map((q) => q.id),
+      );
+      this.gateway.emitSurveyResults(surveyId, results);
     }
 
-    const results = await this.getResults(
-      surveyId,
-      survey.questions.map((q) => q.id),
-    );
-    this.gateway.emitSurveyResults(surveyId, results);
-
-    return { success: true, receipts };
+    return { success: true, receipts, isPractice: actualIsPractice };
   }
 
   async getParticipationStats(surveyId: string) {
-    const data = await this.repo.db.surveyParticipation.findMany({
-      where: { surveyId },
-      select: { createdAt: true },
-    });
+    const data = await this.repo.FindSurveyParticipation(surveyId);
 
     const stats: Record<string, number> = {};
     data.forEach((p) => {
@@ -241,25 +377,10 @@ export class SubmitService {
     };
   }
 
-  async verifyReceipt(surveyId: string, hash: string) {
-    const doc = await (this.auditService as any).chainModel
-      .findOne({
-        surveyId,
-        action: ChainAction.SURVEY_BALLOT_CAST,
-        'payload.ballotHashes': hash,
-      })
-      .select({ sequence: 1, hash: 1, prevHash: 1, createdAt: 1 })
-      .lean();
-
-    if (!doc) return { found: false };
-
-    return {
-      found: true,
-      sequence: doc.sequence,
-      blockHash: doc.hash,
-      prevHash: doc.prevHash,
-      timestamp: doc.createdAt,
-    };
+  async verifyReceipt(surveyId: string, hash: string | string[]) {
+    const survey = await this.repo.findSurveyById(surveyId);
+    if (!survey) throw new NotFoundException('Survey not found');
+    return this.auditService.findBallotReceipt(surveyId, hash, 'survey');
   }
 
   async getResults(

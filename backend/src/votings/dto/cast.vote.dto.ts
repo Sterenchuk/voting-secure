@@ -38,4 +38,8 @@ export class CastVoteDto {
   @IsOptional()
   @IsBoolean()
   isAbstention?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isPractice?: boolean;
 }

@@ -33,6 +33,10 @@ export class SurveyCreateDto {
   isOpen?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  allowAbstain?: boolean;
+
+  @IsOptional()
   @IsDateString()
   startAt?: string;
 

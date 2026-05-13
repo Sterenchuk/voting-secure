@@ -29,6 +29,7 @@ export const SELECT_VOTING = {
   isOpen: true,
   isFinalized: true,
   allowOther: true,
+  allowAbstain: true,
   minChoices: true,
   maxChoices: true,
   startAt: true,

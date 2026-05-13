@@ -1,4 +1,11 @@
-import { IsArray, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateNested,
+  IsBoolean,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class SurveyBallotInputDto {
@@ -6,7 +13,7 @@ export class SurveyBallotInputDto {
   questionId: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
   optionId?: string;
 
   @IsOptional()
@@ -22,4 +29,32 @@ export class SubmitSurveyResponseDto {
   @ValidateNested({ each: true })
   @Type(() => SurveyBallotInputDto)
   ballots: SurveyBallotInputDto[];
+
+  @IsOptional()
+  @IsString()
+  token?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isAbstention?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isPractice?: boolean;
+}
+
+export class RequestSurveyTokenDto {
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => SurveyBallotInputDto)
+  ballots?: SurveyBallotInputDto[];
+
+  @IsOptional()
+  @IsBoolean()
+  isAbstention?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isPractice?: boolean;
 }

@@ -8,6 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { DatabaseService } from '../../database/database.service';
 import { GROUP_ROLES_KEY } from '../decorators/group-roles.decorator';
+import { STRICT_GROUP_CHECK_KEY } from '../decorators/strict-group-check.decorator';
 import { GroupRole } from '../enums/group-role';
 import { Role } from '../enums/role';
 
@@ -24,18 +25,23 @@ export class GroupRoleGuard implements CanActivate {
       [context.getHandler(), context.getClass()],
     );
 
+    const isStrict = this.reflector.getAllAndOverride<boolean>(
+      STRICT_GROUP_CHECK_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
     if (!user) throw new ForbiddenException('Unauthenticated');
 
-    // Platform ADMIN bypasses group checks
-    if (user.role === Role.ADMIN) {
+    // Platform ADMIN bypasses group checks UNLESS it's a strict check
+    if (user.role === Role.ADMIN && !isStrict) {
       return true;
     }
 
-    // AUDITOR bypasses group checks for GET requests
-    if (user.role === Role.AUDITOR && request.method === 'GET') {
+    // AUDITOR bypasses group checks for GET requests UNLESS it's a strict check
+    if (user.role === Role.AUDITOR && request.method === 'GET' && !isStrict) {
       return true;
     }
 
@@ -50,6 +56,16 @@ export class GroupRoleGuard implements CanActivate {
          select: { groupId: true }
        });
        if (voting) groupId = voting.groupId;
+    }
+
+    // If it's a survey route, we might need to find the groupId from the survey
+    if (!groupId && (request.params.surveyId || request.params.id) && request.url.includes('surveys')) {
+      const sId = request.params.surveyId || request.params.id;
+      const survey = await this.db.survey.findUnique({
+        where: { id: sId },
+        select: { groupId: true }
+      });
+      if (survey) groupId = survey.groupId;
     }
 
     if (!groupId) {
@@ -71,6 +87,10 @@ export class GroupRoleGuard implements CanActivate {
 
     // Enforce 404 Privacy Policy (Plan 6.2)
     if (!membership) {
+      // If user is Platform Admin, they might not be a member but should still see if NOT strict
+      if (user.role === Role.ADMIN && !isStrict) {
+         return true;
+      }
       throw new NotFoundException('Group or resource not found');
     }
 

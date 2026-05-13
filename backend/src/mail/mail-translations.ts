@@ -28,7 +28,10 @@ export const mailTranslations = {
       subject: 'Your survey token for: {title}',
       title: 'Survey Token',
       text: 'You have requested a token to participate in: <strong>{title}</strong>.',
-      tokenLabel: 'Your token:',
+      button: 'Confirm Submission',
+      securityNote: 'This link is private and should not be shared.',
+      trouble:
+        'If the button above does not work, copy and paste this link into your browser:',
       footer: 'Keep this for your records.',
     },
     voteReceipt: {
@@ -87,7 +90,10 @@ export const mailTranslations = {
       subject: 'Ваш токен для опитування: {title}',
       title: 'Токен Опитування',
       text: 'Ви надіслали запит на отримання токена для участі в: <strong>{title}</strong>.',
-      tokenLabel: 'Ваш токен:',
+      button: 'Підтвердити Надсилання',
+      securityNote: 'Це посилання є приватним і не повинно передаватися іншим.',
+      trouble:
+        'Якщо кнопка вище не працює, скопіюйте та вставте це посилання у свій браузер:',
       footer: 'Збережіть це для своїх записів.',
     },
     voteReceipt: {
@@ -103,7 +109,7 @@ export const mailTranslations = {
         'Ви можете перевірити, чи був ваш голос врахований, звіривши свою квитанцію з публічним ланцюгом аудиту:',
       verifyButton: 'Перевірити Мій Голос',
       footer:
-        'Ця квитанція була створена в момент голосування. Хеші — це підписи HMAC-SHA256, прив’язані до вашого конкретного бюлетеня, і їх неможливо підробити.',
+        "Ця квитанція була створена в момент голосування. Хеші — це підписи HMAC-SHA256, прив'язані до вашого конкретного бюлетеня, і їх неможливо підробити.",
     },
     confirmPage: {
       successTitle: 'Голос Підтверджено',

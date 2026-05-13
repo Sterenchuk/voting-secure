@@ -113,6 +113,13 @@ export class SurveysRepository {
     });
   }
 
+  async FindSurveyParticipation(surveyId: string) {
+    return this.db.surveyParticipation.findMany({
+      where: { surveyId },
+      select: { createdAt: true },
+    });
+  }
+
   //__________________SURVEY_MUTATIONS________________
 
   async finalizeSurvey(
@@ -317,6 +324,7 @@ export class SurveysRepository {
 
   createBallotsTx(
     tx: PrismaTx,
+    surveyId: string,
     ballots: {
       questionId: string;
       optionId?: string;
@@ -326,19 +334,85 @@ export class SurveysRepository {
     }[],
   ) {
     return Promise.all(
-      ballots.map(({ questionId, optionId, text, ballotHash, tokenId }) => {
-        if (optionId) {
+      ballots.map(
+        async ({ questionId, optionId, text, ballotHash, tokenId }) => {
+          const question = await tx.surveyQuestion.findUnique({
+            where: { id: questionId },
+            select: { type: true },
+          });
+
+          if (!question) throw new Error(`Question ${questionId} not found`);
+
+          if (question.type === 'FREEFORM') {
+            return tx.surveyFreeformBallot.create({
+              data: { questionId, text: text || '', ballotHash, tokenId },
+              select: SELECT_SURVEY_BALLOT,
+            });
+          }
+
+          let finalOptionId = optionId;
+
+          // If optionId is provided but is not a UUID, it might be a SCALE value or 'OTHER'
+          const isUuid =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              optionId || '',
+            );
+
+          if (optionId && !isUuid) {
+            const option = await tx.surveyOption.findFirst({
+              where: { questionId, text: optionId },
+            });
+            if (option) {
+              finalOptionId = option.id;
+            } else {
+              // Handle 'OTHER' or missing scale option
+              let dynamicOption = await tx.surveyOption.findFirst({
+                where: {
+                  questionId,
+                  text: text || optionId,
+                  isDynamic: true,
+                },
+              });
+
+              if (!dynamicOption) {
+                dynamicOption = await tx.surveyOption.create({
+                  data: {
+                    questionId,
+                    text: text || optionId,
+                    isDynamic: true,
+                  },
+                });
+              }
+              finalOptionId = dynamicOption.id;
+            }
+          } else if (!optionId && text) {
+            // Handle 'Other' for choice questions where optionId wasn't sent
+            let dynamicOption = await tx.surveyOption.findFirst({
+              where: { questionId, text, isDynamic: true },
+            });
+
+            if (!dynamicOption) {
+              dynamicOption = await tx.surveyOption.create({
+                data: { questionId, text, isDynamic: true },
+              });
+            }
+            finalOptionId = dynamicOption.id;
+          }
+
+          if (finalOptionId) {
+            return tx.surveyBallot.create({
+              data: { questionId, optionId: finalOptionId, ballotHash, tokenId },
+              select: SELECT_SURVEY_BALLOT,
+            });
+          }
+
+          // Fallback to abstention or error?
           return tx.surveyBallot.create({
-            data: { questionId, optionId, ballotHash, tokenId },
+            data: { questionId, isAbstention: true, ballotHash, tokenId },
             select: SELECT_SURVEY_BALLOT,
           });
-        } else {
-          return tx.surveyFreeformBallot.create({
-            data: { questionId, text: text || '', ballotHash, tokenId },
-            select: SELECT_SURVEY_BALLOT,
-          });
-        }
-      }),
+        },
+      ),
     );
   }
 
@@ -395,7 +469,7 @@ export class SurveysRepository {
       select: SELECT_SURVEY_BALLOT,
     });
   }
-// _______________SURVEY_TOKENS________________
+  // _______________SURVEY_TOKENS________________
 
   async findSurveyToken(tx: PrismaTx, userId: string, surveyId: string) {
     const connection = tx || this.db;
@@ -420,13 +494,18 @@ export class SurveysRepository {
     expiresAt: Date;
   }) {
     return this.db.surveyToken.upsert({
-      where: { userId_surveyId: { userId: data.userId, surveyId: data.surveyId } },
+      where: {
+        userId_surveyId: { userId: data.userId, surveyId: data.surveyId },
+      },
       create: data,
-      update: { tokenHash: data.tokenHash, expiresAt: data.expiresAt, used: false },
+      update: {
+        tokenHash: data.tokenHash,
+        expiresAt: data.expiresAt,
+        used: false,
+      },
       select: { id: true, expiresAt: true },
     });
   }
-
 
   // transaction wrappers
   $transaction<T>(fn: (tx: PrismaTx) => Promise<T>): Promise<T> {

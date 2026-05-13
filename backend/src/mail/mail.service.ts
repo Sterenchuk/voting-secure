@@ -6,6 +6,7 @@ import { mailTranslations, MailLanguage } from './mail-translations';
 @Injectable()
 export class MailService {
   private transporter: nodemailer.Transporter;
+
   constructor(private configService: ConfigService) {
     const host = this.configService.get<string>('MAIL_HOST');
     const port = this.configService.getOrThrow<number>('MAIL_PORT');
@@ -157,7 +158,7 @@ export class MailService {
         <p style="${s.text}">
           ${t.text2}
         </p>
-        
+
         <div style="text-align: center; margin: 30px 0;">
           <a href="${confirmUrl}" style="${s.button}">
             ${t.button}
@@ -167,7 +168,7 @@ export class MailService {
         <p style="${s.muted}">
           ${t.securityNote}
         </p>
-        
+
         <p style="${s.small}">
           ${t.trouble}<br/>
           <span style="word-break: break-all; color: #059669;">${confirmUrl}</span>
@@ -181,11 +182,13 @@ export class MailService {
     email: string,
     token: string,
     surveyTitle: string,
+    surveyId: string,
     lang: string = 'en',
     theme: string = 'light',
   ) {
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
-    const url = `${frontendUrl}/surveys/proof?token=${token}`;
+    const backendUrl =
+      this.configService.get<string>('BACKEND_URL') || 'http://localhost:3001';
+    const confirmUrl = `${backendUrl}/surveys/${surveyId}/confirm-survey?token=${token}&lang=${lang}&theme=${theme}`;
     const t = this.getTranslations(lang).surveyToken;
     const s = this.getThemeStyles(theme);
 
@@ -194,13 +197,28 @@ export class MailService {
       to: email,
       subject: t.subject.replace('{title}', surveyTitle),
       html: `
-        <div style="${s.container}">
-          <h1 style="${s.title}">${t.title}</h1>
-          <p style="${s.text}">${t.text.replace('{title}', surveyTitle)}</p>
-          <p style="${s.text}">${t.tokenLabel} <code style="background:${theme === 'dark' ? '#333' : '#eee'}; padding: 2px 5px; border-radius: 3px;">${token}</code></p>
-          <p style="${s.small}">${t.footer}</p>
+      <div style="${s.container}">
+        <h1 style="${s.title}">${t.title}</h1>
+        <p style="${s.text}">
+          ${t.text.replace('{title}', surveyTitle)}
+        </p>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${confirmUrl}" style="${s.button}">
+            ${t.button}
+          </a>
         </div>
-      `,
+
+        <p style="${s.muted}">
+          ${t.securityNote}
+        </p>
+
+        <p style="${s.small}">
+          ${t.trouble}<br/>
+          <span style="word-break: break-all; color: #059669;">${confirmUrl}</span>
+        </p>
+      </div>
+    `,
     });
   }
 

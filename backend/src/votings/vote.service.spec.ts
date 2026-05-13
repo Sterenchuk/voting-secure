@@ -47,6 +47,7 @@ describe('VoteService', () => {
             countBallotsByVoting: jest.fn(),
             finalizeVoting: jest.fn(),
             findVotingAllowOther: jest.fn(),
+            countAbstentions: jest.fn(),
           },
         },
         {
@@ -59,6 +60,9 @@ describe('VoteService', () => {
             getResults: jest.fn(),
             verifyToken: jest.fn(),
             consumeToken: jest.fn(),
+            setTemporaryReceipts: jest.fn(),
+            getSnapshot: jest.fn(),
+            setSnapshot: jest.fn(),
           },
         },
         {
@@ -104,7 +108,7 @@ describe('VoteService', () => {
 
   describe('vote', () => {
     const votingId = 'voting-1';
-    const user = { id: 'user-1', email: 'user@example.com' };
+    const user = { id: 'user-1', email: 'user@example.com', language: 'en', theme: 'light' };
     const ballots = [{ optionId: 'opt-1' }];
     const token = 'token-123';
 
@@ -143,15 +147,19 @@ describe('VoteService', () => {
         allowOther: false,
       };
       
-      repo.findVotingForVote.mockResolvedValue(voting as any);
+      repo.findVotingById.mockResolvedValue(voting as any);
+      redis.verifyToken.mockResolvedValue({ isPractice: false } as any);
+      redis.getSnapshot.mockResolvedValue(null);
+      repo.findOptionsWithBallotCounts.mockResolvedValue([]);
+      repo.countAbstentions.mockResolvedValue(0);
       
       // Mock the transaction context
-      repo.$transaction.mockImplementation(async (cb) => {
-        return cb({
+      repo.$transaction.mockImplementation((cb) =>
+        cb({
           voteParticipation: { findUnique: jest.fn().mockResolvedValue(null) },
           option: { findFirst: jest.fn() }
-        });
-      });
+        } as any),
+      );
 
       const result = await service.vote(votingId, ballots, user, token);
 
@@ -160,6 +168,107 @@ describe('VoteService', () => {
       expect(redis.consumeToken).toHaveBeenCalled();
       expect(redis.performVote).toHaveBeenCalled();
       expect(auditService.appendChain).toHaveBeenCalled();
+    });
+
+    it('should allow abstention with empty ballots', async () => {
+      redis.acquireLock.mockResolvedValue('lock-token');
+      redis.hasUserVoted.mockResolvedValue(false);
+      redis.verifyToken.mockResolvedValue({ isPractice: false } as any);
+
+      const voting = {
+        id: votingId,
+        isFinalized: false,
+        isOpen: true,
+        groupId: 'group-1',
+        title: 'Title',
+        options: [{ id: 'opt-1' }],
+        type: VotingType.SINGLE_CHOICE,
+        minChoices: 1,
+        maxChoices: 1,
+        allowOther: false,
+      };
+
+      repo.findVotingById.mockResolvedValue(voting as any);
+      repo.findOptionsWithBallotCounts.mockResolvedValue([]);
+      repo.countAbstentions.mockResolvedValue(0);
+      redis.getSnapshot.mockResolvedValue(null);
+      repo.$transaction.mockImplementation((cb) =>
+        cb({
+          voteParticipation: { findUnique: jest.fn().mockResolvedValue(null) },
+          option: { findFirst: jest.fn() }
+        } as any),
+      );
+
+      const result = await service.vote(votingId, [], user, token, undefined, true);
+
+      expect(result.participated).toBe(true);
+      expect(redis.performVote).toHaveBeenCalledWith(
+        votingId,
+        [],
+        user.id,
+        true,
+        false,
+      );
+    });
+
+    it('should throw BadRequestException if empty ballots and NOT abstention', async () => {
+      redis.acquireLock.mockResolvedValue('lock-token');
+      redis.hasUserVoted.mockResolvedValue(false);
+      redis.verifyToken.mockResolvedValue({ isPractice: false } as any);
+
+      const voting = {
+        id: votingId,
+        isFinalized: false,
+        isOpen: true,
+        groupId: 'group-1',
+        title: 'Title',
+        options: [{ id: 'opt-1' }],
+        type: VotingType.SINGLE_CHOICE,
+        minChoices: 1,
+        maxChoices: 1,
+        allowOther: false,
+      };
+
+      repo.findVotingById.mockResolvedValue(voting as any);
+
+      await expect(service.vote(votingId, [], user, token, undefined, false)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should bypass DB and Audit Chain in practice mode', async () => {
+      redis.acquireLock.mockResolvedValue('lock-token');
+      // In practice mode, we don't check hasUserVoted
+      redis.verifyToken.mockResolvedValue({ isPractice: true } as any);
+
+      const voting = {
+        id: votingId,
+        isFinalized: false,
+        isOpen: true,
+        groupId: 'group-1',
+        title: 'Title',
+        options: [{ id: 'opt-1' }],
+        type: VotingType.SINGLE_CHOICE,
+        minChoices: 1,
+        maxChoices: 1,
+        allowOther: false,
+      };
+
+      repo.findVotingById.mockResolvedValue(voting as any);
+
+      const result = await service.vote(votingId, ballots, user, token, undefined, false, true);
+
+      expect(result.participated).toBe(true);
+      expect(result.isPractice).toBe(true);
+      expect(repo.$transaction).not.toHaveBeenCalled();
+      expect(auditService.appendChain).not.toHaveBeenCalled();
+      expect(redis.performVote).toHaveBeenCalledWith(
+        votingId,
+        ['opt-1'],
+        user.id,
+        false,
+        true,
+      );
     });
   });
 

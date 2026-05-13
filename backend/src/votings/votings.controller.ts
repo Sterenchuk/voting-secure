@@ -19,7 +19,11 @@ import { VoteService } from './vote.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { GroupRoles } from '../common/decorators/group-roles.decorator';
+import { StrictGroupCheck } from '../common/decorators/strict-group-check.decorator';
 import { Role } from '../common/enums/role';
+import { GroupRole } from '../common/enums/group-role';
+import { GroupRoleGuard } from '../common/guards/group-role.guard';
 import { VotingCreateDto } from './dto/voting.create.dto';
 import { VotingUpdateDto } from './dto/voting.update.dto';
 import { FindVotingQueryDto } from './dto/find.voting.query.dto';
@@ -164,6 +168,7 @@ export class VotingsController {
         optionIds: dto.optionIds,
         otherText: dto.otherText,
         isAbstention: dto.isAbstention,
+        isPractice: dto.isPractice,
       },
     );
   }
@@ -217,6 +222,7 @@ export class VotingsController {
       dto.token,
       dto.otherText,
       dto.isAbstention,
+      dto.isPractice,
     );
   }
 
@@ -305,6 +311,9 @@ export class VotingsController {
   // ─── Finalization ─────────────────────────────────────────────────────────────
 
   @Post(':id/finalize')
+  @UseGuards(GroupRoleGuard)
+  @GroupRoles(GroupRole.ADMIN, GroupRole.OWNER)
+  @StrictGroupCheck()
   finalize(@Param('id') votingId: string, @CurrentUser() user: UserPayloadDto) {
     return this.voteService.finalizeVoting(votingId, user.sub);
   }
@@ -323,11 +332,18 @@ export class VotingsController {
 
   @Get(':id/verify-receipt')
   @Public()
-  verifyReceipt(
+  async verifyReceipt(
     @Param('id') votingId: string,
-    @Query('hash') hash: string,
+    @Query('hash') hash: string | string[],
   ) {
-    return this.voteService.verifyReceipt(votingId, hash);
+    const results = await this.voteService.verifyReceipt(votingId, hash);
+    const missing = results.filter((r) => !r.found).map((r) => r.hash);
+
+    return {
+      valid: missing.length === 0,
+      missingHashes: missing.length > 0 ? missing : undefined,
+      results,
+    };
   }
 
   private successHtml(

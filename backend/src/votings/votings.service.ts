@@ -57,6 +57,7 @@ export class VotingsService {
       type: (dto.type as VotingType) ?? VotingType.SINGLE_CHOICE,
       isOpen: dto.isOpen ?? false,
       allowOther: dto.allowOther ?? false,
+      allowAbstain: dto.allowAbstain ?? true,
       minChoices: dto.minChoices ?? 1,
       maxChoices: dto.maxChoices,
       startAt,

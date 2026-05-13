@@ -47,17 +47,20 @@ export class VoteService {
       optionIds: string[];
       otherText?: string;
       isAbstention?: boolean;
+      isPractice?: boolean;
     },
   ) {
     this.logger.debug(
-      `Requesting voting token for user ${user.id} ${user.language} ${user.theme} on voting ${votingId}`,
+      `Requesting voting token for user ${user.id} ${user.language} ${user.theme} on voting ${votingId} (practice: ${selections.isPractice})`,
     );
     const voting = await this.repo.findVotingById(votingId);
     if (!voting) throw new NotFoundException('Voting not found');
 
-    const hasVoted = await this.redis.hasUserVoted(votingId, user.id);
-    if (hasVoted)
-      throw new ConflictException('Already participated in this voting');
+    if (!selections.isPractice) {
+      const hasVoted = await this.redis.hasUserVoted(votingId, user.id);
+      if (hasVoted)
+        throw new ConflictException('Already participated in this voting');
+    }
 
     // Store selections in Redis (TTL matches token — 1hr)
     await this.redis.setSelections(user.id, votingId, selections, 3600);
@@ -67,7 +70,16 @@ export class VoteService {
       user.id,
       votingId,
       3600,
+      selections.isPractice,
     );
+
+    if (selections.isPractice) {
+      return {
+        status: 'Success',
+        message: 'Practice token generated',
+        token,
+      };
+    }
 
     try {
       await this.mailService.sendVotingToken(
@@ -88,6 +100,7 @@ export class VoteService {
         payload: {
           votingId,
           expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
+          isPractice: selections.isPractice,
         },
         userId: user.id,
         votingId,
@@ -142,13 +155,13 @@ export class VoteService {
             'Vote selections expired. Please return to the voting page and try again.',
         };
       }
-      const { optionIds, otherText, isAbstention } = selections;
+      const { optionIds, otherText, isAbstention, isPractice } = selections;
 
       // get user email for receipt
 
       const user = await this.usersService.findOne(userId);
       this.logger.debug(
-        `Confirming vote for user ${userId} ${user.language} ${user.theme} on voting ${votingId}`,
+        `Confirming vote for user ${userId} ${user.language} ${user.theme} on voting ${votingId} (practice: ${isPractice})`,
       );
 
       const result = await this.vote(
@@ -163,6 +176,7 @@ export class VoteService {
         rawToken,
         otherText,
         isAbstention,
+        isPractice,
       );
 
       await this.redis.deleteSelections(userId, votingId);
@@ -191,6 +205,7 @@ export class VoteService {
     token: string,
     otherText?: string,
     isAbstention?: boolean,
+    isPractice?: boolean,
   ) {
     const lockKey = `vote_lock:${votingId}:${user.id}`;
     let lockToken: string | null = null;
@@ -206,138 +221,159 @@ export class VoteService {
       if (!lockToken)
         throw new ForbiddenException('Vote submission already in progress');
 
-      const alreadyVoted = await this.redis.hasUserVoted(votingId, user.id);
-      if (alreadyVoted) throw new ForbiddenException('Already participated');
+      if (!isPractice) {
+        const alreadyVoted = await this.redis.hasUserVoted(votingId, user.id);
+        if (alreadyVoted) throw new ForbiddenException('Already participated');
+      }
 
       optionIdsToTally = ballots.map((b) => b.optionId);
 
-      await this.repo.$transaction(async (tx) => {
-        const voting = await this.repo.findVotingForVote(tx, votingId);
-        if (!voting) throw new NotFoundException('Voting not found');
-        if (voting.isFinalized)
-          throw new ForbiddenException('This voting has been finalized');
-        votingTitle = voting.title;
-        groupId = voting.groupId;
+      // ── Token verification ───────────────────────────────────────────────
+      const tokenMeta = await this.redis.verifyToken(
+        'voting',
+        user.id,
+        votingId,
+        token,
+      );
 
-        // ── Token verification ───────────────────────────────────────────────
-        await this.redis.verifyToken('voting', user.id, votingId, token);
+      // Force practice mode if token was issued as practice
+      const actualIsPractice = tokenMeta.isPractice || isPractice || false;
 
-        tokenHashed = CryptoUtils.hashToken(token);
-        // ── Voting guards ────────────────────────────────────────────────────
-        this.assertTiming(voting);
+      tokenHashed = CryptoUtils.hashToken(token);
 
-        const trimmedOther = otherText?.trim();
-        if (trimmedOther && !voting.allowOther)
-          throw new ForbiddenException(
-            'This voting does not allow an "Other" answer',
-          );
+      const voting = await this.repo.findVotingById(votingId);
+      if (!voting) throw new NotFoundException('Voting not found');
+      if (voting.isFinalized)
+        throw new ForbiddenException('This voting has been finalized');
 
-        const hasOther = !!trimmedOther;
+      votingTitle = voting.title;
+      groupId = voting.groupId;
 
-        if (ballots.length === 0 && !hasOther && !isAbstention)
-          throw new BadRequestException(
-            'You must select an option or provide an "Other" answer',
-          );
+      // ── Voting guards ────────────────────────────────────────────────────
+      this.assertTiming(voting);
 
-        if (isAbstention && (ballots.length > 0 || hasOther))
-          throw new BadRequestException(
-            'Conflicting vote: Abstention selected along with other options',
-          );
+      const trimmedOther = otherText?.trim();
+      if (trimmedOther && !voting.allowOther)
+        throw new ForbiddenException(
+          'This voting does not allow an "Other" answer',
+        );
 
-        if (ballots.length > 0) {
-          this.assertOptionIds(
-            voting,
-            ballots.map((b) => b.optionId),
-          );
-          this.assertChoiceCount(
-            {
-              type: voting.type as VotingType,
-              minChoices: voting.minChoices,
-              maxChoices: voting.maxChoices,
-            },
-            ballots,
-            hasOther,
-          );
-        }
+      const hasOther = !!trimmedOther;
 
-        // ── Build hashed ballots ─────────────────────────────────────────────
-        const ballotsHashed: Array<{
-          optionId: string | null;
-          isAbstention: boolean;
-          ballotHash: string;
-          tokenHashed: string;
-        }> = ballots.map((b) => {
-          const receipt = CryptoUtils.generateBallotReceipt(
-            votingId,
-            b.optionId,
-            tokenHashed,
-          );
+      if (ballots.length === 0 && !hasOther && !isAbstention)
+        throw new BadRequestException(
+          'You must select an option or provide an "Other" answer',
+        );
 
-          receipts.push(receipt);
-          return {
-            optionId: b.optionId,
-            isAbstention: false,
-            ballotHash: receipt,
-            tokenHashed,
-          };
-        });
+      if (isAbstention && (ballots.length > 0 || hasOther))
+        throw new BadRequestException(
+          'Conflicting vote: Abstention selected along with other options',
+        );
 
-        if (isAbstention) {
-          const receipt = CryptoUtils.generateBallotReceipt(
-            votingId,
-            'abstention',
-            tokenHashed,
-          );
-          receipts.push(receipt);
-          ballotsHashed.push({
-            optionId: null,
-            isAbstention: true,
-            ballotHash: receipt,
-            tokenHashed,
-          });
-        }
+      if (ballots.length > 0) {
+        this.assertOptionIds(
+          voting,
+          ballots.map((b) => b.optionId),
+        );
+        this.assertChoiceCount(
+          {
+            type: voting.type as VotingType,
+            minChoices: voting.minChoices,
+            maxChoices: voting.maxChoices,
+          },
+          ballots,
+          hasOther,
+        );
+      }
 
-        // ── Participation guard (DB canonical truth) ─────────────────────────
-        const existing = await tx.voteParticipation.findUnique({
-          where: { userId_votingId: { userId: user.id, votingId } },
-          select: { id: true },
-        });
-        if (existing)
-          throw new ForbiddenException('Already participated in this voting');
+      // ── Build hashed ballots ─────────────────────────────────────────────
+      const ballotsHashed: Array<{
+        optionId: string | null;
+        isAbstention: boolean;
+        ballotHash: string;
+        tokenHashed: string;
+      }> = ballots.map((b) => {
+        const receipt = CryptoUtils.generateBallotReceipt(
+          votingId,
+          b.optionId,
+          tokenHashed,
+        );
 
-        await this.repo.createParticipationTx(tx, user.id, votingId);
-
-        // ── Handle "Other" as dynamic option ─────────────────────────────────
-        if (trimmedOther && voting.allowOther) {
-          let option = await tx.option.findFirst({
-            where: { votingId, text: trimmedOther, isDynamic: true },
-          });
-
-          if (!option) {
-            option = await tx.option.create({
-              data: { votingId, text: trimmedOther, isDynamic: true },
-            });
-          }
-
-          const otherReceipt = CryptoUtils.generateBallotReceipt(
-            votingId,
-            option.id,
-            tokenHashed,
-          );
-          receipts.push(otherReceipt);
-          ballotsHashed.push({
-            optionId: option.id,
-            isAbstention: false,
-            ballotHash: otherReceipt,
-            tokenHashed,
-          });
-          optionIdsToTally.push(option.id);
-        }
-        // ── Consume token and write ballots ──────────────────────────────────
-        if (ballotsHashed.length > 0) {
-          await this.repo.createBallotsTx(tx, votingId, ballotsHashed);
-        }
+        receipts.push(receipt);
+        return {
+          optionId: b.optionId,
+          isAbstention: false,
+          ballotHash: receipt,
+          tokenHashed,
+        };
       });
+
+      if (isAbstention) {
+        const receipt = CryptoUtils.generateBallotReceipt(
+          votingId,
+          'abstention',
+          tokenHashed,
+        );
+        receipts.push(receipt);
+        ballotsHashed.push({
+          optionId: null,
+          isAbstention: true,
+          ballotHash: receipt,
+          tokenHashed,
+        });
+      }
+
+      if (!actualIsPractice) {
+        await this.repo.$transaction(async (tx) => {
+          // ── Participation guard (DB canonical truth) ─────────────────────────
+          const existing = await tx.voteParticipation.findUnique({
+            where: { userId_votingId: { userId: user.id, votingId } },
+            select: { id: true },
+          });
+          if (existing)
+            throw new ForbiddenException('Already participated in this voting');
+
+          await this.repo.createParticipationTx(tx, user.id, votingId);
+
+          // ── Handle "Other" as dynamic option ─────────────────────────────────
+          if (trimmedOther && voting.allowOther) {
+            let option = await tx.option.findFirst({
+              where: { votingId, text: trimmedOther, isDynamic: true },
+            });
+
+            if (!option) {
+              option = await tx.option.create({
+                data: { votingId, text: trimmedOther, isDynamic: true },
+              });
+            }
+
+            const otherReceipt = CryptoUtils.generateBallotReceipt(
+              votingId,
+              option.id,
+              tokenHashed,
+            );
+            receipts.push(otherReceipt);
+            ballotsHashed.push({
+              optionId: option.id,
+              isAbstention: false,
+              ballotHash: otherReceipt,
+              tokenHashed,
+            });
+            optionIdsToTally.push(option.id);
+          }
+          // ── Consume token and write ballots ──────────────────────────────────
+          if (ballotsHashed.length > 0) {
+            await this.repo.createBallotsTx(tx, votingId, ballotsHashed);
+          }
+        });
+      } else {
+        this.logger.debug(
+          `Bypassing DB persistence for practice vote: ${votingId} user: ${user.id}`,
+        );
+        // Still push "Other" receipt to results if it's practice?
+        // Plan says: "do NOT increment real vote tallies".
+        // We just return receipts to the user.
+      }
 
       try {
         await this.redis.consumeToken('voting', user.id, votingId);
@@ -353,58 +389,73 @@ export class VoteService {
           optionIdsToTally,
           user.id,
           isAbstention,
+          actualIsPractice,
         );
 
-        await this.redis.setTemporaryReceipts(votingId, user.id, receipts, 300);
+        if (!actualIsPractice) {
+          await this.redis.setTemporaryReceipts(
+            votingId,
+            user.id,
+            receipts,
+            300,
+          );
+        }
       } catch (err) {
         this.logger.error(
           `Redis vote cache update failed for voting ${votingId}: ${err}`,
         );
       }
 
-      try {
-        await this.auditService.appendChain({
-          action: ChainAction.BALLOT_CAST,
-          payload: {
-            ballotHashes: receipts,
-            tokenHashed: tokenHashed,
-            optionCount: ballots.length,
-            hasOther: !!otherText,
-            isAbstention: !!isAbstention,
-          },
-          votingId,
-          groupId,
-        });
-      } catch (err) {
-        this.logger.error(
-          `Audit chain write failed for BALLOT_CAST voting ${votingId}: ${err}`,
-        );
+      if (!actualIsPractice) {
+        try {
+          await this.auditService.appendChain({
+            action: ChainAction.BALLOT_CAST,
+            payload: {
+              ballotHashes: receipts,
+              tokenHashed: tokenHashed,
+              optionCount: ballots.length,
+              hasOther: !!otherText,
+              isAbstention: !!isAbstention,
+            },
+            votingId,
+            groupId,
+          });
+        } catch (err) {
+          this.logger.error(
+            `Audit chain write failed for BALLOT_CAST voting ${votingId}: ${err}`,
+          );
+        }
       }
 
-      try {
-        this.logger.debug(
-          `Sending receipt email to user ${user.language} ${user.theme} for voting ${votingId}`,
-        );
+      if (!actualIsPractice) {
+        try {
+          this.logger.debug(
+            `Sending receipt email to user ${user.language} ${user.theme} for voting ${votingId}`,
+          );
 
-        await this.mailService.sendVoteReceipt(
-          user.email,
-          votingTitle,
-          votingId,
-          receipts,
-          user.language,
-          user.theme,
-        );
-      } catch (err) {
-        this.logger.error(`Receipt email failed for user ${user.id}: ${err}`);
+          await this.mailService.sendVoteReceipt(
+            user.email,
+            votingTitle,
+            votingId,
+            receipts,
+            user.language,
+            user.theme,
+          );
+        } catch (err) {
+          this.logger.error(`Receipt email failed for user ${user.id}: ${err}`);
+        }
       }
 
       // ── Broadcast live results ────────────────────────────────────────────
-      const results = await this.getResults(votingId);
-      this.broadcastResults(votingId, results);
+      if (!actualIsPractice) {
+        const results = await this.getResults(votingId);
+        this.broadcastResults(votingId, results);
+      }
 
       return {
         participated: true,
         receipts,
+        isPractice: actualIsPractice,
         proof: {
           verifyUrl: `/votings/${votingId}/verify-receipt`,
           chainUrl: `/audit/votings/audit-chain/${votingId}`,
@@ -642,9 +693,9 @@ export class VoteService {
   }
 
   // ─── Receipt verification ────────────────────────────────────────────────────────
-  async verifyReceipt(votingId: string, hash: string) {
+  async verifyReceipt(votingId: string, hash: string | string[]) {
     const voting = await this.repo.findVotingAllowOther(votingId);
     if (!voting) throw new NotFoundException('Voting not found');
-    return this.auditService.findBallotReceipt(votingId, hash);
+    return this.auditService.findBallotReceipt(votingId, hash, 'voting');
   }
 }

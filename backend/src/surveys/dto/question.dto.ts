@@ -11,7 +11,7 @@ import {
   MaxLength,
   ArrayMinSize,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { PartialType, OmitType } from '@nestjs/mapped-types';
 import { SurveyQuestionType } from '../types/survey.types';
 import { SurveyOptionDto } from './option.dto';
@@ -83,6 +83,12 @@ export class SurveyQuestionDto {
   @ArrayMinSize(0)
   @ValidateNested({ each: true })
   @Type(() => SurveyOptionDto)
+  @Transform(({ value }) => {
+    if (Array.isArray(value)) {
+      return value.map((v) => (typeof v === 'string' ? { text: v } : v));
+    }
+    return value;
+  })
   options?: SurveyOptionDto[];
 }
 

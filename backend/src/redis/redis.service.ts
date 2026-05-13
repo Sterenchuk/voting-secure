@@ -35,6 +35,24 @@ export class RedisVotingService {
     await this.redis.del(`auth:refresh:${token}`);
   }
 
+  // ─── GENERIC KEY ACCESS ────────────────────────────────────────────────────
+
+  /**
+   * Get a raw string value by key.
+   */
+  async get(key: string): Promise<string | null> {
+    return this.redis.get(key);
+  }
+
+  /**
+   * Delete one or more keys.
+   */
+  async del(...keys: string[]): Promise<void> {
+    if (keys.length > 0) {
+      await this.redis.del(...keys);
+    }
+  }
+
   // ─── DISTRIBUTED LOCK ──────────────────────────────────────────────────────
 
   async acquireLock(lockKey: string, ttlSeconds = 10): Promise<string | null> {
@@ -69,7 +87,15 @@ export class RedisVotingService {
     optionIds: string[],
     userId: string,
     isAbstention = false,
+    isPractice = false,
   ): Promise<void> {
+    if (isPractice) {
+      this.logger.debug(
+        `Practice vote for voting ${votingId} by user ${userId} - skipping persistence`,
+      );
+      return;
+    }
+
     const pipeline = this.redis.pipeline();
     pipeline.sadd(
       `voting:${votingId}:voters`,
@@ -82,14 +108,14 @@ export class RedisVotingService {
         pipeline.hincrby(`voting:${votingId}:results`, id, 1),
       );
     }
-    
+
     // Track global stats for dashboard
     pipeline.incr('global:vote_count');
-    
+
     // Track trends (votes per hour)
     const hourKey = new Date().toISOString().substring(0, 13);
     pipeline.hincrby('global:trends', hourKey, 1);
-    
+
     await pipeline.exec();
   }
 
@@ -158,20 +184,37 @@ export class RedisVotingService {
     surveyId: string,
     userId: string,
     answers: { questionId: string; optionIds: string[]; hasOther?: boolean }[],
+    isAbstention = false,
+    isPractice = false,
   ): Promise<void> {
+    if (isPractice) {
+      this.logger.debug(
+        `Practice survey submission for survey ${surveyId} by user ${userId} - skipping persistence`,
+      );
+      return;
+    }
+
     const hasSubmitted = await this.hasUserSubmittedSurvey(surveyId, userId);
     if (hasSubmitted) throw new Error('User has already submitted this survey');
 
     const pipeline = this.redis.pipeline();
     pipeline.sadd(`survey:${surveyId}:voters`, userId);
 
-    answers.forEach(({ questionId, optionIds, hasOther }) => {
-      const resultsKey = `survey:${surveyId}:results:${questionId}`;
-      optionIds.forEach((optionId) =>
-        pipeline.hincrby(resultsKey, optionId, 1),
+    if (isAbstention) {
+      pipeline.hincrby(
+        `survey:${surveyId}:results:global`,
+        'ABSTENTION_COUNT',
+        1,
       );
-      if (hasOther) pipeline.hincrby(resultsKey, 'OTHER_COUNT', 1);
-    });
+    } else {
+      answers.forEach(({ questionId, optionIds, hasOther }) => {
+        const resultsKey = `survey:${surveyId}:results:${questionId}`;
+        optionIds.forEach((optionId) =>
+          pipeline.hincrby(resultsKey, optionId, 1),
+        );
+        if (hasOther) pipeline.hincrby(resultsKey, 'OTHER_COUNT', 1);
+      });
+    }
 
     await pipeline.exec();
   }
@@ -215,6 +258,51 @@ export class RedisVotingService {
     await pipeline.exec();
   }
 
+  // ─── SURVEY SELECTIONS (full ballot payload) ───────────────────────────────
+
+  private surveySelectionsKey(userId: string, surveyId: string): string {
+    return `survey_selections:${userId}:${surveyId}`;
+  }
+
+  async setSurveySelections(
+    userId: string,
+    surveyId: string,
+    data: { ballots: any[]; isPractice?: boolean },
+    ttlSeconds: number,
+  ): Promise<void> {
+    await this.redis.set(
+      this.surveySelectionsKey(userId, surveyId),
+      JSON.stringify(data),
+      'EX',
+      ttlSeconds,
+    );
+  }
+
+  async getSurveySelections(
+    userId: string,
+    surveyId: string,
+  ): Promise<{ ballots: any[]; isPractice?: boolean } | null> {
+    const raw = await this.redis.get(
+      this.surveySelectionsKey(userId, surveyId),
+    );
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      this.logger.error(
+        `Failed to parse survey selections for user ${userId} survey ${surveyId}`,
+      );
+      return null;
+    }
+  }
+
+  async deleteSurveySelections(
+    userId: string,
+    surveyId: string,
+  ): Promise<void> {
+    await this.redis.del(this.surveySelectionsKey(userId, surveyId));
+  }
+
   // ─── UNIFIED TOKEN METHODS (VOTING + SURVEY) ───────────────────────────────
 
   private tokenKey(
@@ -234,9 +322,10 @@ export class RedisVotingService {
     userId: string,
     entityId: string,
     ttlSeconds = 3600,
+    isPractice = false,
   ): Promise<string> {
     this.logger.debug(
-      `Issuing token for ${type} ${entityId} and user ${userId} with TTL ${ttlSeconds}s`,
+      `Issuing token for ${type} ${entityId} and user ${userId} with TTL ${ttlSeconds}s (practice: ${isPractice})`,
     );
     const token = CryptoUtils.generateSecureToken();
     const hash = CryptoUtils.hashToken(token);
@@ -245,7 +334,7 @@ export class RedisVotingService {
     pipeline.set(this.tokenKey(type, userId, entityId), hash, 'EX', ttlSeconds);
     pipeline.set(
       this.reverseKey(hash),
-      JSON.stringify({ userId, entityId, type }),
+      JSON.stringify({ userId, entityId, type, isPractice }),
       'EX',
       ttlSeconds,
     );
@@ -254,9 +343,12 @@ export class RedisVotingService {
     return token;
   }
 
-  async lookupTokenByHash(
-    hash: string,
-  ): Promise<{ userId: string; entityId: string; type: string } | null> {
+  async lookupTokenByHash(hash: string): Promise<{
+    userId: string;
+    entityId: string;
+    type: string;
+    isPractice?: boolean;
+  } | null> {
     const raw = await this.redis.get(this.reverseKey(hash));
     if (!raw) return null;
     try {
@@ -272,13 +364,22 @@ export class RedisVotingService {
     userId: string,
     entityId: string,
     submittedToken: string,
-  ): Promise<void> {
+  ): Promise<{
+    userId: string;
+    entityId: string;
+    type: string;
+    isPractice?: boolean;
+  }> {
+    const hash = CryptoUtils.hashToken(submittedToken);
     const storedHash = await this.redis.get(
       this.tokenKey(type, userId, entityId),
     );
     if (!storedHash) throw new ForbiddenException('Invalid or expired token');
-    if (storedHash !== CryptoUtils.hashToken(submittedToken))
-      throw new ForbiddenException('Invalid token');
+    if (storedHash !== hash) throw new ForbiddenException('Invalid token');
+
+    const meta = await this.lookupTokenByHash(hash);
+    if (!meta) throw new ForbiddenException('Token metadata missing');
+    return meta;
   }
 
   async consumeToken(
@@ -320,8 +421,9 @@ export class RedisVotingService {
       optionIds: string[];
       otherText?: string;
       isAbstention?: boolean;
+      isPractice?: boolean;
     },
-    ttlSeconds = 3600,
+    ttlSeconds: number,
   ): Promise<void> {
     await this.redis.set(
       `vote_selections:${userId}:${entityId}`,
@@ -338,6 +440,7 @@ export class RedisVotingService {
     optionIds: string[];
     otherText?: string;
     isAbstention?: boolean;
+    isPractice?: boolean;
   } | null> {
     const raw = await this.redis.get(`vote_selections:${userId}:${entityId}`);
     if (!raw) return null;
@@ -376,7 +479,9 @@ export class RedisVotingService {
     scopeId: string | null,
     sequence: number,
   ): Promise<void> {
-    const key = scopeId ? `audit_ver:${scope}:${scopeId}` : `audit_ver:${scope}`;
+    const key = scopeId
+      ? `audit_ver:${scope}:${scopeId}`
+      : `audit_ver:${scope}`;
     await this.redis.set(key, sequence.toString());
   }
 
@@ -384,7 +489,9 @@ export class RedisVotingService {
     scope: 'global' | 'group' | 'voting' | 'survey',
     scopeId: string | null,
   ): Promise<number | null> {
-    const key = scopeId ? `audit_ver:${scope}:${scopeId}` : `audit_ver:${scope}`;
+    const key = scopeId
+      ? `audit_ver:${scope}:${scopeId}`
+      : `audit_ver:${scope}`;
     const val = await this.redis.get(key);
     return val ? parseInt(val, 10) : null;
   }

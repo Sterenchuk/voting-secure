@@ -37,6 +37,10 @@ export class VotingCreateDto {
   @IsBoolean()
   isOpen?: boolean;
 
+  @IsOptional()
+  @IsBoolean()
+  allowAbstain?: boolean;
+
   @IsArray()
   @ArrayMinSize(2)
   @IsString({ each: true })

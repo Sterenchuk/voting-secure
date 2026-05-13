@@ -44,6 +44,7 @@ export const SELECT_SURVEY = {
   description: true,
   isOpen: true,
   isFinalized: true,
+  allowAbstain: true,
   createdAt: true,
   updatedAt: true,
   startAt: true,

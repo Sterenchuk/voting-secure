@@ -24,4 +24,8 @@ export class RequestTokenDto {
   @IsOptional()
   @IsBoolean()
   isAbstention?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isPractice?: boolean;
 }

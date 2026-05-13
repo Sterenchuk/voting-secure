@@ -43,6 +43,7 @@ export class SurveysService {
       description: dto.description,
       groupId: dto.groupId,
       isOpen: dto.isOpen ?? false,
+      allowAbstain: dto.allowAbstain ?? true,
       startAt,
       endAt: dto.endAt ? new Date(dto.endAt) : undefined,
       surveyQuestions: dto.questions.map((q) => {

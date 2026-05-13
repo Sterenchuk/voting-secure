@@ -17,6 +17,7 @@ export interface IVoting {
   isOpen: boolean;
   isFinalized: boolean;
   allowOther: boolean;
+  allowAbstain: boolean;
   minChoices: number;
   maxChoices: number | null;
   startAt: Date | null;
@@ -40,6 +41,7 @@ export interface ICreateVotingData {
   type: VotingType;
   isOpen: boolean;
   allowOther: boolean;
+  allowAbstain: boolean;
   minChoices: number;
   maxChoices?: number;
   startAt?: Date;
@@ -55,6 +57,7 @@ export interface IUpdateVotingData {
   finalizedAt?: Date;
   isOpen?: boolean;
   allowOther?: boolean;
+  allowAbstain?: boolean;
   minChoices?: number;
   maxChoices?: number;
   startAt?: Date;
