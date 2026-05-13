@@ -53,37 +53,43 @@ export function AuditStatus({
         </div>
       )}
 
-      {isAdminOrAuditor && (
+      {(isAdminOrAuditor || isFinalized) && (
         <div className={styles.adminCard}>
           <div className={styles.cardHeader}>
             <div className={styles.cardInfo}>
               <Lock className={styles.iconAdmin} />
               <div>
                 <h3 className={styles.cardTitle}>
-                  {t.votings.auditAdministrative}
+                  {isAdminOrAuditor ? t.votings.auditAdministrative : "Election Finalized"}
                 </h3>
                 <p className={styles.cardText}>
-                  {t.votings.verifyIntegrityInstructions}
+                  {isAdminOrAuditor 
+                    ? t.votings.verifyIntegrityInstructions 
+                    : "The results are sealed and cryptographically verified."}
                 </p>
               </div>
             </div>
-            <Button
-              variant="secondary"
-              onClick={onVerifyChain}
-            >
-              {t.votings.verifyVotingChain}
-            </Button>
-          </div>
-          {(isFinalized || alreadyVoted) && (
-            <div className={styles.adminActions}>
+            {(isAdminOrAuditor || isFinalized) && (
               <Button
-                variant="outline"
-                size="sm"
-                onClick={onExportCsv}
-                className={styles.actionBtn}
+                variant="secondary"
+                onClick={onVerifyChain}
               >
-                <Table className={styles.btnIcon} /> {t.votings.exportCsv}
+                {t.votings.verifyVotingChain}
               </Button>
+            )}
+          </div>
+          {(isFinalized || alreadyVoted || isAdminOrAuditor) && (
+            <div className={styles.adminActions}>
+              {isAdminOrAuditor && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onExportCsv}
+                  className={styles.actionBtn}
+                >
+                  <Table className={styles.btnIcon} /> {t.votings.exportCsv}
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"

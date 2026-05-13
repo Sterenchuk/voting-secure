@@ -36,6 +36,7 @@ export default function VotingDetailPage() {
 
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [isAbstention, setIsAbstention] = useState(false);
+  const [isPractice, setIsPractice] = useState(false);
   const [otherText, setOtherText] = useState("");
   const [showOtherInput, setShowOtherInput] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -170,13 +171,32 @@ export default function VotingDetailPage() {
         selectedOptions,
         showOtherInput ? otherText.trim() : undefined,
         isAbstention,
+        isPractice,
       );
 
       if (tokenRes.error || !tokenRes.data) {
         throw new Error(tokenRes.error?.message || "Failed to request token");
       }
 
-      setTokenRequested(true);
+      if (isPractice && tokenRes.data.token) {
+        // Direct vote for practice mode
+        const res = await api.post<CastVoteResponse>(`/votings/${id}/vote`, {
+          token: tokenRes.data.token,
+          ballots: selectedOptions.map(opt => ({ optionId: opt })),
+          otherText: showOtherInput ? otherText.trim() : undefined,
+          isAbstention,
+          isPractice: true,
+        });
+
+        if (res.data) {
+          setSubmitted(true);
+          setVoteReceipt(res.data);
+        } else {
+          throw new Error(res.error?.message || "Practice vote failed");
+        }
+      } else {
+        setTokenRequested(true);
+      }
     } catch (e: any) {
       setError(e?.message ?? t.common.error);
     } finally {
@@ -228,7 +248,30 @@ export default function VotingDetailPage() {
     <div className={styles.page}>
       <Breadcrumbs items={breadcrumbs} />
       
+      {isPractice && (
+        <div className={styles.sandboxBanner}>
+          <div className={styles.sandboxContent}>
+            <span className={styles.sandboxBadge}>SANDBOX MODE</span>
+            <p className={styles.sandboxText}>
+              This is a simulation. No real data will be recorded in the permanent audit chain.
+            </p>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => setIsPractice(false)}>
+            Exit Practice
+          </Button>
+        </div>
+      )}
+
       <VotingDetailHeader voting={currentVoting} />
+
+      {!isPractice && currentVoting.isOpen && !alreadyVoted && (
+        <div className={styles.practicePrompt}>
+          <p>{t.votings.practiceModeHint || "Want to try before you vote?"}</p>
+          <Button variant="secondary" size="sm" onClick={() => setIsPractice(true)}>
+            {t.votings.startPractice || "Start Practice Mode"}
+          </Button>
+        </div>
+      )}
 
       <Card className={styles.contentCard}>
         <AuditStatus 
@@ -240,13 +283,30 @@ export default function VotingDetailPage() {
         />
 
         {submitted && (
-          <div className={styles.receiptSection}>
-            <h3 className={styles.receiptTitle}>✓ {t.votings.voteConfirmed}</h3>
-            <p className={styles.receiptText}>📧 {t.votings.receiptSentEmail}</p>
+          <div className={`${styles.receiptSection} ${isPractice ? styles.practiceReceipt : ""}`}>
+            <h3 className={styles.receiptTitle}>
+              {isPractice ? "✓ Practice Session Completed" : `✓ ${t.votings.voteConfirmed}`}
+            </h3>
+            <p className={styles.receiptText}>
+              {isPractice 
+                ? "This was a practice run. No real vote was cast." 
+                : `📧 ${t.votings.receiptSentEmail}`}
+            </p>
             {voteReceipt && (
-              <Button size="sm" variant="outline" onClick={downloadReceipt}>
-                {t.votings.downloadReceipt}
-              </Button>
+              <div className="flex gap-2 justify-center">
+                <Button size="sm" variant="outline" onClick={downloadReceipt}>
+                  {isPractice ? "Download Sample Receipt" : t.votings.downloadReceipt}
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={() => {
+                    navigator.clipboard.writeText(voteReceipt.receipts.join('\n'));
+                  }}
+                >
+                  Copy All Hashes
+                </Button>
+              </div>
             )}
           </div>
         )}

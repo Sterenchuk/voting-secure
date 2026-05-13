@@ -29,7 +29,8 @@ export default function CreateVotingForm() {
     groupId: prefilledGroupId,
     type: VotingType.SINGLE_CHOICE as VotingType,
     isOpen: true,
-    allowOther: false,
+    allowOther: true,
+    allowAbstain: true,
     minChoices: 1,
     maxChoices: "",
     startAt: "",
@@ -44,7 +45,7 @@ export default function CreateVotingForm() {
     fetchGroups();
   }, [fetchGroups]);
 
-  const setField = (key: string, value: any) => 
+  const setField = (key: string, value: any) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
   const setOption = (idx: number, value: string) =>
@@ -80,6 +81,7 @@ export default function CreateVotingForm() {
       type: form.type,
       isOpen: form.isOpen,
       allowOther: form.allowOther,
+      allowAbstain: form.allowAbstain,
       minChoices: form.minChoices,
       maxChoices: form.maxChoices ? Number(form.maxChoices) : undefined,
       options: cleanOptions,
@@ -120,7 +122,7 @@ export default function CreateVotingForm() {
 
       <div className={styles.formLayout}>
         <div className={styles.formMain}>
-          <VotingBasicInfo 
+          <VotingBasicInfo
             title={form.title}
             description={form.description}
             groupId={form.groupId}
@@ -128,7 +130,7 @@ export default function CreateVotingForm() {
             onChange={setField}
           />
 
-          <VotingOptionsEditor 
+          <VotingOptionsEditor
             options={options}
             setOption={setOption}
             addOption={addOption}
@@ -137,16 +139,17 @@ export default function CreateVotingForm() {
         </div>
 
         <div className={styles.formSidebar}>
-          <VotingSettings 
+          <VotingSettings
             type={form.type}
             minChoices={form.minChoices}
             maxChoices={form.maxChoices}
             isOpen={form.isOpen}
             allowOther={form.allowOther}
+            allowAbstain={form.allowAbstain}
             onChange={setField}
           />
 
-          <VotingScheduling 
+          <VotingScheduling
             startAt={form.startAt}
             endAt={form.endAt}
             onChange={setField}

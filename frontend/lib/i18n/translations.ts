@@ -238,11 +238,16 @@ export const translations = {
       noLimit: "No limit",
       openImmediately: "Open immediately",
       openImmediatelyHint: "Voters can submit right away",
+      allowOther: "Allow Other",
       allowOtherHint: "Voters can write a custom answer",
+      allowAbstain: "Allow Abstain",
+      allowAbstainHint: "Voters can choose to abstain",
       optionPlaceholder: "Option",
       titleRequired: "Title is required",
       groupRequired: "Group is required",
       minOptionsRequired: "At least 2 options are required",
+      practiceModeHint: "Want to try before you vote?",
+      startPractice: "Start Practice Mode",
     },
 
     // Surveys
@@ -667,6 +672,8 @@ export const translations = {
       titleRequired: "Назва обов'язкова",
       groupRequired: "Група обов'язкова",
       minOptionsRequired: "Необхідно мінімум 2 варіанти",
+      practiceModeHint: "Хочете спробувати перед голосуванням?",
+      startPractice: "Запустити Тренувальний Режим",
     },
 
     // Surveys
@@ -692,6 +699,9 @@ export const translations = {
       questions: "питань",
       responses: "Відповідей",
       deadline: "Дедлайн",
+      participationConfirmed: "Участь Підтверджено",
+      responseSecurelyRecorded: "Вашу відповідь надійно зафіксовано.",
+      verifySurveyChain: "Перевірити Ланцюг Опитування",
     },
 
     // Groups

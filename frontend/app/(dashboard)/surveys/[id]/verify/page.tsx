@@ -60,10 +60,9 @@ export default function SurveyReceiptVerifyPage() {
     setResult(null);
 
     try {
-      // Use the specific survey verification endpoint
-      const res = await api.get<any>(`/surveys/${id}/verify-receipt?hash=${encodeURIComponent(hash)}`);
-      if (res.data) {
-        setResult(res.data);
+      const res = await verifyReceipt(id, hash, "survey");
+      if (res.data?.results?.[0]) {
+        setResult(res.data.results[0]);
       } else {
         setError("Receipt not found in the audit chain.");
       }
@@ -224,6 +223,3 @@ export default function SurveyReceiptVerifyPage() {
     </div>
   );
 }
-
-// Helper to use api in client component if not imported
-import { api } from "@/hooks/api/useApi";

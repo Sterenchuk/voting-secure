@@ -44,6 +44,8 @@ export interface Group {
 export interface CreateGroupData {
   name: string;
   userEmails?: string[];
+  votingIds?: string[];
+  surveyIds?: string[];
 }
 
 interface GroupsState {
@@ -133,6 +135,8 @@ export function useGroups() {
     const response = await api.post<any>("/groups", {
       ...data,
       userEmails: data.userEmails ?? [],
+      votingIds: data.votingIds ?? [],
+      surveyIds: data.surveyIds ?? [],
     });
 
     if (response.data) {

@@ -50,6 +50,9 @@ export default function SurveyDetailPage() {
   >({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [isPractice, setIsPractice] = useState(false);
+  const [isAbstention, setIsAbstention] = useState(false);
+  const [tokenRequested, setTokenRequested] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [participationStats, setParticipationStats] = useState<
     Array<{ time: string; votes: number }>
@@ -84,6 +87,34 @@ export default function SurveyDetailPage() {
     }
   }, [id, fetchSurvey, fetchResults, getMyStatus, fetchParticipationStats]);
 
+  useEffect(() => {
+    if (!tokenRequested || submitted || !id) return;
+
+    const interval = setInterval(async () => {
+      const res = await getMyStatus(id);
+      if (res.data?.submitted) {
+        setSubmitted(true);
+        setTokenRequested(false);
+        if (res.data.receipts) setReceipts(res.data.receipts);
+        clearInterval(interval);
+        await fetchSurvey(id);
+        await fetchResults(id);
+        const statsRes = await fetchParticipationStats(id);
+        if (statsRes.data) setParticipationStats(statsRes.data);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [
+    tokenRequested,
+    submitted,
+    id,
+    getMyStatus,
+    fetchSurvey,
+    fetchResults,
+    fetchParticipationStats,
+  ]);
+
   if (loading || !currentSurvey) {
     return (
       <div className={styles.loadingState}>
@@ -117,12 +148,19 @@ export default function SurveyDetailPage() {
     }));
   };
 
+  const handleAbstain = () => {
+    if (!canSubmit || tokenRequested) return;
+    setIsAbstention(!isAbstention);
+    setAnswers({});
+  };
+
   const setOptionAnswer = (
     questionId: string,
     optionId: string,
     multiple: boolean,
     type: SurveyQuestionType,
   ) => {
+    if (isAbstention) return;
     setAnswers((prev) => {
       const current = prev[questionId]?.optionIds ?? [];
       const isOther = optionId === "OTHER";
@@ -159,6 +197,7 @@ export default function SurveyDetailPage() {
     text: string,
     type: SurveyQuestionType = SurveyQuestionType.FREEFORM,
   ) => {
+    if (isAbstention) return;
     setAnswers((prev) => ({
       ...prev,
       [questionId]: { ...prev[questionId], questionId, type, text },
@@ -166,6 +205,7 @@ export default function SurveyDetailPage() {
   };
 
   const setScaleAnswer = (questionId: string, scale: number) => {
+    if (isAbstention) return;
     setAnswers((prev) => ({
       ...prev,
       [questionId]: { questionId, type: SurveyQuestionType.SCALE, scale },
@@ -174,7 +214,7 @@ export default function SurveyDetailPage() {
 
   const handleSubmit = async () => {
     const unanswered = questions.filter((q) => q.isRequired && !answers[q.id]);
-    if (unanswered.length > 0) {
+    if (!isAbstention && unanswered.length > 0) {
       setError(t.common.error);
       return;
     }
@@ -182,18 +222,23 @@ export default function SurveyDetailPage() {
     setError(null);
     try {
       // 1. Request Token
-      const tokenRes = await requestToken(id);
+      const currentAnswers = isAbstention ? [] : Object.values(answers);
+      const tokenRes = await requestToken(id, currentAnswers, isPractice);
       if (tokenRes.error || !tokenRes.data) {
         throw new Error(
           tokenRes.error?.message || "Failed to get survey token",
         );
       }
 
-      // 2. Submit with Token
-      const submitRes = await submitSurvey(id, Object.values(answers), tokenRes.data.token);
-      if (submitRes.data?.success) {
-        setSubmitted(true);
-        if (submitRes.data.receipts) setReceipts(submitRes.data.receipts);
+      if (isPractice && tokenRes.data.token) {
+        // 2. Submit directly for practice
+        const submitRes = await submitSurvey(id, currentAnswers, tokenRes.data.token, isPractice);
+        if (submitRes.data?.success) {
+          setSubmitted(true);
+          if (submitRes.data.receipts) setReceipts(submitRes.data.receipts);
+        }
+      } else {
+        setTokenRequested(true);
       }
     } catch (e: any) {
       setError(e?.message ?? t.common.error);
@@ -254,6 +299,20 @@ export default function SurveyDetailPage() {
     <div className={styles.page}>
       <Breadcrumbs items={breadcrumbs} />
 
+      {isPractice && (
+        <div className={styles.sandboxBanner}>
+          <div className={styles.sandboxContent}>
+            <span className={styles.sandboxBadge}>SANDBOX MODE</span>
+            <p className={styles.sandboxText}>
+              This is a simulation. No real data will be recorded in the permanent audit chain.
+            </p>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => setIsPractice(false)}>
+            Exit Practice
+          </Button>
+        </div>
+      )}
+
       <div className={styles.header}>
         <span className={`${styles.statusBadge} ${styles[`status_${status}`]}`}>
           {statusLabel[status]}
@@ -302,6 +361,15 @@ export default function SurveyDetailPage() {
         </div>
       </div>
 
+      {!isPractice && currentSurvey.isOpen && !alreadyParticipated && (
+        <div className={styles.practicePrompt}>
+          <p>{t.votings.practiceModeHint || "Want to try before you submit?"}</p>
+          <Button variant="secondary" size="sm" onClick={() => setIsPractice(true)}>
+            {t.votings.startPractice || "Start Practice Mode"}
+          </Button>
+        </div>
+      )}
+
       <Card className={styles.contentCard}>
         <SurveyAuditStatus 
           survey={currentSurvey}
@@ -310,13 +378,30 @@ export default function SurveyDetailPage() {
         />
 
         {submitted && (
-          <div className={styles.receiptSection}>
-            <h3 className={styles.receiptTitle}>✓ {t.surveys.participationConfirmed || "Response Confirmed"}</h3>
-            <p className={styles.receiptText}>{t.votings.receiptSentEmail || "Your response has been securely recorded."}</p>
+          <div className={`${styles.receiptSection} ${isPractice ? styles.practiceReceipt : ""}`}>
+            <h3 className={styles.receiptTitle}>
+              {isPractice ? "✓ Practice Session Completed" : `✓ ${t.surveys.participationConfirmed || "Response Confirmed"}`}
+            </h3>
+            <p className={styles.receiptText}>
+              {isPractice 
+                ? "This was a practice run. No real response was recorded." 
+                : t.votings.receiptSentEmail || "Your response has been securely recorded."}
+            </p>
             {receipts && (
-              <Button size="sm" variant="outline" onClick={downloadReceipt}>
-                {t.votings.downloadReceipt || "Download Receipt"}
-              </Button>
+              <div className="flex gap-2 justify-center">
+                <Button size="sm" variant="outline" onClick={downloadReceipt}>
+                  {isPractice ? "Download Sample Receipt" : t.votings.downloadReceipt || "Download Receipt"}
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={() => {
+                    navigator.clipboard.writeText(receipts.join('\n'));
+                  }}
+                >
+                  Copy All Hashes
+                </Button>
+              </div>
             )}
           </div>
         )}
@@ -360,6 +445,28 @@ export default function SurveyDetailPage() {
         )}
 
         <div className={styles.questionList}>
+          {canSubmit && currentSurvey.allowAbstain && (
+            <div
+              className={`${styles.abstainCard} ${isAbstention ? styles.abstainSelected : ""}`}
+              onClick={handleAbstain}
+            >
+              <div className={styles.optionRow}>
+                <div
+                  className={`${styles.optionControl} ${isAbstention ? styles.optionControlSelected : ""} ${styles.optionRadio}`}
+                >
+                  {isAbstention && <div className={styles.radioInner} />}
+                </div>
+                <div className={styles.abstainInfo}>
+                  <p className={styles.abstainTitle}>{t.common.abstain}</p>
+                  <p className={styles.abstainText}>
+                    I do not wish to answer any questions in this survey.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div style={{ opacity: isAbstention ? 0.4 : 1, pointerEvents: isAbstention ? 'none' : 'auto' }}>
           {questions.map((question, idx) => {
             const isMultiple =
               question.type === SurveyQuestionType.MULTIPLE_CHOICE ||
@@ -367,7 +474,7 @@ export default function SurveyDetailPage() {
             const questionResults = getQuestionResults(question.id);
             const totalQuestionVotes = questionResults?.totalVotes || 0;
             const otherCount = questionResults?.otherCount || 0;
-            const showResults = alreadyParticipated || currentSurvey.isFinalized;
+            const showResults = (alreadyParticipated || currentSurvey.isFinalized) && !isPractice;
 
             return (
               <Card key={question.id} className={styles.questionCard}>
@@ -680,7 +787,6 @@ export default function SurveyDetailPage() {
                       )}
                       {showResults && (
                         <div className={styles.scaleResults}>
-                           {/* Add scale distribution visualization if needed */}
                            <p>{t.surveys.totalResponses || "Total Responses"}: {totalQuestionVotes}</p>
                         </div>
                       )}
@@ -689,6 +795,8 @@ export default function SurveyDetailPage() {
               </Card>
             );
           })}
+          </div>
+          
           {error && <p className={styles.errorMsg}>{error}</p>}
           {canSubmit && (
             <div className={styles.submitRow}>

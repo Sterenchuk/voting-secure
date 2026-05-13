@@ -1,0 +1,96 @@
+.pageLayout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.5rem;
+}
+
+.pageHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+@media (min-width: 768px) {
+  .pageHeader {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+.dialogContent {
+  max-width: 600px;
+  background-color: hsl(var(--card)) !important;
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+}
+
+.scrollArea {
+  height: 300px;
+  width: 100%;
+  border-radius: 0.25rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted));
+  padding: 1rem;
+}
+
+.payloadPre {
+  font-size: 0.75rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.brokenRow {
+  background-color: hsl(0 84% 60% / 0.1);
+  border-color: hsl(0 84% 60% / 0.5);
+}
+
+.brokenBadge {
+  margin-left: 0.5rem;
+  font-size: 10px;
+  color: hsl(0 84% 60%);
+  font-weight: 700;
+}
+
+.seqCell {
+  font-family: monospace;
+  font-weight: 700;
+  color: hsl(160 84% 39%);
+}
+
+.globalSeqCell {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.hashBlock {
+  font-family: monospace;
+  font-size: 10px;
+  word-break: break-all;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+.hashLabelAccent {
+  font-weight: 700;
+  color: hsl(160 84% 39%);
+  margin-right: 0.5rem;
+}
+
+.hashLabelMuted {
+  font-weight: 700;
+  opacity: 0.6;
+  margin-right: 0.5rem;
+}
+
+.hashSeparator {
+  border-top: 1px solid hsl(var(--border));
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+  opacity: 0.6;
+}

@@ -4,6 +4,7 @@ import React from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { Card } from "@/components/common/Card";
 import { Input } from "@/components/common/Input";
+import { RadioGroupField } from "@/components/common/RadioGroupField";
 import { VotingType } from "@/types/voting";
 import styles from "./CreateVotingComponents.module.css";
 
@@ -13,6 +14,7 @@ interface VotingSettingsProps {
   maxChoices: string;
   isOpen: boolean;
   allowOther: boolean;
+  allowAbstain: boolean;
   onChange: (field: string, value: any) => void;
 }
 
@@ -22,6 +24,7 @@ export function VotingSettings({
   maxChoices,
   isOpen,
   allowOther,
+  allowAbstain,
   onChange,
 }: VotingSettingsProps) {
   const { t } = useI18n();
@@ -31,29 +34,15 @@ export function VotingSettings({
       <h2 className={styles.sectionTitle}>{t.votings.settings}</h2>
 
       <div className={styles.field}>
-        <label className={styles.label}>{t.votings.type}</label>
-        <div className={styles.radioGroup}>
-          {(
-            [
-              VotingType.SINGLE_CHOICE,
-              VotingType.MULTIPLE_CHOICE,
-            ] as const
-          ).map((vt) => (
-            <label key={vt} className={styles.radioLabel}>
-              <input
-                type="radio"
-                name="type"
-                value={vt}
-                checked={type === vt}
-                onChange={() => onChange("type", vt)}
-                className={styles.radioInput}
-              />
-              {vt === VotingType.SINGLE_CHOICE
-                ? t.votings.singleChoice
-                : t.votings.multipleChoice}
-            </label>
-          ))}
-        </div>
+        <RadioGroupField
+          label={t.votings.type}
+          value={type}
+          onValueChange={(val) => onChange("type", val)}
+          options={[
+            { value: VotingType.SINGLE_CHOICE, label: t.votings.singleChoice },
+            { value: VotingType.MULTIPLE_CHOICE, label: t.votings.multipleChoice },
+          ]}
+        />
       </div>
 
       {type === VotingType.MULTIPLE_CHOICE && (
@@ -92,15 +81,14 @@ export function VotingSettings({
           className={`${styles.toggle} ${isOpen ? styles.toggleOn : ""}`}
           onClick={() => onChange("isOpen", !isOpen)}
           role="switch"
-          aria-checked={isOpen}
         >
-          <span className={styles.toggleThumb} />
+          <div className={styles.toggleKnob} />
         </button>
       </div>
 
       <div className={styles.toggleRow}>
         <div>
-          <span className={styles.toggleLabel}>{t.common.other}</span>
+          <span className={styles.toggleLabel}>{t.votings.allowOther}</span>
           <span className={styles.toggleHint}>{t.votings.allowOtherHint}</span>
         </div>
         <button
@@ -108,9 +96,23 @@ export function VotingSettings({
           className={`${styles.toggle} ${allowOther ? styles.toggleOn : ""}`}
           onClick={() => onChange("allowOther", !allowOther)}
           role="switch"
-          aria-checked={allowOther}
         >
-          <span className={styles.toggleThumb} />
+          <div className={styles.toggleKnob} />
+        </button>
+      </div>
+
+      <div className={styles.toggleRow}>
+        <div>
+          <span className={styles.toggleLabel}>{t.votings.allowAbstain}</span>
+          <span className={styles.toggleHint}>{t.votings.allowAbstainHint}</span>
+        </div>
+        <button
+          type="button"
+          className={`${styles.toggle} ${allowAbstain ? styles.toggleOn : ""}`}
+          onClick={() => onChange("allowAbstain", !allowAbstain)}
+          role="switch"
+        >
+          <div className={styles.toggleKnob} />
         </button>
       </div>
     </Card>

@@ -41,11 +41,18 @@ import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { useI18n } from "@/lib/i18n/context";
+import styles from "./page.module.css";
 
 export default function SurveyChainExplorerPage() {
   const { id } = useParams<{ id: string }>();
   const { t } = useI18n();
-  const { blocks, loading, integrity, fetchSurveyChain, verifyScopedIntegrity } = useAudit();
+  const {
+    blocks,
+    loading,
+    integrity,
+    fetchSurveyChain,
+    verifyScopedIntegrity,
+  } = useAudit();
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -61,11 +68,16 @@ export default function SurveyChainExplorerPage() {
     }
   };
 
-  const filteredBlocks = blocks.filter(b => 
-    b.action.toLowerCase().includes(search.toLowerCase()) ||
-    b.hash.includes(search) ||
-    JSON.stringify(b.payload).includes(search)
+  const filteredBlocks = blocks.filter(
+    (b) =>
+      b.action.toLowerCase().includes(search.toLowerCase()) ||
+      b.hash.includes(search) ||
+      JSON.stringify(b.payload).includes(search),
   );
+
+  // A block is "broken" when its scoped surveySequence matches the reported break point.
+  const isBrokenBlock = (surveySeq: number | null | undefined) =>
+    integrity != null && !integrity.valid && integrity.brokenAt === surveySeq;
 
   const breadcrumbs = [
     { label: t.common.dashboard, href: "/dashboard" },
@@ -75,22 +87,37 @@ export default function SurveyChainExplorerPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className={styles.surveyPage}>
       <Breadcrumbs items={breadcrumbs} />
 
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <div className={styles.surveyPageHeader}>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Survey Audit Chain</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Survey Audit Chain
+          </h1>
           <p className="text-muted-foreground">
             Immutable cryptographic sub-chain for survey {id}.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
-            <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+            disabled={loading}
+            className={styles.actionButton}
+          >
+            <RefreshCcw
+              className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
-          <Button size="sm" onClick={() => verifyScopedIntegrity("survey", id)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => verifyScopedIntegrity("survey", id)}
+            className={`border-primary/50 ${styles.actionButton}`}
+          >
             <ShieldCheck className="mr-2 h-4 w-4" />
             Verify Chain
           </Button>
@@ -100,7 +127,9 @@ export default function SurveyChainExplorerPage() {
       <div className="grid gap-6 md:grid-cols-4">
         <Card className="md:col-span-1">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Chain Integrity</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Chain Integrity
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {integrity ? (
@@ -110,8 +139,9 @@ export default function SurveyChainExplorerPage() {
                     <ShieldCheck className="mr-1 h-3 w-3" /> Secure
                   </Badge>
                 ) : (
-                  <Badge variant="destructive">
-                    <ShieldAlert className="mr-1 h-3 w-3" /> Compromised
+                  <Badge variant="destructive" className="animate-pulse">
+                    <ShieldAlert className="mr-1 h-3 w-3" />
+                    <span className="font-bold text-red-600">COMPROMISED</span>
                   </Badge>
                 )}
                 <span className="text-xs text-muted-foreground">
@@ -137,7 +167,9 @@ export default function SurveyChainExplorerPage() {
 
         <Card className="md:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Search Within Sub-chain</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Search Within Sub-chain
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="relative">
@@ -157,7 +189,8 @@ export default function SurveyChainExplorerPage() {
         <CardHeader>
           <CardTitle>Scoped Ledger</CardTitle>
           <CardDescription>
-            Independent cryptographic chain proving no survey responses were tampered with.
+            Independent cryptographic chain proving no survey responses were
+            tampered with.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -174,58 +207,84 @@ export default function SurveyChainExplorerPage() {
               </TableHeader>
               <TableBody>
                 {filteredBlocks.map((block) => (
-                  <TableRow key={block.sequence}>
-                    <TableCell className="font-mono font-bold text-emerald-600">
+                  <TableRow
+                    key={block.sequence}
+                    className={
+                      isBrokenBlock(block.surveySequence)
+                        ? styles.brokenRow
+                        : ""
+                    }
+                  >
+                    <TableCell className={styles.seqCell}>
                       #{block.surveySequence}
+                      {isBrokenBlock(block.surveySequence) && (
+                        <span className={styles.brokenBadge}>● BROKEN</span>
+                      )}
                     </TableCell>
-                    <TableCell className="font-mono text-muted-foreground text-xs">
+                    <TableCell className={styles.globalSeqCell}>
                       #{block.sequence}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className="font-mono text-[10px]">
+                      <Badge
+                        variant="secondary"
+                        className="font-mono text-[10px]"
+                      >
                         {block.action}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {format(new Date(block.createdAt), "MMM d, HH:mm:ss")}
+                      {format(
+                        new Date(block.createdAt || 0),
+                        "MMM d, HH:mm:ss",
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <Dialog>
                         <DialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="outline" size="icon">
                             <Eye className="h-4 w-4" />
                           </Button>
                         </DialogTrigger>
-                        <DialogContent className="max-w-2xl">
+                        <DialogContent className={styles.dialogContent}>
                           <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
                               <Database className="h-5 w-5" />
                               Block #{block.surveySequence} Details
                             </DialogTitle>
-                            <DialogDescription className="font-mono text-[10px] break-all flex flex-col gap-2 pt-2">
-                              <div>
-                                <span className="font-bold text-emerald-600 mr-2">SURVEY HASH:</span>
+                            <DialogDescription
+                              className={styles.surveyHashBlock}
+                            >
+                              <span>
+                                <span className={styles.surveyHashLabel}>
+                                  SURVEY HASH:
+                                </span>
                                 {block.hash}
-                              </div>
-                              <div>
-                                <span className="font-bold text-muted-foreground mr-2">SURVEY PREV:</span>
+                              </span>
+                              <span>
+                                <span className={styles.surveyHashLabelMuted}>
+                                  SURVEY PREV:
+                                </span>
                                 {block.surveyPrevHash || "GENESIS"}
-                              </div>
-                              <div className="border-t pt-2 mt-2 opacity-60">
-                                <span className="font-bold mr-2">GLOBAL HASH:</span>
+                              </span>
+                              <span className={styles.surveyHashSeparator}>
+                                <span className="font-bold mr-2">
+                                  GLOBAL HASH:
+                                </span>
                                 {block.hash}
-                              </div>
-                              <div className="opacity-60">
-                                <span className="font-bold mr-2">GLOBAL PREV:</span>
+                              </span>
+                              <span className="opacity-60">
+                                <span className="font-bold mr-2">
+                                  GLOBAL PREV:
+                                </span>
                                 {block.prevHash}
-                              </div>
+                              </span>
                             </DialogDescription>
                           </DialogHeader>
                           <div className="mt-4">
-                            <ScrollArea className="h-[300px] w-full rounded border bg-muted p-4">
-                                <pre className="text-xs leading-relaxed">
-                                  {JSON.stringify(block.payload, null, 2)}
-                                </pre>
+                            <ScrollArea className={styles.scrollArea}>
+                              <pre className={styles.payloadPre}>
+                                {JSON.stringify(block.payload, null, 2)}
+                              </pre>
                             </ScrollArea>
                           </div>
                         </DialogContent>
@@ -234,11 +293,14 @@ export default function SurveyChainExplorerPage() {
                   </TableRow>
                 ))}
                 {filteredBlocks.length === 0 && (
-                   <TableRow>
-                     <TableCell colSpan={5} className="text-center py-8 text-muted-foreground italic">
-                       No audit blocks found for this survey.
-                     </TableCell>
-                   </TableRow>
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="text-center py-8 text-muted-foreground italic"
+                    >
+                      No audit blocks found for this survey.
+                    </TableCell>
+                  </TableRow>
                 )}
               </TableBody>
             </Table>

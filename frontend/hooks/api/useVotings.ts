@@ -23,16 +23,17 @@ export interface Voting {
   id: string;
   creatorId: string;
   groupId: string;
-  groupName: string; // from group.name relation
+  groupName: string;
   title: string;
   description: string | null;
   type: VotingType;
   isOpen: boolean;
   isFinalized: boolean;
   allowOther: boolean;
+  allowAbstain: boolean;
   minChoices: number;
   maxChoices: number | null;
-  startAt: string | null; // ISO string on the wire
+  startAt: string | null;
   endAt: string | null;
   finalizedAt: string | null;
   createdAt: string;
@@ -43,7 +44,6 @@ export interface Voting {
   hasVoted?: boolean;
   otherTotal?: number;
   dynamicOptions?: VotingOption[];
-  // derived status for UI
   status: "draft" | "active" | "upcoming" | "completed";
 }
 
@@ -54,25 +54,28 @@ export interface CreateVotingData {
   type?: VotingType;
   isOpen?: boolean;
   allowOther?: boolean;
+  allowAbstain?: boolean;
   minChoices?: number;
   maxChoices?: number;
-  options: string[]; // min 2 items, backend trims
-  startAt?: string; // ISO date string
+  options: string[];
+  startAt?: string;
   endAt?: string;
 }
 
 export interface CastVoteData {
   votingId: string;
-  token: string; // The raw secret token
+  token: string;
   optionIds: string[];
   otherText?: string;
   isAbstention?: boolean;
+  isPractice?: boolean;
 }
 
 export interface CastVoteResponse {
   participated: true;
   receipts: string[];
   emailSent: boolean;
+  isPractice?: boolean;
   proof: {
     verifyUrl: string;
     chainUrl: string;
@@ -87,7 +90,6 @@ interface VotingsState {
   error: ApiError | null;
 }
 
-// ── Maps raw backend IVotingDetail response → typed Voting ────────────────────
 const mapVoting = (v: any): Voting => {
   const options: VotingOption[] = (v.options ?? []).map((opt: any) => ({
     id: opt.id,
@@ -104,13 +106,8 @@ const mapVoting = (v: any): Voting => {
   }));
 
   const otherTotal = v.otherTotal ?? 0;
-
-  // totalVotes calculated from options + other
   const totalVotes = options.reduce((sum, o) => sum + o.voteCount, 0) + otherTotal;
-
-  // participantsCount from backend _count or provided field
-  const participantsCount =
-    v.participantsCount ?? v._count?.participations ?? totalVotes;
+  const participantsCount = v.participantsCount ?? v._count?.participations ?? 0;
 
   options.forEach((o) => {
     o.percentage = totalVotes > 0 ? (o.voteCount / totalVotes) * 100 : 0;
@@ -166,11 +163,7 @@ export function useVotings() {
   });
 
   const fetchVotings = useCallback(
-    async (filters?: {
-      groupId?: string;
-      title?: string;
-      isOpen?: boolean;
-    }) => {
+    async (filters?: { groupId?: string; title?: string; isOpen?: boolean }) => {
       setState((prev) => ({ ...prev, loading: true, error: null }));
 
       const queryParams = new URLSearchParams();
@@ -255,12 +248,19 @@ export function useVotings() {
   }, []);
 
   const requestToken = useCallback(
-    async (votingId: string, optionIds: string[], otherText?: string, isAbstention?: boolean) => {
+    async (
+      votingId: string,
+      optionIds: string[],
+      otherText?: string,
+      isAbstention?: boolean,
+      isPractice?: boolean,
+    ) => {
       setState((prev) => ({ ...prev, loading: true, error: null }));
       const response = await api.post<{
         status: string;
         message: string;
-      }>(`/votings/${votingId}/token`, { optionIds, otherText, isAbstention });
+        token?: string;
+      }>(`/votings/${votingId}/token`, { optionIds, otherText, isAbstention, isPractice });
       setState((prev) => ({ ...prev, loading: false, error: response.error }));
       return response;
     },
@@ -276,6 +276,7 @@ export function useVotings() {
           ballots: data.optionIds.map((id) => ({ optionId: id })),
           otherText: data.otherText,
           isAbstention: data.isAbstention,
+          isPractice: data.isPractice,
         },
       );
 

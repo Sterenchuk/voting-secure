@@ -75,6 +75,21 @@ interface SurveyBallotInput {
 interface SubmitSurveyPayload {
   ballots: SurveyBallotInput[];
   token?: string;
+  isAbstention?: boolean;
+  isPractice?: boolean;
+}
+
+export interface SurveyQuestionResult {
+  questionId: string;
+  options: { id: string; text: string; count: number }[];
+  otherCount?: number;
+  freeformAnswers?: string[];
+}
+
+export interface SurveyResults {
+  surveyId: string;
+  totalResponses: number;
+  results: SurveyQuestionResult[];
 }
 
 export interface CreateSurveyData {
@@ -98,7 +113,7 @@ export interface CreateSurveyData {
 interface SurveysState {
   surveys: Survey[];
   currentSurvey: Survey | null;
-  results: any | null;
+  results: SurveyResults | null;
   loading: boolean;
   error: ApiError | null;
 }
@@ -300,16 +315,21 @@ export function useSurveys() {
   }, []);
 
   const fetchResults = useCallback(async (id: string) => {
-    const response = await api.get<any>(`/surveys/${id}/results`);
+    const response = await api.get<SurveyResults>(`/surveys/${id}/results`);
     if (response.data) {
-      setState((prev) => ({ ...prev, results: response.data }));
+      // Store the full typed results object; callers access .results for the
+      // per-question array and .totalResponses for the participant count.
+      setState((prev) => ({ ...prev, results: response.data! }));
     }
     return response;
   }, []);
 
-  const syncResults = useCallback((data: any) => {
-    if (data.results) {
-      setState((prev) => ({ ...prev, results: data.results.results }));
+  // Called by the WebSocket gateway when a live update arrives.
+  // The payload shape from the server is ISurveyResults:
+  //   { surveyId, totalResponses, results: IQuestionResult[] }
+  const syncResults = useCallback((data: SurveyResults) => {
+    if (data?.results) {
+      setState((prev) => ({ ...prev, results: data }));
     }
   }, []);
 
@@ -332,14 +352,28 @@ export function useSurveys() {
     return response;
   }, []);
 
-  const requestToken = useCallback(async (surveyId: string) => {
-    setState((prev) => ({ ...prev, loading: true, error: null }));
-    const response = await api.post<{ token: string }>(
-      `/surveys/${surveyId}/token`,
-    );
-    setState((prev) => ({ ...prev, loading: false, error: response.error }));
-    return response;
-  }, []);
+  const requestToken = useCallback(
+    async (surveyId: string, answers: SurveyAnswer[], isPractice = false) => {
+      setState((prev) => ({ ...prev, loading: true, error: null }));
+      const ballots = await buildBallots(surveyId, answers);
+
+      // The server returns { status, token? }:
+      //   - practice mode: token is present for immediate use in submitSurvey
+      //   - real mode: token is undefined (sent via email instead)
+      const response = await api.post<{ status: string; token?: string }>(
+        `/surveys/${surveyId}/token`,
+        { ballots, isPractice },
+      );
+
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        error: response.error ?? null,
+      }));
+      return response;
+    },
+    [],
+  );
 
   const getMyStatus = useCallback(async (surveyId: string) => {
     return api.get<{ submitted: boolean; receipts?: string[] }>(
@@ -356,7 +390,11 @@ export function useSurveys() {
   const finalizeSurvey = useCallback(async (surveyId: string) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
     const response = await api.post<any>(`/surveys/${surveyId}/finalize`);
-    setState((prev) => ({ ...prev, loading: false, error: response.error }));
+    setState((prev) => ({
+      ...prev,
+      loading: false,
+      error: response.error ?? null,
+    }));
     return response;
   }, []);
 
@@ -364,13 +402,23 @@ export function useSurveys() {
     return api.get<any>(`/surveys/${surveyId}/verify-receipt?hash=${hash}`);
   }, []);
 
-  // Mirrors POST /surveys/:id/submit with SubmitSurveyResponseDto
   const submitSurvey = useCallback(
-    async (surveyId: string, answers: SurveyAnswer[], token?: string) => {
+    async (
+      surveyId: string,
+      answers: SurveyAnswer[],
+      token?: string,
+      isAbstention = false,
+      isPractice = false,
+    ) => {
       setState((prev) => ({ ...prev, loading: true, error: null }));
 
       const ballots = await buildBallots(surveyId, answers);
-      const payload: SubmitSurveyPayload = { ballots, token };
+      const payload: SubmitSurveyPayload = {
+        ballots,
+        token,
+        isAbstention,
+        isPractice,
+      };
 
       const response = await api.post<any>(
         `/surveys/${surveyId}/submit`,
@@ -394,7 +442,7 @@ export function useSurveys() {
         setState((prev) => ({
           ...prev,
           loading: false,
-          error: response.error,
+          error: response.error ?? null,
         }));
       }
 

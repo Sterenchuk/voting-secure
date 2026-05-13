@@ -30,6 +30,59 @@
   }
 }
 
+/* ── Sandbox ── */
+.sandboxBanner {
+  background-color: var(--color-warning);
+  color: var(--color-bg-primary);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+}
+
+.sandboxContent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.sandboxBadge {
+  background-color: var(--color-bg-primary);
+  color: var(--color-warning);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.sandboxText {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  margin: 0;
+}
+
+.practicePrompt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background-color: var(--color-bg-secondary);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-xl);
+}
+
+.practicePrompt p {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
 /* ── Header ── */
 .header {
   display: flex;
@@ -89,6 +142,46 @@
   gap: var(--space-xs);
   font-size: var(--text-sm);
   color: var(--color-text-muted);
+}
+
+/* ── Abstention ── */
+.abstainCard {
+  padding: var(--space-md) var(--space-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background-color: var(--color-bg-primary);
+  margin-bottom: var(--space-lg);
+}
+
+.abstainCard:hover {
+  border-color: var(--color-accent-primary);
+  background-color: var(--color-bg-secondary);
+}
+
+.abstainSelected {
+  border-color: var(--color-accent-primary);
+  background-color: rgba(64, 138, 113, 0.05);
+}
+
+.abstainInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.abstainTitle {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.abstainText {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin: 0;
 }
 
 /* ── Question list ── */
@@ -285,12 +378,6 @@
   cursor: not-allowed;
 }
 
-.otherInputWrapper {
-  margin-top: var(--space-xs);
-  padding: 0 var(--space-lg) var(--space-sm);
-  width: 100%;
-}
-
 /* ── Scale ── */
 .scaleWrapper {
   display: flex;
@@ -335,52 +422,7 @@
   margin: 0;
 }
 
-.closedMsg {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-md) var(--space-lg);
-  background-color: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-}
-
-/* ── Success card ── */
-.successCard {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-3xl);
-  text-align: center;
-  gap: var(--space-md);
-}
-
-.successIcon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 64px;
-  height: 64px;
-  background-color: rgba(76, 175, 80, 0.15);
-  border-radius: 50%;
-  color: var(--color-success);
-}
-
-.successCard h2 {
-  font-size: var(--text-2xl);
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.successCard p {
-  color: var(--color-text-muted);
-  margin: 0;
-}
-
+/* ── Receipt Section ── */
 .contentCard {
   padding: var(--space-xl);
   margin-bottom: var(--space-xl);
@@ -398,11 +440,20 @@
   text-align: center;
 }
 
+.practiceReceipt {
+  background-color: rgba(245, 158, 11, 0.05);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
 .receiptTitle {
   color: var(--color-success);
   margin-bottom: var(--space-xs);
   font-size: var(--text-lg);
   font-weight: 600;
+}
+
+.practiceReceipt .receiptTitle {
+  color: var(--color-warning);
 }
 
 .receiptText {
@@ -411,6 +462,7 @@
   font-size: var(--text-sm);
 }
 
+/* ── Trends ── */
 .trendChart {
   margin-bottom: var(--space-2xl);
   padding: var(--space-lg);
@@ -444,6 +496,12 @@
 }
 
 @media (max-width: 640px) {
+  .sandboxBanner, .practicePrompt {
+    flex-direction: column;
+    text-align: center;
+    gap: var(--space-sm);
+  }
+
   .title {
     font-size: var(--text-2xl);
   }

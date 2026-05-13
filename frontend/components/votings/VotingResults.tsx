@@ -4,7 +4,7 @@ import React from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { Voting } from "@/hooks/api/useVotings";
 import { OtherOptionRow } from "@/components/votings/OtherOptionRow";
-import { TrendingUp } from "lucide-react";
+import { TrendingUp, BarChart2 } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -13,6 +13,9 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  BarChart,
+  Bar,
+  Cell,
 } from "recharts";
 import styles from "./VotingResults.module.css";
 
@@ -43,49 +46,107 @@ export function VotingResults({
     })
     .filter((d) => d.time !== "Invalid");
 
+  const chartData = options.map((opt) => ({
+    name: opt.text,
+    votes: opt.voteCount,
+  }));
+
+  if (voting.allowOther && voting.otherTotal !== undefined && voting.otherTotal > 0) {
+    chartData.push({
+      name: t.common.other,
+      votes: voting.otherTotal,
+    });
+  }
+
+  if (voting.abstentionsCount > 0) {
+    chartData.push({
+      name: t.common.abstain,
+      votes: voting.abstentionsCount,
+    });
+  }
+
   if (!showResults) return null;
 
   return (
     <div className={styles.resultsSection}>
       <h2 className={styles.sectionTitle}>{t.votings.viewResults}</h2>
 
-      {trendData.length > 0 && (
-        <div className={styles.trendChart}>
-          <div className={styles.trendHeader}>
-            <TrendingUp className={styles.trendIcon} />
-            <h3 className={styles.trendTitle}>
-              {t.votings.votingTendencies}
-            </h3>
+      <div className={styles.chartsGrid}>
+        {chartData.length > 0 && (
+          <div className={styles.trendChart}>
+            <div className={styles.trendHeader}>
+              <BarChart2 className={styles.trendIcon} />
+              <h3 className={styles.trendTitle}>
+                Vote Distribution
+              </h3>
+            </div>
+            <div className={styles.chartContainer}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} layout="vertical" margin={{ left: 40, right: 40 }}>
+                  <XAxis type="number" hide />
+                  <YAxis 
+                    dataKey="name" 
+                    type="category" 
+                    tick={{ fontSize: 10 }} 
+                    width={80}
+                  />
+                  <Tooltip 
+                    cursor={{ fill: 'transparent' }}
+                    contentStyle={{
+                      borderRadius: "8px",
+                      border: "none",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                    }}
+                  />
+                  <Bar dataKey="votes" radius={[0, 4, 4, 0]}>
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill="var(--color-primary)" />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-          <div className={styles.chartContainer}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={trendData}
-                margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="time" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: "8px",
-                    border: "none",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="votes"
-                  stroke="var(--color-accent-primary)"
-                  strokeWidth={3}
-                  dot={{ r: 4, fill: "var(--color-accent-primary)" }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+        )}
+
+        {trendData.length > 0 && (
+          <div className={styles.trendChart}>
+            <div className={styles.trendHeader}>
+              <TrendingUp className={styles.trendIcon} />
+              <h3 className={styles.trendTitle}>
+                {t.votings.votingTendencies}
+              </h3>
+            </div>
+            <div className={styles.chartContainer}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={trendData}
+                  margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="time" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: "8px",
+                      border: "none",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="votes"
+                    stroke="var(--color-accent-primary)"
+                    strokeWidth={3}
+                    dot={{ r: 4, fill: "var(--color-accent-primary)" }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <ul className={styles.optionList}>
         {options.map((option) => {
@@ -118,12 +179,14 @@ export function VotingResults({
           />
         )}
 
-        <li className={styles.optionItem}>
-          <div className={styles.optionRow}>
-            <span className={styles.optionText}>{t.common.abstentions}</span>
-            <span className={styles.optionPct}>{voting.abstentionsCount}</span>
-          </div>
-        </li>
+        {voting.abstentionsCount > 0 && (
+          <li className={styles.optionItem}>
+            <div className={styles.optionRow}>
+              <span className={styles.optionText}>{t.common.abstentions}</span>
+              <span className={styles.optionPct}>{voting.abstentionsCount}</span>
+            </div>
+          </li>
+        )}
       </ul>
     </div>
   );

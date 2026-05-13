@@ -8,6 +8,7 @@ import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { Button } from "@/components/common/Button";
 import { Input } from "@/components/common/Input";
 import { Card } from "@/components/common/Card";
+import { RadioGroupField } from "@/components/common/RadioGroupField";
 import styles from "./page.module.css";
 import { useToast } from "@/hooks/use-toast";
 
@@ -35,10 +36,11 @@ export default function SettingsPage() {
     setNotifications((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleLanguageChange = async (lang: "en" | "uk") => {
-    setLanguage(lang);
+  const handleLanguageChange = async (lang: string) => {
+    const l = lang as "en" | "uk";
+    setLanguage(l);
     try {
-      const res = await updateProfile({ language: lang });
+      const res = await updateProfile({ language: l });
       if (!res.success) {
         toast({
           title: t.common.error,
@@ -79,97 +81,34 @@ export default function SettingsPage() {
       <div className={styles.content}>
         <Card className={styles.section}>
           <h3 className={styles.sectionTitle}>{t.settings.appearance}</h3>
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>{t.settings.theme}</span>
-              <span className={styles.settingDescription}>
-                {t.settings.themeDescription}
-              </span>
-            </div>
-            <div className={styles.themeToggle}>
-              <button
-                className={`${styles.themeBtn} ${theme === "light" ? styles.themeBtnActive : ""}`}
-                onClick={() => handleThemeChange("light")}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  width="20"
-                  height="20"
-                >
-                  <circle cx="12" cy="12" r="5" />
-                  <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-                </svg>
-                {t.settings.themeLight}
-              </button>
-              <button
-                className={`${styles.themeBtn} ${theme === "dark" ? styles.themeBtnActive : ""}`}
-                onClick={() => handleThemeChange("dark")}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  width="20"
-                  height="20"
-                >
-                  <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
-                </svg>
-                {t.settings.themeDark}
-              </button>
-              <button
-                className={`${styles.themeBtn} ${theme === "system" ? styles.themeBtnActive : ""}`}
-                onClick={() => handleThemeChange("system")}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  width="20"
-                  height="20"
-                >
-                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                  <line x1="8" y1="21" x2="16" y2="21" />
-                  <line x1="12" y1="17" x2="12" y2="21" />
-                </svg>
-                {t.settings.themeSystem}
-              </button>
-            </div>
+          <div className="mt-4">
+            <RadioGroupField
+              label={t.settings.theme}
+              value={theme || "system"}
+              onValueChange={handleThemeChange}
+              options={[
+                { value: "light", label: t.settings.themeLight, description: t.settings.themeDescription },
+                { value: "dark", label: t.settings.themeDark, description: t.settings.themeDescription },
+                { value: "system", label: t.settings.themeSystem, description: t.settings.themeDescription },
+              ]}
+            />
           </div>
         </Card>
 
         <Card className={styles.section}>
           <h3 className={styles.sectionTitle}>{t.settings.language}</h3>
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>
-                {t.settings.selectLanguage}
-              </span>
-              <span className={styles.settingDescription}>
-                {t.settings.languageDescription}
-              </span>
-            </div>
-            <div className={styles.languageToggle}>
-              <button
-                className={`${styles.langBtn} ${language === "en" ? styles.langBtnActive : ""}`}
-                onClick={() => handleLanguageChange("en")}
-              >
-                EN
-              </button>
-              <button
-                className={`${styles.langBtn} ${language === "uk" ? styles.langBtnActive : ""}`}
-                onClick={() => handleLanguageChange("uk")}
-              >
-                UK
-              </button>
-            </div>
+          <div className="mt-4">
+            <RadioGroupField
+              label={t.settings.selectLanguage}
+              value={language}
+              onValueChange={handleLanguageChange}
+              options={[
+                { value: "en", label: "English", description: "Standard international version" },
+                { value: "uk", label: "Українська", description: "Локалізована версія" },
+              ]}
+            />
           </div>
         </Card>
-...
 
         <Card className={styles.section}>
           <h3 className={styles.sectionTitle}>{t.settings.notifications}</h3>

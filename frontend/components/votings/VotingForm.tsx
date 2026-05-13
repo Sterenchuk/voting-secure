@@ -5,6 +5,7 @@ import { useI18n } from "@/lib/i18n/context";
 import { Voting } from "@/hooks/api/useVotings";
 import { VotingType } from "@/types/voting";
 import { Button } from "@/components/common/Button";
+import { cn } from "@/lib/utils";
 import styles from "./VotingForm.module.css";
 
 interface VotingFormProps {
@@ -59,12 +60,19 @@ export function VotingForm({
           return (
             <li
               key={option.id}
-              className={`${styles.optionItem} ${!tokenRequested ? styles.optionClickable : ""} ${isSelected ? styles.optionSelected : ""}`}
+              className={cn(
+                styles.optionItem,
+                !tokenRequested && styles.optionClickable,
+                isSelected && styles.optionSelected
+              )}
               onClick={() => onToggle(option.id)}
             >
               <div className={styles.optionRow}>
                 <div
-                  className={`${styles.optionControl} ${isSelected ? styles.optionControlSelected : ""}`}
+                  className={cn(
+                    styles.optionControl,
+                    isSelected && styles.optionControlSelected
+                  )}
                 >
                   {isMultiple
                     ? isSelected && (
@@ -89,12 +97,19 @@ export function VotingForm({
 
         {voting.allowOther && (
           <li
-            className={`${styles.optionItem} ${!tokenRequested ? styles.optionClickable : ""} ${showOtherInput ? styles.optionSelected : ""}`}
+            className={cn(
+              styles.optionItem,
+              !tokenRequested && styles.optionClickable,
+              showOtherInput && styles.optionSelected
+            )}
             onClick={() => onToggle("OTHER")}
           >
             <div className={styles.optionRow}>
               <div
-                className={`${styles.optionControl} ${showOtherInput ? styles.optionControlSelected : ""}`}
+                className={cn(
+                  styles.optionControl,
+                  showOtherInput && styles.optionControlSelected
+                )}
               >
                 {isMultiple
                   ? showOtherInput && (
@@ -127,19 +142,28 @@ export function VotingForm({
           </li>
         )}
 
-        <li
-          className={`${styles.optionItem} ${!tokenRequested ? styles.optionClickable : ""} ${isAbstention ? styles.optionSelected : ""}`}
-          onClick={() => onToggle("ABSTAIN")}
-        >
-          <div className={styles.optionRow}>
-            <div
-              className={`${styles.optionControl} ${isAbstention ? styles.optionControlSelected : ""}`}
-            >
-              {isAbstention && <div className={styles.radioInner} />}
+        {voting.allowAbstain && (
+          <li
+            className={cn(
+              styles.optionItem,
+              !tokenRequested && styles.optionClickable,
+              isAbstention && styles.optionSelected
+            )}
+            onClick={() => onToggle("ABSTAIN")}
+          >
+            <div className={styles.optionRow}>
+              <div
+                className={cn(
+                  styles.optionControl,
+                  isAbstention && styles.optionControlSelected
+                )}
+              >
+                {isAbstention && <div className={styles.radioInner} />}
+              </div>
+              <span className={styles.optionText}>{t.common.abstain}</span>
             </div>
-            <span className={styles.optionText}>{t.common.abstain}</span>
-          </div>
-        </li>
+          </li>
+        )}
       </ul>
 
       {error && <p className={styles.errorMsg}>{error}</p>}

@@ -36,17 +36,23 @@ import {
   Eye,
   RefreshCcw,
   Database,
-  Link as LinkIcon,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { useI18n } from "@/lib/i18n/context";
+import styles from "./page.module.css";
 
 export default function VotingChainExplorerPage() {
   const { id } = useParams<{ id: string }>();
   const { t } = useI18n();
-  const { blocks, loading, integrity, fetchVotingChain, verifyScopedIntegrity } = useAudit();
+  const {
+    blocks,
+    loading,
+    integrity,
+    fetchVotingChain,
+    verifyScopedIntegrity,
+  } = useAudit();
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -62,11 +68,16 @@ export default function VotingChainExplorerPage() {
     }
   };
 
-  const filteredBlocks = blocks.filter(b => 
-    b.action.toLowerCase().includes(search.toLowerCase()) ||
-    b.hash.includes(search) ||
-    JSON.stringify(b.payload).includes(search)
+  const filteredBlocks = blocks.filter(
+    (b) =>
+      b.action.toLowerCase().includes(search.toLowerCase()) ||
+      b.hash.includes(search) ||
+      JSON.stringify(b.payload).includes(search),
   );
+
+  // Compare against votingSequence — integrity.brokenAt is scoped to this chain.
+  const isBrokenBlock = (votingSeq: number | null | undefined) =>
+    integrity != null && !integrity.valid && integrity.brokenAt === votingSeq;
 
   const breadcrumbs = [
     { label: t.common.dashboard, href: "/dashboard" },
@@ -76,22 +87,37 @@ export default function VotingChainExplorerPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className={styles.surveyPage}>
       <Breadcrumbs items={breadcrumbs} />
 
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <div className={styles.surveyPageHeader}>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Voting Audit Chain</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Voting Audit Chain
+          </h1>
           <p className="text-muted-foreground">
             Immutable cryptographic sub-chain for voting {id}.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
-            <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+            disabled={loading}
+            className={styles.actionButton}
+          >
+            <RefreshCcw
+              className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
-          <Button size="sm" onClick={() => verifyScopedIntegrity("voting", id)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => verifyScopedIntegrity("voting", id)}
+            className={`border-primary/50 ${styles.actionButton}`}
+          >
             <ShieldCheck className="mr-2 h-4 w-4" />
             Verify Chain
           </Button>
@@ -101,7 +127,9 @@ export default function VotingChainExplorerPage() {
       <div className="grid gap-6 md:grid-cols-4">
         <Card className="md:col-span-1">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Chain Integrity</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Chain Integrity
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {integrity ? (
@@ -111,8 +139,9 @@ export default function VotingChainExplorerPage() {
                     <ShieldCheck className="mr-1 h-3 w-3" /> Secure
                   </Badge>
                 ) : (
-                  <Badge variant="destructive">
-                    <ShieldAlert className="mr-1 h-3 w-3" /> Compromised
+                  <Badge variant="destructive" className="animate-pulse">
+                    <ShieldAlert className="mr-1 h-3 w-3" />
+                    <span className="font-bold text-red-600">COMPROMISED</span>
                   </Badge>
                 )}
                 <span className="text-xs text-muted-foreground">
@@ -138,7 +167,9 @@ export default function VotingChainExplorerPage() {
 
         <Card className="md:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Search Within Sub-chain</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Search Within Sub-chain
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="relative">
@@ -158,7 +189,8 @@ export default function VotingChainExplorerPage() {
         <CardHeader>
           <CardTitle>Scoped Ledger</CardTitle>
           <CardDescription>
-            Independent cryptographic chain proving no ballots were tampered with for this voting.
+            Independent cryptographic chain proving no ballots were tampered
+            with for this voting.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -175,58 +207,84 @@ export default function VotingChainExplorerPage() {
               </TableHeader>
               <TableBody>
                 {filteredBlocks.map((block) => (
-                  <TableRow key={block.sequence}>
-                    <TableCell className="font-mono font-bold text-emerald-600">
+                  <TableRow
+                    key={block.sequence}
+                    className={
+                      isBrokenBlock(block.votingSequence)
+                        ? styles.brokenRow
+                        : ""
+                    }
+                  >
+                    <TableCell className={styles.seqCell}>
                       #{block.votingSequence}
+                      {isBrokenBlock(block.votingSequence) && (
+                        <span className={styles.brokenBadge}>● BROKEN</span>
+                      )}
                     </TableCell>
-                    <TableCell className="font-mono text-muted-foreground text-xs">
+                    <TableCell className={styles.globalSeqCell}>
                       #{block.sequence}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className="font-mono text-[10px]">
+                      <Badge
+                        variant="secondary"
+                        className="font-mono text-[10px]"
+                      >
                         {block.action}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {format(new Date(block.createdAt), "MMM d, HH:mm:ss")}
+                      {format(
+                        new Date(block.createdAt || 0),
+                        "MMM d, HH:mm:ss",
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <Dialog>
                         <DialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="outline" size="icon">
                             <Eye className="h-4 w-4" />
                           </Button>
                         </DialogTrigger>
-                        <DialogContent className="max-w-2xl">
+                        <DialogContent className={styles.dialogContent}>
                           <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
                               <Database className="h-5 w-5" />
                               Block #{block.votingSequence} Details
                             </DialogTitle>
-                            <DialogDescription className="font-mono text-[10px] break-all flex flex-col gap-2 pt-2">
-                              <div>
-                                <span className="font-bold text-emerald-600 mr-2">VOTING HASH:</span>
+                            <DialogDescription
+                              className={styles.surveyHashBlock}
+                            >
+                              <span>
+                                <span className={styles.surveyHashLabel}>
+                                  VOTING HASH:
+                                </span>
                                 {block.hash}
-                              </div>
-                              <div>
-                                <span className="font-bold text-muted-foreground mr-2">VOTING PREV:</span>
+                              </span>
+                              <span>
+                                <span className={styles.surveyHashLabelMuted}>
+                                  VOTING PREV:
+                                </span>
                                 {block.votingPrevHash || "GENESIS"}
-                              </div>
-                              <div className="border-t pt-2 mt-2 opacity-60">
-                                <span className="font-bold mr-2">GLOBAL HASH:</span>
+                              </span>
+                              <span className={styles.surveyHashSeparator}>
+                                <span className="font-bold mr-2">
+                                  GLOBAL HASH:
+                                </span>
                                 {block.hash}
-                              </div>
-                              <div className="opacity-60">
-                                <span className="font-bold mr-2">GLOBAL PREV:</span>
+                              </span>
+                              <span className="opacity-60">
+                                <span className="font-bold mr-2">
+                                  GLOBAL PREV:
+                                </span>
                                 {block.prevHash}
-                              </div>
+                              </span>
                             </DialogDescription>
                           </DialogHeader>
                           <div className="mt-4">
-                            <ScrollArea className="h-[300px] w-full rounded border bg-muted p-4">
-                                <pre className="text-xs leading-relaxed">
-                                  {JSON.stringify(block.payload, null, 2)}
-                                </pre>
+                            <ScrollArea className={styles.scrollArea}>
+                              <pre className={styles.payloadPre}>
+                                {JSON.stringify(block.payload, null, 2)}
+                              </pre>
                             </ScrollArea>
                           </div>
                         </DialogContent>
@@ -235,11 +293,14 @@ export default function VotingChainExplorerPage() {
                   </TableRow>
                 ))}
                 {filteredBlocks.length === 0 && (
-                   <TableRow>
-                     <TableCell colSpan={5} className="text-center py-8 text-muted-foreground italic">
-                       No audit blocks found for this voting.
-                     </TableCell>
-                   </TableRow>
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="text-center py-8 text-muted-foreground italic"
+                    >
+                      No audit blocks found for this voting.
+                    </TableCell>
+                  </TableRow>
                 )}
               </TableBody>
             </Table>

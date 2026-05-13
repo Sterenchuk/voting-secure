@@ -24,10 +24,17 @@ export interface AuditLogEntry {
 
 export interface VerifyReceiptResult {
   found: boolean;
-  chainSequence: number;
+  sequence: number;
   blockHash: string;
   prevHash: string;
   timestamp: string;
+  hash: string;
+}
+
+export interface VerifyReceiptResponse {
+  valid: boolean;
+  missingHashes?: string[];
+  results: VerifyReceiptResult[];
 }
 
 export interface ChainIntegrityResult {
@@ -84,6 +91,24 @@ export function useAudit() {
       `/audit/votings/audit-chain/${votingId}`,
     );
 
+    if (response.data) {
+      setState((prev) => ({
+        ...prev,
+        blocks: response.data!,
+        totalCount: response.data!.length,
+        loading: false,
+      }));
+    } else {
+      setState((prev) => ({ ...prev, loading: false, error: response.error }));
+    }
+    return response;
+  }, []);
+
+  const fetchSurveyChain = useCallback(async (surveyId: string) => {
+    setState((prev) => ({ ...prev, loading: true, error: null }));
+    const response = await api.get<AuditLogEntry[]>(
+      `/audit/surveys/audit-chain/${surveyId}`,
+    );
 
     if (response.data) {
       setState((prev) => ({
@@ -98,11 +123,19 @@ export function useAudit() {
     return response;
   }, []);
 
-  const verifyReceipt = useCallback(async (votingId: string, hash: string) => {
-    return api.get<VerifyReceiptResult>(
-      `/votings/${votingId}/verify-receipt?hash=${encodeURIComponent(hash)}`,
-    );
-  }, []);
+  const verifyReceipt = useCallback(
+    async (
+      entityId: string,
+      hash: string | string[],
+      type: "voting" | "survey" = "voting",
+    ) => {
+      const hashParam = Array.isArray(hash) ? hash.join(",") : hash;
+      return api.get<VerifyReceiptResponse>(
+        `/${type === "voting" ? "votings" : "surveys"}/${entityId}/verify-receipt?hash=${encodeURIComponent(hashParam)}`,
+      );
+    },
+    [],
+  );
 
   const verifyScopedIntegrity = useCallback(
     async (
@@ -133,31 +166,6 @@ export function useAudit() {
     fetchGlobalChain,
     fetchVotingChain,
     fetchSurveyChain,
-    verifyReceipt,
-    verifyScopedIntegrity,
-  };
-}
-  if (scope !== "global" && scopeId) {
-        url = `/audit/verify/${scope}/${scopeId}`;
-      }
-
-      if (forceFull) {
-        url += (url.includes("?") ? "&" : "?") + "forceFull=true";
-      }
-
-      const response = await api.get<ChainIntegrityResult>(url);
-      if (response.data) {
-        setState((prev) => ({ ...prev, integrity: response.data! }));
-      }
-      return response;
-    },
-    [],
-  );
-
-  return {
-    ...state,
-    fetchGlobalChain,
-    fetchVotingChain,
     verifyReceipt,
     verifyScopedIntegrity,
   };

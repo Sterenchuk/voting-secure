@@ -53,7 +53,74 @@
   margin-bottom: var(--space-md);
 }
 
+.sandboxBanner {
+  background-color: var(--color-warning);
+  color: var(--color-bg-primary);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+}
+
+.sandboxContent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.sandboxBadge {
+  background-color: var(--color-bg-primary);
+  color: var(--color-warning);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.sandboxText {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  margin: 0;
+}
+
+.practicePrompt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background-color: var(--color-bg-secondary);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-xl);
+}
+
+.practicePrompt p {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.practiceReceipt {
+  background-color: rgba(245, 158, 11, 0.05);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.practiceReceipt .receiptTitle {
+  color: var(--color-warning);
+}
+
 @media (max-width: 768px) {
+  .sandboxBanner, .practicePrompt {
+    flex-direction: column;
+    text-align: center;
+    gap: var(--space-sm);
+  }
+
   .contentCard {
     padding: var(--space-lg);
   }
