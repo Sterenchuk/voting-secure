@@ -26,7 +26,7 @@ export const SELECT_VOTING = {
   description: true,
   groupId: true,
   type: true,
-  isOpen: true,
+  isPublic: true,
   isFinalized: true,
   allowOther: true,
   allowAbstain: true,
@@ -48,7 +48,7 @@ export const SELECT_VOTING_WITH_OPTIONS = {
 export const SELECT_VOTING_FOR_VOTE = {
   id: true,
   title: true,
-  isOpen: true,
+  isPublic: true,
   isFinalized: true,
   groupId: true,
   type: true,
@@ -98,10 +98,10 @@ export class VotingsRepository {
       isAdmin || isAuditor || !userId
         ? {}
         : {
-            OR: [{ isOpen: true }, { group: { users: { some: { userId } } } }],
+            OR: [{ isPublic: true }, { group: { users: { some: { userId } } } }],
           };
 
-    return this.db.voting.findMany({
+    const votings = await this.db.voting.findMany({
       where: {
         ...where,
         deletedAt: null,
@@ -119,9 +119,25 @@ export class VotingsRepository {
               select: { id: true },
             }
           : undefined,
+        group: {
+          select: {
+            id: true,
+            users: userId
+              ? {
+                  where: { userId },
+                  select: { role: true },
+                }
+              : false,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    return votings.map((v) => ({
+      ...v,
+      userGroupRole: (v as any).group?.users?.[0]?.role,
+    }));
   }
 
   async findVotingById(
@@ -134,10 +150,10 @@ export class VotingsRepository {
       isAdmin || isAuditor || !userId
         ? {}
         : {
-            OR: [{ isOpen: true }, { group: { users: { some: { userId } } } }],
+            OR: [{ isPublic: true }, { group: { users: { some: { userId } } } }],
           };
 
-    return this.db.voting.findFirst({
+    const voting = await this.db.voting.findFirst({
       where: {
         id,
         deletedAt: null,
@@ -149,8 +165,26 @@ export class VotingsRepository {
         _count: {
           select: { participations: true },
         },
+        group: {
+          select: {
+            id: true,
+            users: userId
+              ? {
+                  where: { userId },
+                  select: { role: true },
+                }
+              : false,
+          },
+        },
       },
     });
+
+    if (!voting) return null;
+
+    return {
+      ...voting,
+      userGroupRole: (voting as any).group?.users?.[0]?.role,
+    };
   }
 
   async findVotingRaw(id: string) {

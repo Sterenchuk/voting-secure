@@ -67,7 +67,7 @@ export function ActiveVotings() {
     .filter((v) => v.status === "active" || (v.status === "completed" && !v.isFinalized))
     .slice(0, 5);
 
-  const isAdmin = user?.role === "ADMIN";
+  const isAdmin = user?.role === "admin";
 
   return (
     <Card padding="lg">

@@ -35,7 +35,7 @@ export class VotingCreateDto {
 
   @IsOptional()
   @IsBoolean()
-  isOpen?: boolean;
+  isPublic?: boolean;
 
   @IsOptional()
   @IsBoolean()

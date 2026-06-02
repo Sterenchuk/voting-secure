@@ -23,13 +23,14 @@ export default function VotingDetailPage() {
   const router = useRouter();
   const { t } = useI18n();
   const { user } = useAuth();
-  const { verifyScopedIntegrity } = useAudit();
+  const { verifyScopedIntegrity, getAuditStatus, status: auditStatus } = useAudit();
   const {
     currentVoting,
     fetchVoting,
     fetchResults,
     syncResults,
     requestToken,
+    finalizeVoting,
     fetchParticipationStats,
     loading,
   } = useVotings();
@@ -63,11 +64,12 @@ export default function VotingDetailPage() {
     if (id) {
       fetchVoting(id);
       fetchResults(id);
+      getAuditStatus("voting", id);
       fetchParticipationStats(id).then((res) => {
         if (res.data) setParticipationStats(res.data);
       });
     }
-  }, [id, fetchVoting, fetchResults, fetchParticipationStats]);
+  }, [id, fetchVoting, fetchResults, fetchParticipationStats, getAuditStatus]);
 
   useEffect(() => {
     if (!tokenRequested || submitted || !id) return;
@@ -119,7 +121,8 @@ export default function VotingDetailPage() {
 
   const isMultiple = currentVoting.type === VotingType.MULTIPLE_CHOICE;
   const alreadyVoted = currentVoting.hasVoted || submitted;
-  const canVote = currentVoting.isOpen && !currentVoting.isFinalized && !alreadyVoted;
+  const canVote =
+    currentVoting.isPublic && !currentVoting.isFinalized && !alreadyVoted;
 
   const handleToggle = (optionId: string | "OTHER" | "ABSTAIN") => {
     if (!canVote || tokenRequested) return;
@@ -182,7 +185,7 @@ export default function VotingDetailPage() {
         // Direct vote for practice mode
         const res = await api.post<CastVoteResponse>(`/votings/${id}/vote`, {
           token: tokenRes.data.token,
-          ballots: selectedOptions.map(opt => ({ optionId: opt })),
+          ballots: selectedOptions.map((opt) => ({ optionId: opt })),
           otherText: showOtherInput ? otherText.trim() : undefined,
           isAbstention,
           isPractice: true,
@@ -201,6 +204,24 @@ export default function VotingDetailPage() {
       setError(e?.message ?? t.common.error);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleFinalize = async () => {
+    if (!id || !isAdminOrAuditor) return;
+    if (
+      !window.confirm(
+        "Are you sure you want to finalize this voting? This will seal the results and make them immutable.",
+      )
+    )
+      return;
+
+    try {
+      const res = await finalizeVoting(id);
+      if (res.error) throw new Error(res.error.message);
+      await fetchResults(id);
+    } catch (e: any) {
+      setError(e.message || "Failed to finalize voting");
     }
   };
 
@@ -247,16 +268,21 @@ export default function VotingDetailPage() {
   return (
     <div className={styles.page}>
       <Breadcrumbs items={breadcrumbs} />
-      
+
       {isPractice && (
         <div className={styles.sandboxBanner}>
           <div className={styles.sandboxContent}>
             <span className={styles.sandboxBadge}>SANDBOX MODE</span>
             <p className={styles.sandboxText}>
-              This is a simulation. No real data will be recorded in the permanent audit chain.
+              This is a simulation. No real data will be recorded in the
+              permanent audit chain.
             </p>
           </div>
-          <Button size="sm" variant="ghost" onClick={() => setIsPractice(false)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setIsPractice(false)}
+          >
             Exit Practice
           </Button>
         </div>
@@ -264,44 +290,58 @@ export default function VotingDetailPage() {
 
       <VotingDetailHeader voting={currentVoting} />
 
-      {!isPractice && currentVoting.isOpen && !alreadyVoted && (
+      {!isPractice && currentVoting.isPublic && !alreadyVoted && (
         <div className={styles.practicePrompt}>
           <p>{t.votings.practiceModeHint || "Want to try before you vote?"}</p>
-          <Button variant="secondary" size="sm" onClick={() => setIsPractice(true)}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setIsPractice(true)}
+          >
             {t.votings.startPractice || "Start Practice Mode"}
           </Button>
         </div>
       )}
 
       <Card className={styles.contentCard}>
-        <AuditStatus 
+        <AuditStatus
           voting={currentVoting}
           isAdminOrAuditor={isAdminOrAuditor}
-          onVerifyChain={() => verifyScopedIntegrity("voting", id)}
+          onVerifyChain={() => router.push(`/audit/votings/audit-chain/${id}`)}
           onExportCsv={downloadCsvResults}
           onExportEml={downloadEmlResults}
+          onFinalize={handleFinalize}
+          auditStatus={auditStatus}
         />
 
         {submitted && (
-          <div className={`${styles.receiptSection} ${isPractice ? styles.practiceReceipt : ""}`}>
+          <div
+            className={`${styles.receiptSection} ${isPractice ? styles.practiceReceipt : ""}`}
+          >
             <h3 className={styles.receiptTitle}>
-              {isPractice ? "✓ Practice Session Completed" : `✓ ${t.votings.voteConfirmed}`}
+              {isPractice
+                ? "✓ Practice Session Completed"
+                : `✓ ${t.votings.voteConfirmed}`}
             </h3>
             <p className={styles.receiptText}>
-              {isPractice 
-                ? "This was a practice run. No real vote was cast." 
+              {isPractice
+                ? "This was a practice run. No real vote was cast."
                 : `📧 ${t.votings.receiptSentEmail}`}
             </p>
             {voteReceipt && (
               <div className="flex gap-2 justify-center">
                 <Button size="sm" variant="outline" onClick={downloadReceipt}>
-                  {isPractice ? "Download Sample Receipt" : t.votings.downloadReceipt}
+                  {isPractice
+                    ? "Download Sample Receipt"
+                    : t.votings.downloadReceipt}
                 </Button>
-                <Button 
-                  size="sm" 
-                  variant="ghost" 
+                <Button
+                  size="sm"
+                  variant="ghost"
                   onClick={() => {
-                    navigator.clipboard.writeText(voteReceipt.receipts.join('\n'));
+                    navigator.clipboard.writeText(
+                      voteReceipt.receipts.join("\n"),
+                    );
                   }}
                 >
                   Copy All Hashes
@@ -311,12 +351,12 @@ export default function VotingDetailPage() {
           </div>
         )}
 
-        <VotingResults 
+        <VotingResults
           voting={currentVoting}
           participationStats={participationStats}
         />
 
-        <VotingForm 
+        <VotingForm
           voting={currentVoting}
           selectedOptions={selectedOptions}
           isAbstention={isAbstention}

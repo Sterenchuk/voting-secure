@@ -5,17 +5,10 @@ import {
   IsOptional,
   MinLength,
   MaxLength,
-  ArrayMaxSize,
-  ValidateNested,
   IsNotEmpty,
   IsBoolean,
 } from 'class-validator';
-import { Type, Transform } from 'class-transformer';
-
-export class BallotItemDto {
-  @IsUUID('4')
-  optionId: string;
-}
+import { Transform } from 'class-transformer';
 
 export class CastVoteDto {
   @IsNotEmpty()
@@ -23,10 +16,8 @@ export class CastVoteDto {
   token: string;
 
   @IsArray()
-  @ArrayMaxSize(50)
-  @ValidateNested({ each: true })
-  @Type(() => BallotItemDto)
-  ballots: BallotItemDto[];
+  @IsUUID('4', { each: true })
+  optionIds: string[];
 
   @IsOptional()
   @IsString()

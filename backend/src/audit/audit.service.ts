@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as crypto from 'crypto';
@@ -9,6 +9,7 @@ import {
 } from './schemas/audit-chain.schema';
 import { AuditSecurity } from './schemas/audit-security.schema';
 import { AuditVerification } from './schemas/audit-verification.schema';
+import { AuditCheckpoint } from './schemas/audit-checkpoint.schema';
 import {
   AuditChainContext,
   AuditSecurityContext,
@@ -18,6 +19,16 @@ import {
   ChainAction,
 } from './types/audit.types';
 import { RedisVotingService } from '../redis/redis.service';
+import { AuditVerificationJob } from './schemas/audit-verification-job.schema';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+if (!process.env.GENESIS_SEED) {
+  console.warn(
+    'WARNING: GENESIS_SEED environment variable is not set! This is critical for audit chain integrity. Please set a strong, unique seed value in production.',
+  );
+}
+const GENESIS_SEED = process.env.GENESIS_SEED || 'GENESIS_SEED_NOT_SET';
 
 // ─── Serialisation ────────────────────────────────────────────────────────────
 
@@ -87,6 +98,12 @@ export class AuditService implements OnModuleInit {
     @InjectModel(AuditVerification.name)
     private readonly verificationModel: Model<AuditVerification>,
 
+    @InjectModel(AuditVerificationJob.name)
+    private readonly verificationJobModel: Model<AuditVerificationJob>,
+
+    @InjectModel(AuditCheckpoint.name)
+    private readonly checkpointModel: Model<AuditCheckpoint>,
+
     private readonly redis: RedisVotingService,
   ) {}
 
@@ -96,10 +113,20 @@ export class AuditService implements OnModuleInit {
     scope: 'global' | 'group' | 'voting' | 'survey',
     scopeId: string | null,
     sequence: number,
+    isFullVerification = false,
   ): Promise<void> {
+    const update: any = {
+      lastVerifiedSequence: sequence,
+      updatedAt: new Date(),
+    };
+
+    if (isFullVerification) {
+      update.lastFullVerificationAt = new Date();
+    }
+
     await this.verificationModel.findOneAndUpdate(
       { scope, scopeId },
-      { lastVerifiedSequence: sequence, updatedAt: new Date() },
+      { $set: update },
       { upsert: true, new: true },
     );
   }
@@ -112,9 +139,59 @@ export class AuditService implements OnModuleInit {
     return doc ? doc.lastVerifiedSequence : null;
   }
 
+  async getAuditStatus(
+    scope: 'global' | 'group' | 'voting' | 'survey',
+    scopeId: string | null,
+  ) {
+    const doc = await this.verificationModel.findOne({ scope, scopeId }).lean();
+    
+    // Get the current max sequence for this scope
+    const filter: any = {};
+    let seqField = 'sequence';
+    if (scope !== 'global' && scopeId) {
+      filter[`${scope}Id`] = scopeId;
+      filter[`${scope}Sequence`] = { $ne: null };
+      seqField = `${scope}Sequence`;
+    }
+
+    const lastBlock = await this.chainModel
+      .findOne(filter)
+      .sort({ [seqField]: -1 })
+      .select({ [seqField]: 1 })
+      .lean();
+
+    const maxSequence = lastBlock ? (lastBlock as any)[seqField] : 0;
+    const lastVerified = doc ? doc.lastVerifiedSequence : 0;
+    const lastFullVerify = doc ? (doc as any).lastFullVerificationAt : null;
+    
+    // Secure logic:
+    // 1. Full verification was done within the last 24 hours.
+    // 2. All blocks up to the current max sequence have been verified.
+    const now = new Date();
+    const isWithin24h = lastFullVerify && (now.getTime() - new Date(lastFullVerify).getTime()) < 24 * 3600 * 1000;
+    const isUpToDate = lastVerified >= maxSequence;
+
+    return {
+      scope,
+      scopeId,
+      lastVerifiedSequence: lastVerified,
+      maxSequence,
+      lastFullVerificationAt: lastFullVerify,
+      updatedAt: doc ? (doc as any).updatedAt : null,
+      isSecure: !!(isWithin24h && isUpToDate),
+      reason: !isWithin24h ? 'Full verification required (over 24h since last scan)' : (!isUpToDate ? 'Incremental verification required (new blocks found)' : null),
+    };
+  }
+
   // ── Bootstrap ───────────────────────────────────────────────────────────────
 
   async onModuleInit() {
+    if (!GENESIS_SEED) {
+      this.logger.error(
+        'CRITICAL: GENESIS_SEED environment variable is not set! Audit chain integrity is at risk.',
+      );
+    }
+
     const last = await this.chainModel
       .findOne()
       .sort({ sequence: -1 })
@@ -122,8 +199,6 @@ export class AuditService implements OnModuleInit {
       .lean();
 
     if (last) {
-      // Set Redis counter if it doesn't exist to ensure continuity after Redis reset
-      // We use ioredis directly via the service to access 'set' with 'NX'
       const client = (this.redis as any).redis;
       await client.set('audit_seq:global', (last as any).sequence, 'NX');
       this.logger.log(
@@ -152,49 +227,312 @@ export class AuditService implements OnModuleInit {
       .lean();
 
     if (!last) {
-      return scopeId ? `GENESIS_${scope.toUpperCase()}_${scopeId}` : 'GENESIS';
+      const seedData = scopeId
+        ? `${GENESIS_SEED}:${scope}:${scopeId}`
+        : GENESIS_SEED;
+      return crypto.createHash('sha256').update(seedData, 'utf8').digest('hex');
     }
     return (last as any).hash;
   }
 
-  async getVotingChain(votingId: string) {
-    return this.chainModel
-      .find({ votingId })
-      .sort({ votingSequence: 1 })
-      .select({
-        sequence: 1,
-        votingSequence: 1,
-        action: 1,
-        payload: 1,
-        hash: 1,
-        prevHash: 1,
-        votingPrevHash: 1,
-        createdAt: 1,
-      })
-      .lean();
+  async getVotingChain(
+    votingId: string,
+    page: number = 1,
+    limit: number = 50,
+    filters?: { hash?: string; sequence?: string; action?: string },
+  ) {
+    const filter: any = { votingId, votingSequence: { $ne: null } };
+
+    if (filters?.hash) filter.hash = filters.hash;
+    if (filters?.sequence) filter.votingSequence = Number(filters.sequence);
+    if (filters?.action)
+      filter.action = { $regex: filters.action, $options: 'i' };
+
+    const [records, totalCount] = await Promise.all([
+      this.chainModel
+        .find(filter)
+        .sort({ votingSequence: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .select({
+          sequence: 1,
+          votingSequence: 1,
+          action: 1,
+          payload: 1,
+          hash: 1,
+          prevHash: 1,
+          votingPrevHash: 1,
+          createdAt: 1,
+        })
+        .lean(),
+      this.chainModel.countDocuments(filter),
+    ]);
+    return { records, totalCount, page, limit };
   }
 
-  async getSurveyChain(surveyId: string) {
-    return this.chainModel
-      .find({ surveyId })
-      .sort({ surveySequence: 1 })
-      .select({
-        sequence: 1,
-        surveySequence: 1,
-        action: 1,
-        payload: 1,
-        hash: 1,
-        prevHash: 1,
-        surveyPrevHash: 1,
-        createdAt: 1,
-      })
-      .lean();
+  async getSurveyChain(
+    surveyId: string,
+    page: number = 1,
+    limit: number = 50,
+    filters?: { hash?: string; sequence?: string; action?: string },
+  ) {
+    const filter: any = { surveyId, surveySequence: { $ne: null } };
+
+    if (filters?.hash) filter.hash = filters.hash;
+    if (filters?.sequence) filter.surveySequence = Number(filters.sequence);
+    if (filters?.action)
+      filter.action = { $regex: filters.action, $options: 'i' };
+
+    const [records, totalCount] = await Promise.all([
+      this.chainModel
+        .find(filter)
+        .sort({ surveySequence: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .select({
+          sequence: 1,
+          surveySequence: 1,
+          action: 1,
+          payload: 1,
+          hash: 1,
+          prevHash: 1,
+          surveyPrevHash: 1,
+          createdAt: 1,
+        })
+        .lean(),
+      this.chainModel.countDocuments(filter),
+    ]);
+    return { records, totalCount, page, limit };
   }
 
-  // ── Public: append to chain ──
+  async searchChain(params: {
+    hash?: string;
+    sequence?: number;
+    action?: string;
+    votingId?: string;
+    surveyId?: string;
+    userId?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const filter: any = {};
+    if (params.hash) filter.hash = params.hash;
+    if (params.sequence) filter.sequence = Number(params.sequence);
+    if (params.action) filter.action = { $regex: params.action, $options: 'i' };
+    if (params.votingId) filter.votingId = params.votingId;
+    if (params.surveyId) filter.surveyId = params.surveyId;
+    if (params.userId) filter.userId = params.userId;
+
+    const limit = params.limit || 20;
+    const page = params.page || 1;
+
+    const [records, totalCount] = await Promise.all([
+      this.chainModel
+        .find(filter)
+        .sort({ sequence: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      this.chainModel.countDocuments(filter),
+    ]);
+
+    return { records, totalCount, page, limit };
+  }
+
+  async tamper(sequence: number, hash: string): Promise<void> {
+    await this.chainModel.collection.updateOne(
+      { sequence },
+      { $set: { hash } },
+    );
+  }
+
+  // ─── getCompromisedBlocks ─────────────────────────────────────────────────
+  //
+  // forceFull: when true, resets the DB-level lastVerifiedSequence to 0 before
+  // running the verify so the scan starts from genesis regardless of any
+  // previously cached progress. Use this when the user suspects the tamper
+  // happened at a sequence that was already marked verified.
+
+  async getCompromisedBlocks(
+    scope: 'voting' | 'survey',
+    scopeId: string,
+    forceFull = false,
+  ): Promise<{ records: any[] }> {
+    // When forceFull, wipe the DB cache for this scope so verifyXChain
+    // ignores lastVerifiedSequence and scans from genesis.
+    if (forceFull) {
+      await this.setLastVerifiedSequence(scope, scopeId, 0);
+    }
+
+    let result: ScopedVerifyResult & {
+      errorType?: 'TAMPERED_HASH' | 'BROKEN_LINK';
+      tamperedBlock?: any;
+      victimBlock?: any;
+      expectedHash?: string;
+      foundHash?: string;
+      expectedPrevHash?: string;
+      foundPrevHash?: string;
+    };
+
+    if (scope === 'voting') {
+      // Always force a full scan here so we don't miss a tamper that happened
+      // before the last cached verified sequence.
+      result = (await this.verifyVotingChain(scopeId, true)) as any;
+    } else {
+      result = (await this.verifySurveyChain(scopeId, true)) as any;
+    }
+
+    console.log(`[AuditService] Compromised blocks check for ${scope}:${scopeId}:`, {
+      valid: result.valid,
+      errorType: result.errorType,
+      brokenAt: result.brokenAt,
+    });
+
+    if (result.valid || result.brokenAt == null) {
+      return { records: [] };
+    }
+
+    const seqField = scope === 'voting' ? 'votingSequence' : 'surveySequence';
+    const prevHashField =
+      scope === 'voting' ? 'votingPrevHash' : 'surveyPrevHash';
+    const idField = scope === 'voting' ? 'votingId' : 'surveyId';
+
+    const select = {
+      sequence: 1,
+      groupSequence: 1,
+      votingSequence: 1,
+      surveySequence: 1,
+      action: 1,
+      payload: 1,
+      hash: 1,
+      prevHash: 1,
+      votingPrevHash: 1,
+      surveyPrevHash: 1,
+      createdAt: 1,
+    };
+
+    if (result.errorType === 'TAMPERED_HASH' && result.tamperedBlock) {
+      const tampered = result.tamperedBlock;
+      const tamperedSeq = tampered[seqField] as number;
+      const corruptedHash = tampered.hash as string;
+      const expectedHash = result.expectedHash as string;
+
+      // The victim is the block AFTER the tampered one — its prevHash now
+      // points to the corrupted hash instead of the original good hash.
+      const victimDoc = (await this.chainModel
+        .findOne({ [idField]: scopeId, [seqField]: tamperedSeq + 1 })
+        .select(select)
+        .lean()) as any;
+
+      const records: any[] = [
+        {
+          ...tampered,
+          __breakRole: 'tampered',
+          __corruptedHash: corruptedHash,
+          __expectedHash: expectedHash,
+        },
+      ];
+
+      if (victimDoc) {
+        records.push({
+          ...victimDoc,
+          __breakRole: 'victim',
+          __victimPrevHash: victimDoc[prevHashField] as string,
+          __victimExpectedPrevHash: expectedHash,
+        });
+      }
+
+      records.sort((a, b) => (a[seqField] ?? 0) - (b[seqField] ?? 0));
+      return { records };
+    }
+
+    if (result.errorType === 'BROKEN_LINK' && result.victimBlock) {
+      const victim = result.victimBlock;
+      const victimSeq = victim[seqField] as number;
+      const expectedPrevHash = result.expectedPrevHash as string;
+      const foundPrevHash = result.foundPrevHash as string;
+
+      // The predecessor is the block BEFORE the victim — its hash is what the
+      // victim's prevHash should equal.
+      const predecessorDoc = (await this.chainModel
+        .findOne({ [idField]: scopeId, [seqField]: victimSeq - 1 })
+        .select(select)
+        .lean()) as any;
+
+      const records: any[] = [];
+
+      if (predecessorDoc) {
+        records.push({
+          ...predecessorDoc,
+          __breakRole: 'tampered',
+          __corruptedHash: predecessorDoc.hash as string,
+          __expectedHash: expectedPrevHash,
+        });
+      }
+
+      records.push({
+        ...victim,
+        __breakRole: 'victim',
+        __victimPrevHash: foundPrevHash,
+        __victimExpectedPrevHash: expectedPrevHash,
+      });
+
+      records.sort((a, b) => (a[seqField] ?? 0) - (b[seqField] ?? 0));
+      return { records };
+    }
+
+    // Fallback: generic break without errorType — surface the two blocks
+    // around brokenAt with best-effort forensic tags.
+    const brokenSeq = result.brokenAt as number;
+
+    const contextDocs = (await this.chainModel
+      .find({
+        [idField]: scopeId,
+        [seqField]: { $in: [brokenSeq - 1, brokenSeq] },
+      })
+      .sort({ [seqField]: 1 })
+      .select(select)
+      .lean()) as any[];
+
+    const predecessor = contextDocs.find((d) => d[seqField] === brokenSeq - 1);
+
+    const tagged = contextDocs.map((doc) => {
+      if (doc[seqField] === brokenSeq) {
+        return {
+          ...doc,
+          __breakRole: 'victim',
+          __victimPrevHash: doc[prevHashField] as string,
+          __victimExpectedPrevHash: predecessor?.hash ?? null,
+        };
+      }
+      return {
+        ...doc,
+        __breakRole: 'tampered',
+        __corruptedHash: doc.hash as string,
+        __expectedHash: null,
+      };
+    });
+
+    return { records: tagged };
+  }
+
   async appendChain(ctx: AuditChainContext): Promise<void> {
+    const lockKey = 'lock:audit:append';
+    let lockToken: string | null = null;
+
     try {
-      // 1. Fetch sequence numbers atomically from Redis
+      for (let i = 0; i < 5; i++) {
+        lockToken = await this.redis.acquireLock(lockKey, 5);
+        if (lockToken) break;
+        await new Promise((resolve) => setTimeout(resolve, 50 * (i + 1)));
+      }
+
+      if (!lockToken) {
+        this.logger.error(
+          'Failed to acquire audit lock - potential integrity risk or high load',
+        );
+      }
+
       const [globalSeq, groupSeq, votingSeq, surveySeq] = await Promise.all([
         this.redis.nextGlobalSequence(),
         ctx.groupId
@@ -208,7 +546,6 @@ export class AuditService implements OnModuleInit {
           : Promise.resolve(null),
       ]);
 
-      // 2. Fetch previous hashes from MongoDB
       const [globalPrev, groupPrev, votingPrev, surveyPrev] = await Promise.all(
         [
           this.getPrevHash('global', null),
@@ -260,6 +597,10 @@ export class AuditService implements OnModuleInit {
       });
     } catch (err) {
       this.logger.error('Failed to append audit chain entry', err);
+    } finally {
+      if (lockToken) {
+        await this.redis.releaseLock(lockKey, lockToken);
+      }
     }
   }
 
@@ -276,7 +617,78 @@ export class AuditService implements OnModuleInit {
     }
   }
 
-  // ── Public: verify chain ─────────────────────────────────────────────────
+  async createCheckpoint(
+    scope: 'global' | 'group' | 'voting' | 'survey',
+    scopeId: string | null,
+  ): Promise<void> {
+    const filter: Record<string, any> = {};
+    let sortField = 'sequence';
+
+    if (scope !== 'global' && scopeId) {
+      filter[`${scope}Id`] = scopeId;
+      filter[`${scope}Sequence`] = { $ne: null };
+      sortField = `${scope}Sequence`;
+    }
+
+    const last = await this.chainModel
+      .findOne(filter)
+      .sort({ [sortField]: -1 })
+      .select({ sequence: 1, hash: 1 })
+      .lean();
+
+    if (!last) {
+      throw new Error(
+        `Cannot create checkpoint for empty chain scope: ${scope}`,
+      );
+    }
+
+    await this.checkpointModel.create({
+      scope,
+      scopeId,
+      sequence: (last as any).sequence,
+      hash: (last as any).hash,
+      createdAt: new Date(),
+    });
+
+    this.logger.log(
+      `Checkpoint created for ${scope}:${scopeId} at sequence ${(last as any).sequence}`,
+    );
+  }
+
+  async verifyCheckpoints(
+    scope: 'global' | 'group' | 'voting' | 'survey',
+    scopeId: string | null,
+  ): Promise<{ valid: boolean; brokenAt?: number; reason?: string }> {
+    const checkpoints = await this.checkpointModel
+      .find({ scope, scopeId })
+      .sort({ sequence: 1 })
+      .lean();
+
+    for (const cp of checkpoints) {
+      const doc = await this.chainModel
+        .findOne({ sequence: cp.sequence })
+        .select({ hash: 1 })
+        .lean();
+
+      if (!doc) {
+        return {
+          valid: false,
+          brokenAt: cp.sequence,
+          reason: `Checkpoint sequence ${cp.sequence} missing from chain. Possible deletion.`,
+        };
+      }
+
+      if ((doc as any).hash !== cp.hash) {
+        return {
+          valid: false,
+          brokenAt: cp.sequence,
+          reason: `Checkpoint hash mismatch at sequence ${cp.sequence}. The chain has been recalculated or tampered with since the seal was applied.`,
+        };
+      }
+    }
+
+    return { valid: true };
+  }
 
   async findBallotReceipt(
     entityId: string,
@@ -349,29 +761,62 @@ export class AuditService implements OnModuleInit {
     return results;
   }
 
-  /**
-   * Verifies the hash chain.
-   *
-   * @param groupId  When provided, only entries for that group are verified
-   *                 (group admin/owner scope). When null, the full chain is
-   *                 walked (platform admin scope).
-   *
-   * NOTE: For full-chain verification the entire collection is streamed in
-   * sequence order. On very large datasets consider running this as a
-   * background job rather than a synchronous HTTP response.
-   */
   async verifyChain(
     groupId?: string | null,
     forceFull = false,
+    onProgress?: (progress: number) => void,
   ): Promise<ScopedVerifyResult> {
     const filter: any = groupId ? { groupId } : {};
     const scope = groupId ? 'group' : 'global';
     const scopeId = groupId || null;
 
-    const lastVerified = await this.getLastVerifiedSequence(scope, scopeId);
-    if (lastVerified && !forceFull) {
+    if (forceFull) {
+      const status = await this.getAuditStatus(scope, scopeId);
+      if (status.lastFullVerificationAt) {
+        const last = new Date(status.lastFullVerificationAt).getTime();
+        const now = new Date().getTime();
+        if (now - last < 24 * 3600 * 1000) {
+          throw new HttpException(
+            'Full verification is throttled to once per 24 hours. Use incremental verification instead.',
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+        }
+      }
+    }
+
+    const cpResult = await this.verifyCheckpoints(scope, scopeId);
+    if (!cpResult.valid) {
+      return {
+        valid: false,
+        totalChecked: 0,
+        brokenAt: cpResult.brokenAt || null,
+        reason: cpResult.reason || 'Checkpoint verification failed.',
+        scope,
+        scopeId: scopeId ?? undefined,
+      };
+    }
+
+    const lastVerified = forceFull
+      ? null
+      : await this.getLastVerifiedSequence(scope, scopeId);
+
+    if (lastVerified) {
       filter['sequence'] = { $gt: lastVerified };
     }
+
+    const totalToVerify = await this.chainModel.countDocuments(filter);
+    if (totalToVerify === 0) {
+      return {
+        valid: true,
+        totalChecked: 0,
+        brokenAt: null,
+        reason: null,
+        scope,
+        scopeId: scopeId ?? undefined,
+      };
+    }
+
+    if (onProgress) onProgress(0);
 
     const cursor = this.chainModel
       .find(filter)
@@ -394,21 +839,49 @@ export class AuditService implements OnModuleInit {
       .cursor();
 
     let totalChecked = 0;
-    let expectedPrevHash = groupId ? null : 'GENESIS';
+    let expectedPrevHash: string | null = null;
     let prevSequence: number | null = null;
-    let headSequence = lastVerified || 0;
+    let prevCreatedAt: Date | null = null;
+    let headSequence = 0;
+
+    if (!lastVerified) {
+      expectedPrevHash = crypto
+        .createHash('sha256')
+        .update(GENESIS_SEED, 'utf8')
+        .digest('hex');
+    } else {
+      headSequence = lastVerified;
+      prevSequence = lastVerified;
+      const lastDoc = await this.chainModel
+        .findOne({ sequence: lastVerified })
+        .select({ hash: 1, createdAt: 1 })
+        .lean();
+      if (lastDoc) {
+        expectedPrevHash = (lastDoc as any).hash;
+        prevCreatedAt = new Date((lastDoc as any).createdAt);
+      }
+    }
 
     for await (const raw of cursor) {
       const doc = raw as any;
       totalChecked++;
 
-      // ── Gap detection (deletion) ───────────────────────────────────────────
+      if (
+        onProgress &&
+        (totalChecked % 5 === 0 || totalChecked === totalToVerify)
+      ) {
+        const progress = Math.round((totalChecked / totalToVerify) * 100);
+        this.logger.debug(
+          `[${scope}] Verification progress: ${progress}% (${totalChecked}/${totalToVerify})`,
+        );
+        onProgress(progress);
+      }
+
       if (
         prevSequence !== null &&
         doc.sequence !== prevSequence + 1 &&
         !groupId
       ) {
-        // Reset verified marker if break detected
         await this.setLastVerifiedSequence(scope, scopeId, 0);
         return {
           valid: false,
@@ -420,7 +893,19 @@ export class AuditService implements OnModuleInit {
         };
       }
 
-      // ── Hash integrity ────────────────────────────────────────────────────
+      const currentCreatedAt = new Date(doc.createdAt);
+      if (prevCreatedAt !== null && currentCreatedAt < prevCreatedAt) {
+        await this.setLastVerifiedSequence(scope, scopeId, 0);
+        return {
+          valid: false,
+          totalChecked,
+          brokenAt: doc.sequence,
+          reason: `Time manipulation detected: block ${doc.sequence} has timestamp ${currentCreatedAt.toISOString()} which is earlier than previous block ${prevCreatedAt.toISOString()}.`,
+          scope,
+          scopeId: scopeId ?? undefined,
+        };
+      }
+
       const expected = computeHash({
         prevHash: doc.prevHash,
         sequence: doc.sequence,
@@ -436,7 +921,6 @@ export class AuditService implements OnModuleInit {
       });
 
       if (expected !== doc.hash) {
-        // Reset verified marker if tampering detected
         await this.setLastVerifiedSequence(scope, scopeId, 0);
         return {
           valid: false,
@@ -446,24 +930,27 @@ export class AuditService implements OnModuleInit {
           expectedHash: expected,
           foundHash: doc.hash,
           tamperedBlock: doc,
+          errorType: 'TAMPERED_HASH',
           scope,
           scopeId: scopeId ?? undefined,
         };
       }
 
-      // ── Chain link integrity (full chain only) ────────────────────────────
       if (
         !groupId &&
         expectedPrevHash !== null &&
         doc.prevHash !== expectedPrevHash
       ) {
-        // Reset verified marker if break detected
         await this.setLastVerifiedSequence(scope, scopeId, 0);
         return {
           valid: false,
           totalChecked,
           brokenAt: doc.sequence,
           reason: `prevHash mismatch at sequence ${doc.sequence}. Chain link broken.`,
+          errorType: 'BROKEN_LINK',
+          expectedPrevHash: expectedPrevHash,
+          foundPrevHash: doc.prevHash,
+          victimBlock: doc,
           scope,
           scopeId: scopeId ?? undefined,
         };
@@ -471,11 +958,12 @@ export class AuditService implements OnModuleInit {
 
       expectedPrevHash = doc.hash;
       prevSequence = doc.sequence;
+      prevCreatedAt = currentCreatedAt;
       headSequence = doc.sequence;
     }
 
     if (headSequence > (lastVerified || 0)) {
-      await this.setLastVerifiedSequence(scope, scopeId, headSequence);
+      await this.setLastVerifiedSequence(scope, scopeId, headSequence, forceFull);
     }
 
     return {
@@ -488,10 +976,64 @@ export class AuditService implements OnModuleInit {
     };
   }
 
-  // ── Verify voting scope ───────────────────────────────────────────────────────
-  async verifyVotingChain(votingId: string): Promise<ScopedVerifyResult> {
+  async verifyVotingChain(
+    votingId: string,
+    forceFull = false,
+    onProgress?: (progress: number) => void,
+  ): Promise<ScopedVerifyResult> {
+    const scope = 'voting';
+
+    if (forceFull) {
+      const status = await this.getAuditStatus(scope, votingId);
+      if (status.lastFullVerificationAt) {
+        const last = new Date(status.lastFullVerificationAt).getTime();
+        const now = new Date().getTime();
+        if (now - last < 24 * 3600 * 1000) {
+          throw new HttpException(
+            'Full verification is throttled to once per 24 hours. Use incremental verification instead.',
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+        }
+      }
+    }
+
+    const cpResult = await this.verifyCheckpoints(scope, votingId);
+    if (!cpResult.valid) {
+      return {
+        valid: false,
+        totalChecked: 0,
+        brokenAt: cpResult.brokenAt || null,
+        reason: cpResult.reason || 'Checkpoint verification failed.',
+        scope,
+        scopeId: votingId,
+      };
+    }
+
+    const lastVerified = forceFull
+      ? null
+      : await this.getLastVerifiedSequence(scope, votingId);
+
+    const filter: any = { votingId, votingSequence: { $ne: null } };
+    if (lastVerified) {
+      filter['votingSequence'] = { $gt: lastVerified };
+    }
+
+    const totalToVerify = await this.chainModel.countDocuments(filter);
+    if (totalToVerify === 0) {
+      return {
+        valid: true,
+        totalChecked: 0,
+        brokenAt: null,
+        reason: null,
+        scope,
+        scopeId: votingId,
+      };
+    }
+
+    if (onProgress) onProgress(0);
+
     const cursor = this.chainModel
-      .find({ votingId, votingSequence: { $ne: null } })
+      .find(filter)
       .sort({ votingSequence: 1 })
       .select({
         sequence: 1,
@@ -513,24 +1055,63 @@ export class AuditService implements OnModuleInit {
     let totalChecked = 0;
     let expectedPrevHash: string | null = null;
     let prevSequence: number | null = null;
+    let prevCreatedAt: Date | null = null;
+    let headSequence = lastVerified || 0;
+
+    if (!lastVerified) {
+      expectedPrevHash = crypto
+        .createHash('sha256')
+        .update(`${GENESIS_SEED}:voting:${votingId}`, 'utf8')
+        .digest('hex');
+      prevSequence = 0;
+    } else {
+      prevSequence = lastVerified;
+      const lastDoc = await this.chainModel
+        .findOne({ votingId, votingSequence: lastVerified })
+        .select({ hash: 1, createdAt: 1 })
+        .lean();
+      if (lastDoc) {
+        expectedPrevHash = (lastDoc as any).hash;
+        prevCreatedAt = new Date((lastDoc as any).createdAt);
+      }
+    }
 
     for await (const raw of cursor) {
       const doc = raw as any;
       totalChecked++;
 
-      // gap detection — voting sequence must be contiguous
+      if (
+        onProgress &&
+        (totalChecked % 5 === 0 || totalChecked === totalToVerify)
+      ) {
+        onProgress(Math.round((totalChecked / totalToVerify) * 100));
+      }
+
       if (prevSequence !== null && doc.votingSequence !== prevSequence + 1) {
+        await this.setLastVerifiedSequence(scope, votingId, 0);
         return {
           valid: false,
           totalChecked,
           brokenAt: doc.votingSequence,
           reason: `Voting sequence gap: expected ${prevSequence + 1}, got ${doc.votingSequence}. Possible deletion.`,
-          scope: 'voting',
+          scope,
           scopeId: votingId,
         };
       }
 
-      // hash integrity — recompute and compare
+      const currentCreatedAt = new Date(doc.createdAt);
+      if (prevCreatedAt !== null && currentCreatedAt < prevCreatedAt) {
+        await this.setLastVerifiedSequence(scope, votingId, 0);
+        return {
+          valid: false,
+          totalChecked,
+          brokenAt: doc.votingSequence,
+          reason: `Time manipulation detected: block ${doc.votingSequence} has timestamp ${currentCreatedAt.toISOString()} which is earlier than previous block ${prevCreatedAt.toISOString()}.`,
+          scope,
+          scopeId: votingId,
+        };
+      }
+
       const expected = computeHash({
         prevHash: doc.prevHash,
         sequence: doc.sequence,
@@ -542,41 +1123,52 @@ export class AuditService implements OnModuleInit {
         surveyPrevHash: doc.surveyPrevHash,
         action: doc.action,
         payload: doc.payload,
-        createdAt: new Date(doc.createdAt),
+        createdAt: currentCreatedAt,
       });
 
       if (expected !== doc.hash) {
+        await this.setLastVerifiedSequence(scope, votingId, 0);
         return {
           valid: false,
           totalChecked,
           brokenAt: doc.votingSequence,
-          reason: `Hash mismatch at votingSequence ${doc.votingSequence}. Entry tampered.`,
+          reason: `TAMPERED: hash mismatch at voting sequence ${doc.votingSequence}.`,
+          errorType: 'TAMPERED_HASH',
           expectedHash: expected,
           foundHash: doc.hash,
           tamperedBlock: doc,
-          scope: 'voting',
+          scope,
           scopeId: votingId,
         };
       }
 
-      // chain link integrity
       if (
         expectedPrevHash !== null &&
         doc.votingPrevHash !== expectedPrevHash
       ) {
+        await this.setLastVerifiedSequence(scope, votingId, 0);
         return {
           valid: false,
           totalChecked,
           brokenAt: doc.votingSequence,
-          reason: `votingPrevHash mismatch at sequence ${doc.votingSequence}. Chain link broken.`,
-          tamperedBlock: doc,
-          scope: 'voting',
+          reason: `BROKEN_LINK: votingPrevHash mismatch at sequence ${doc.votingSequence}.`,
+          errorType: 'BROKEN_LINK',
+          expectedPrevHash: expectedPrevHash,
+          foundPrevHash: doc.votingPrevHash,
+          victimBlock: doc,
+          scope,
           scopeId: votingId,
         };
       }
 
       expectedPrevHash = doc.hash;
       prevSequence = doc.votingSequence;
+      prevCreatedAt = currentCreatedAt;
+      headSequence = doc.votingSequence;
+    }
+
+    if (headSequence > (lastVerified || 0)) {
+      await this.setLastVerifiedSequence(scope, votingId, headSequence, forceFull);
     }
 
     return {
@@ -584,15 +1176,69 @@ export class AuditService implements OnModuleInit {
       totalChecked,
       brokenAt: null,
       reason: null,
-      scope: 'voting',
+      scope,
       scopeId: votingId,
     };
   }
 
-  // ── Verify group scope ───────────────────────────────────────────────────────
-  async verifyGroupChain(groupId: string): Promise<ScopedVerifyResult> {
+  async verifyGroupChain(
+    groupId: string,
+    forceFull = false,
+    onProgress?: (progress: number) => void,
+  ): Promise<ScopedVerifyResult> {
+    const scope = 'group';
+
+    if (forceFull) {
+      const status = await this.getAuditStatus(scope, groupId);
+      if (status.lastFullVerificationAt) {
+        const last = new Date(status.lastFullVerificationAt).getTime();
+        const now = new Date().getTime();
+        if (now - last < 24 * 3600 * 1000) {
+          throw new HttpException(
+            'Full verification is throttled to once per 24 hours. Use incremental verification instead.',
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+        }
+      }
+    }
+
+    const cpResult = await this.verifyCheckpoints(scope, groupId);
+    if (!cpResult.valid) {
+      return {
+        valid: false,
+        totalChecked: 0,
+        brokenAt: cpResult.brokenAt || null,
+        reason: cpResult.reason || 'Checkpoint verification failed.',
+        scope,
+        scopeId: groupId,
+      };
+    }
+
+    const lastVerified = forceFull
+      ? null
+      : await this.getLastVerifiedSequence(scope, groupId);
+
+    const filter: any = { groupId, groupSequence: { $ne: null } };
+    if (lastVerified) {
+      filter['groupSequence'] = { $gt: lastVerified };
+    }
+
+    const totalToVerify = await this.chainModel.countDocuments(filter);
+    if (totalToVerify === 0) {
+      return {
+        valid: true,
+        totalChecked: 0,
+        brokenAt: null,
+        reason: null,
+        scope,
+        scopeId: groupId,
+      };
+    }
+
+    if (onProgress) onProgress(0);
+
     const cursor = this.chainModel
-      .find({ groupId, groupSequence: { $ne: null } })
+      .find(filter)
       .sort({ groupSequence: 1 })
       .select({
         sequence: 1,
@@ -614,24 +1260,63 @@ export class AuditService implements OnModuleInit {
     let totalChecked = 0;
     let expectedPrevHash: string | null = null;
     let prevSequence: number | null = null;
+    let prevCreatedAt: Date | null = null;
+    let headSequence = 0;
+
+    if (!lastVerified) {
+      expectedPrevHash = crypto
+        .createHash('sha256')
+        .update(`${GENESIS_SEED}:group:${groupId}`, 'utf8')
+        .digest('hex');
+    } else {
+      headSequence = lastVerified;
+      prevSequence = lastVerified;
+      const lastDoc = await this.chainModel
+        .findOne({ groupId, groupSequence: lastVerified })
+        .select({ hash: 1, createdAt: 1 })
+        .lean();
+      if (lastDoc) {
+        expectedPrevHash = (lastDoc as any).hash;
+        prevCreatedAt = new Date((lastDoc as any).createdAt);
+      }
+    }
 
     for await (const raw of cursor) {
       const doc = raw as any;
       totalChecked++;
 
-      // gap detection — group sequence must be contiguous
+      if (
+        onProgress &&
+        (totalChecked % 5 === 0 || totalChecked === totalToVerify)
+      ) {
+        onProgress(Math.round((totalChecked / totalToVerify) * 100));
+      }
+
       if (prevSequence !== null && doc.groupSequence !== prevSequence + 1) {
+        await this.setLastVerifiedSequence(scope, groupId, 0);
         return {
           valid: false,
           totalChecked,
           brokenAt: doc.groupSequence,
           reason: `Group sequence gap: expected ${prevSequence + 1}, got ${doc.groupSequence}. Possible deletion.`,
-          scope: 'group',
+          scope,
           scopeId: groupId,
         };
       }
 
-      // hash integrity — recompute and compare
+      const currentCreatedAt = new Date(doc.createdAt);
+      if (prevCreatedAt !== null && currentCreatedAt < prevCreatedAt) {
+        await this.setLastVerifiedSequence(scope, groupId, 0);
+        return {
+          valid: false,
+          totalChecked,
+          brokenAt: doc.groupSequence,
+          reason: `Time manipulation detected: block ${doc.groupSequence} has timestamp ${currentCreatedAt.toISOString()} which is earlier than previous block ${prevCreatedAt.toISOString()}.`,
+          scope,
+          scopeId: groupId,
+        };
+      }
+
       const expected = computeHash({
         prevHash: doc.prevHash,
         sequence: doc.sequence,
@@ -643,38 +1328,44 @@ export class AuditService implements OnModuleInit {
         surveyPrevHash: doc.surveyPrevHash,
         action: doc.action,
         payload: doc.payload,
-        createdAt: new Date(doc.createdAt),
+        createdAt: currentCreatedAt,
       });
 
       if (expected !== doc.hash) {
+        await this.setLastVerifiedSequence(scope, groupId, 0);
         return {
           valid: false,
           totalChecked,
           brokenAt: doc.groupSequence,
-          reason: `Hash mismatch at groupSequence ${doc.groupSequence}. Entry tampered.`,
+          reason: `Hash mismatch at group sequence ${doc.groupSequence}. Entry has been tampered.`,
           expectedHash: expected,
           foundHash: doc.hash,
           tamperedBlock: doc,
-          scope: 'group',
+          scope,
           scopeId: groupId,
         };
       }
 
-      // chain link integrity
       if (expectedPrevHash !== null && doc.groupPrevHash !== expectedPrevHash) {
+        await this.setLastVerifiedSequence(scope, groupId, 0);
         return {
           valid: false,
           totalChecked,
           brokenAt: doc.groupSequence,
           reason: `groupPrevHash mismatch at sequence ${doc.groupSequence}. Chain link broken.`,
-          tamperedBlock: doc,
-          scope: 'group',
+          scope,
           scopeId: groupId,
         };
       }
 
       expectedPrevHash = doc.hash;
       prevSequence = doc.groupSequence;
+      prevCreatedAt = currentCreatedAt;
+      headSequence = doc.groupSequence;
+    }
+
+    if (headSequence > (lastVerified || 0)) {
+      await this.setLastVerifiedSequence(scope, groupId, headSequence, forceFull);
     }
 
     return {
@@ -682,15 +1373,69 @@ export class AuditService implements OnModuleInit {
       totalChecked,
       brokenAt: null,
       reason: null,
-      scope: 'group',
+      scope,
       scopeId: groupId,
     };
   }
 
-  // ── Verify survey scope ───────────────────────────────────────────────────────
-  async verifySurveyChain(surveyId: string): Promise<ScopedVerifyResult> {
+  async verifySurveyChain(
+    surveyId: string,
+    forceFull = false,
+    onProgress?: (progress: number) => void,
+  ): Promise<ScopedVerifyResult> {
+    const scope = 'survey';
+
+    if (forceFull) {
+      const status = await this.getAuditStatus(scope, surveyId);
+      if (status.lastFullVerificationAt) {
+        const last = new Date(status.lastFullVerificationAt).getTime();
+        const now = new Date().getTime();
+        if (now - last < 24 * 3600 * 1000) {
+          throw new HttpException(
+            'Full verification is throttled to once per 24 hours. Use incremental verification instead.',
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+        }
+      }
+    }
+
+    const cpResult = await this.verifyCheckpoints(scope, surveyId);
+    if (!cpResult.valid) {
+      return {
+        valid: false,
+        totalChecked: 0,
+        brokenAt: cpResult.brokenAt || null,
+        reason: cpResult.reason || 'Checkpoint verification failed.',
+        scope,
+        scopeId: surveyId,
+      };
+    }
+
+    const lastVerified = forceFull
+      ? null
+      : await this.getLastVerifiedSequence(scope, surveyId);
+
+    const filter: any = { surveyId, surveySequence: { $ne: null } };
+    if (lastVerified) {
+      filter['surveySequence'] = { $gt: lastVerified };
+    }
+
+    const totalToVerify = await this.chainModel.countDocuments(filter);
+    if (totalToVerify === 0) {
+      return {
+        valid: true,
+        totalChecked: 0,
+        brokenAt: null,
+        reason: null,
+        scope,
+        scopeId: surveyId,
+      };
+    }
+
+    if (onProgress) onProgress(0);
+
     const cursor = this.chainModel
-      .find({ surveyId, surveySequence: { $ne: null } })
+      .find(filter)
       .sort({ surveySequence: 1 })
       .select({
         sequence: 1,
@@ -712,24 +1457,63 @@ export class AuditService implements OnModuleInit {
     let totalChecked = 0;
     let expectedPrevHash: string | null = null;
     let prevSequence: number | null = null;
+    let prevCreatedAt: Date | null = null;
+    let headSequence = 0;
+
+    if (!lastVerified) {
+      expectedPrevHash = crypto
+        .createHash('sha256')
+        .update(`${GENESIS_SEED}:survey:${surveyId}`, 'utf8')
+        .digest('hex');
+    } else {
+      headSequence = lastVerified;
+      prevSequence = lastVerified;
+      const lastDoc = await this.chainModel
+        .findOne({ surveyId, surveySequence: lastVerified })
+        .select({ hash: 1, createdAt: 1 })
+        .lean();
+      if (lastDoc) {
+        expectedPrevHash = (lastDoc as any).hash;
+        prevCreatedAt = new Date((lastDoc as any).createdAt);
+      }
+    }
 
     for await (const raw of cursor) {
       const doc = raw as any;
       totalChecked++;
 
-      // gap detection — survey sequence must be contiguous
+      if (
+        onProgress &&
+        (totalChecked % 5 === 0 || totalChecked === totalToVerify)
+      ) {
+        onProgress(Math.round((totalChecked / totalToVerify) * 100));
+      }
+
       if (prevSequence !== null && doc.surveySequence !== prevSequence + 1) {
+        await this.setLastVerifiedSequence(scope, surveyId, 0);
         return {
           valid: false,
           totalChecked,
           brokenAt: doc.surveySequence,
           reason: `Survey sequence gap: expected ${prevSequence + 1}, got ${doc.surveySequence}. Possible deletion.`,
-          scope: 'survey',
+          scope,
           scopeId: surveyId,
         };
       }
 
-      // hash integrity — recompute and compare
+      const currentCreatedAt = new Date(doc.createdAt);
+      if (prevCreatedAt !== null && currentCreatedAt < prevCreatedAt) {
+        await this.setLastVerifiedSequence(scope, surveyId, 0);
+        return {
+          valid: false,
+          totalChecked,
+          brokenAt: doc.surveySequence,
+          reason: `Time manipulation detected: block ${doc.surveySequence} has timestamp ${currentCreatedAt.toISOString()} which is earlier than previous block ${prevCreatedAt.toISOString()}.`,
+          scope,
+          scopeId: surveyId,
+        };
+      }
+
       const expected = computeHash({
         prevHash: doc.prevHash,
         sequence: doc.sequence,
@@ -741,41 +1525,52 @@ export class AuditService implements OnModuleInit {
         surveyPrevHash: doc.surveyPrevHash,
         action: doc.action,
         payload: doc.payload,
-        createdAt: new Date(doc.createdAt),
+        createdAt: currentCreatedAt,
       });
 
       if (expected !== doc.hash) {
+        await this.setLastVerifiedSequence(scope, surveyId, 0);
         return {
           valid: false,
           totalChecked,
           brokenAt: doc.surveySequence,
-          reason: `Hash mismatch at surveySequence ${doc.surveySequence}. Entry tampered.`,
+          reason: `TAMPERED: hash mismatch at survey sequence ${doc.surveySequence}.`,
+          errorType: 'TAMPERED_HASH', // ← was missing
           expectedHash: expected,
           foundHash: doc.hash,
-          tamperedBlock: doc,
-          scope: 'survey',
+          tamperedBlock: doc, // ← was missing
+          scope,
           scopeId: surveyId,
         };
       }
 
-      // chain link integrity
       if (
         expectedPrevHash !== null &&
         doc.surveyPrevHash !== expectedPrevHash
       ) {
+        await this.setLastVerifiedSequence(scope, surveyId, 0);
         return {
           valid: false,
           totalChecked,
           brokenAt: doc.surveySequence,
-          reason: `surveyPrevHash mismatch at sequence ${doc.surveySequence}. Chain link broken.`,
-          tamperedBlock: doc,
-          scope: 'survey',
+          reason: `BROKEN_LINK: surveyPrevHash mismatch at sequence ${doc.surveySequence}.`,
+          errorType: 'BROKEN_LINK', // ← was missing
+          expectedPrevHash: expectedPrevHash,
+          foundPrevHash: doc.surveyPrevHash,
+          victimBlock: doc, // ← was missing
+          scope,
           scopeId: surveyId,
         };
       }
 
       expectedPrevHash = doc.hash;
       prevSequence = doc.surveySequence;
+      prevCreatedAt = currentCreatedAt;
+      headSequence = doc.surveySequence;
+    }
+
+    if (headSequence > (lastVerified || 0)) {
+      await this.setLastVerifiedSequence(scope, surveyId, headSequence, forceFull);
     }
 
     return {
@@ -783,7 +1578,7 @@ export class AuditService implements OnModuleInit {
       totalChecked,
       brokenAt: null,
       reason: null,
-      scope: 'survey',
+      scope,
       scopeId: surveyId,
     };
   }

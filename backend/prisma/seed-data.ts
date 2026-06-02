@@ -19,26 +19,70 @@ export const GROUPS_DATA = [
 // Memberships for each group to ensure all levels are present
 export const MEMBERSHIPS = [
   // Alpha Group
-  { groupName: 'Alpha Group', email: 'owner1@example.com', role: GroupRole.OWNER },
-  { groupName: 'Alpha Group', email: 'user1@example.com', role: GroupRole.ADMIN },
-  { groupName: 'Alpha Group', email: 'user2@example.com', role: GroupRole.MODERATOR },
-  { groupName: 'Alpha Group', email: 'user3@example.com', role: GroupRole.MEMBER },
-  
+  {
+    groupName: 'Alpha Group',
+    email: 'owner1@example.com',
+    role: GroupRole.OWNER,
+  },
+  {
+    groupName: 'Alpha Group',
+    email: 'user1@example.com',
+    role: GroupRole.ADMIN,
+  },
+  {
+    groupName: 'Alpha Group',
+    email: 'user2@example.com',
+    role: GroupRole.MODERATOR,
+  },
+  {
+    groupName: 'Alpha Group',
+    email: 'user3@example.com',
+    role: GroupRole.MEMBER,
+  },
+
   // Beta Group
-  { groupName: 'Beta Group', email: 'owner2@example.com', role: GroupRole.OWNER },
-  { groupName: 'Beta Group', email: 'user1@example.com', role: GroupRole.ADMIN },
-  { groupName: 'Beta Group', email: 'user4@example.com', role: GroupRole.MODERATOR },
-  { groupName: 'Beta Group', email: 'user2@example.com', role: GroupRole.MEMBER },
+  {
+    groupName: 'Beta Group',
+    email: 'owner2@example.com',
+    role: GroupRole.OWNER,
+  },
+  {
+    groupName: 'Beta Group',
+    email: 'user1@example.com',
+    role: GroupRole.ADMIN,
+  },
+  {
+    groupName: 'Beta Group',
+    email: 'user4@example.com',
+    role: GroupRole.MODERATOR,
+  },
+  {
+    groupName: 'Beta Group',
+    email: 'user2@example.com',
+    role: GroupRole.MEMBER,
+  },
 ];
 
 export const VOTINGS_DATA = [
+  {
+    title: 'Stress Voting Event',
+    description: 'High volume stress testing event',
+    groupName: 'Alpha Group',
+    creatorEmail: 'owner1@example.com',
+    type: VotingType.SINGLE_CHOICE,
+    isPublic: true,
+    isFinalized: false,
+    options: ['Option A', 'Option B', 'Option C'],
+    startAt: new Date(),
+    endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+  },
   {
     title: 'Alpha Budget 2026',
     description: 'Ongoing discussion on budget allocation',
     groupName: 'Alpha Group',
     creatorEmail: 'owner1@example.com',
     type: VotingType.SINGLE_CHOICE,
-    isOpen: true,
+    isPublic: true,
     isFinalized: false,
     options: ['Marketing', 'Development', 'Operations'],
     startAt: new Date(),
@@ -50,7 +94,7 @@ export const VOTINGS_DATA = [
     groupName: 'Beta Group',
     creatorEmail: 'owner2@example.com',
     type: VotingType.SINGLE_CHOICE,
-    isOpen: true,
+    isPublic: true,
     isFinalized: false,
     options: ['Project X', 'Project Y', 'Project Z'],
     startAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
@@ -62,7 +106,7 @@ export const VOTINGS_DATA = [
     groupName: 'Alpha Group',
     creatorEmail: 'owner1@example.com',
     type: VotingType.SINGLE_CHOICE,
-    isOpen: false,
+    isPublic: false,
     isFinalized: true,
     options: ['Mountain', 'Beach', 'City'],
     startAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000),
@@ -75,9 +119,9 @@ export const VOTINGS_DATA = [
     groupName: 'Beta Group',
     creatorEmail: 'owner2@example.com',
     type: VotingType.SINGLE_CHOICE,
-    isOpen: false,
+    isPublic: false,
     isFinalized: false,
     options: ['Pepperoni', 'Mushroom'],
     deletedAt: new Date(),
-  }
+  },
 ];

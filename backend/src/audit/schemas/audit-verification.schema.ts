@@ -18,6 +18,9 @@ export class AuditVerification {
   @Prop({ required: true, type: Number })
   lastVerifiedSequence: number;
 
+  @Prop({ type: Date, default: null })
+  lastFullVerificationAt: Date | null;
+
   @Prop({ required: true })
   updatedAt: Date;
 }

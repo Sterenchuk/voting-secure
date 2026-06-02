@@ -30,7 +30,7 @@ export interface ISurvey {
   description: string | null;
   creatorId: string;
   groupId: string;
-  isOpen: boolean;
+  isPublic: boolean;
   isFinalized: boolean;
   allowAbstain: boolean;
   startAt: Date | null;
@@ -39,6 +39,7 @@ export interface ISurvey {
   createdAt: Date;
   updatedAt: Date;
   deletedAt?: Date | null;
+  userGroupRole?: string;
 }
 
 export interface ISurveyWithQuestions extends ISurvey {
@@ -49,7 +50,7 @@ export interface ICreateSurveyData {
   title: string;
   description?: string;
   groupId: string;
-  isOpen?: boolean;
+  isPublic?: boolean;
   isFinalized?: boolean;
   allowAbstain?: boolean;
   startAt?: Date;
@@ -60,7 +61,7 @@ export interface ICreateSurveyData {
 export interface IUpdateSurveyData {
   title?: string;
   description?: string;
-  isOpen?: boolean;
+  isPublic?: boolean;
   isFinalized?: boolean;
   allowAbstain?: boolean;
   startAt?: Date;
@@ -72,7 +73,7 @@ export interface ISurveyWhereInput {
   id?: string;
   creatorId?: string;
   groupId?: string;
-  isOpen?: boolean;
+  isPublic?: boolean;
   isFinalized?: boolean;
   deletedAt?: null | Date | { not: null };
   title?: string | { contains: string; mode?: 'insensitive' | 'default' };
@@ -138,7 +139,7 @@ export interface ISurveyFreeformBallot {
 
 export interface ISurveyBallotInput {
   questionId: string;
-  optionId?: string;
+  optionIds?: string[];
   text?: string;
   isAbstention?: boolean;
 }

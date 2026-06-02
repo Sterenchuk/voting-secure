@@ -27,7 +27,7 @@ export interface Voting {
   title: string;
   description: string | null;
   type: VotingType;
-  isOpen: boolean;
+  isPublic: boolean;
   isFinalized: boolean;
   allowOther: boolean;
   allowAbstain: boolean;
@@ -45,6 +45,7 @@ export interface Voting {
   otherTotal?: number;
   dynamicOptions?: VotingOption[];
   status: "draft" | "active" | "upcoming" | "completed";
+  userGroupRole?: string;
 }
 
 export interface CreateVotingData {
@@ -52,7 +53,7 @@ export interface CreateVotingData {
   description?: string;
   groupId: string;
   type?: VotingType;
-  isOpen?: boolean;
+  isPublic?: boolean;
   allowOther?: boolean;
   allowAbstain?: boolean;
   minChoices?: number;
@@ -98,16 +99,20 @@ const mapVoting = (v: any): Voting => {
     percentage: 0,
   }));
 
-  const dynamicOptions: VotingOption[] = (v.dynamicOptions ?? []).map((opt: any) => ({
-    id: opt.id,
-    text: opt.text,
-    voteCount: opt.voteCount ?? 0,
-    percentage: 0,
-  }));
+  const dynamicOptions: VotingOption[] = (v.dynamicOptions ?? []).map(
+    (opt: any) => ({
+      id: opt.id,
+      text: opt.text,
+      voteCount: opt.voteCount ?? 0,
+      percentage: 0,
+    }),
+  );
 
   const otherTotal = v.otherTotal ?? 0;
-  const totalVotes = options.reduce((sum, o) => sum + o.voteCount, 0) + otherTotal;
-  const participantsCount = v.participantsCount ?? v._count?.participations ?? 0;
+  const totalVotes =
+    options.reduce((sum, o) => sum + o.voteCount, 0) + otherTotal;
+  const participantsCount =
+    v.participantsCount ?? v._count?.participations ?? 0;
 
   options.forEach((o) => {
     o.percentage = totalVotes > 0 ? (o.voteCount / totalVotes) * 100 : 0;
@@ -116,14 +121,15 @@ const mapVoting = (v: any): Voting => {
   const now = new Date();
   const startAt = v.startAt ? new Date(v.startAt) : null;
   const endAt = v.endAt ? new Date(v.endAt) : null;
+
+  const isPublic =
+    !v.isFinalized && startAt && now >= startAt && (!endAt || now <= endAt);
   let status: Voting["status"] = "draft";
 
   if (v.isFinalized) status = "completed";
-  else if (v.isOpen) {
-    if (endAt && now > endAt) status = "completed";
-    else status = "active";
-  }
+  else if (isPublic) status = "active";
   else if (startAt && startAt > now) status = "upcoming";
+  else if (endAt && now > endAt) status = "completed";
 
   return {
     id: v.id,
@@ -133,9 +139,10 @@ const mapVoting = (v: any): Voting => {
     title: v.title,
     description: v.description ?? null,
     type: v.type ?? "SINGLE_CHOICE",
-    isOpen: v.isOpen,
+    isPublic: v.isPublic,
     isFinalized: v.isFinalized,
     allowOther: v.allowOther ?? false,
+    allowAbstain: v.allowAbstain ?? false,
     minChoices: v.minChoices ?? 1,
     maxChoices: v.maxChoices ?? null,
     startAt: v.startAt ?? null,
@@ -150,6 +157,7 @@ const mapVoting = (v: any): Voting => {
     otherTotal,
     dynamicOptions,
     status,
+    userGroupRole: v.userGroupRole,
   };
 };
 
@@ -163,14 +171,18 @@ export function useVotings() {
   });
 
   const fetchVotings = useCallback(
-    async (filters?: { groupId?: string; title?: string; isOpen?: boolean }) => {
+    async (filters?: {
+      groupId?: string;
+      title?: string;
+      isPublic?: boolean;
+    }) => {
       setState((prev) => ({ ...prev, loading: true, error: null }));
 
       const queryParams = new URLSearchParams();
       if (filters?.groupId) queryParams.append("groupId", filters.groupId);
       if (filters?.title) queryParams.append("title", filters.title);
-      if (filters?.isOpen !== undefined)
-        queryParams.append("isOpen", String(filters.isOpen));
+      if (filters?.isPublic !== undefined)
+        queryParams.append("isPublic", String(filters.isPublic));
 
       const url = `/votings${queryParams.toString() ? `?${queryParams}` : ""}`;
       const response = await api.get<any[]>(url);
@@ -260,7 +272,12 @@ export function useVotings() {
         status: string;
         message: string;
         token?: string;
-      }>(`/votings/${votingId}/token`, { optionIds, otherText, isAbstention, isPractice });
+      }>(`/votings/${votingId}/token`, {
+        optionIds,
+        otherText,
+        isAbstention,
+        isPractice,
+      });
       setState((prev) => ({ ...prev, loading: false, error: response.error }));
       return response;
     },
@@ -273,7 +290,7 @@ export function useVotings() {
         `/votings/${data.votingId}/vote`,
         {
           token: data.token,
-          ballots: data.optionIds.map((id) => ({ optionId: id })),
+          optionIds: data.optionIds,
           otherText: data.otherText,
           isAbstention: data.isAbstention,
           isPractice: data.isPractice,
@@ -346,7 +363,9 @@ export function useVotings() {
         const abstentionsCount = results.abstentionsCount ?? 0;
 
         const totalVotes =
-          updatedOptions.reduce((sum, o) => sum + o.voteCount, 0) + otherTotal + abstentionsCount;
+          updatedOptions.reduce((sum, o) => sum + o.voteCount, 0) +
+          otherTotal +
+          abstentionsCount;
 
         updatedOptions.forEach((o) => {
           o.percentage = totalVotes > 0 ? (o.voteCount / totalVotes) * 100 : 0;
@@ -393,15 +412,42 @@ export function useVotings() {
   }, []);
 
   const fetchParticipationStats = useCallback(async (id: string) => {
-    return api.get<Array<{ time: string; votes: number }>>(`/votings/${id}/participation-stats`);
+    return api.get<Array<{ time: string; votes: number }>>(
+      `/votings/${id}/participation-stats`,
+    );
   }, []);
 
   const fetchGlobalStats = useCallback(async () => {
-    return api.get<{ totalVotes: number; activeVotings: number }>("/votings/global/stats");
+    return api.get<{ totalVotes: number; activeVotings: number }>(
+      "/votings/global/stats",
+    );
   }, []);
 
   const fetchGlobalTrends = useCallback(async () => {
-    return api.get<Array<{ timestamp: string; count: number }>>("/votings/global/trends");
+    return api.get<Array<{ timestamp: string; count: number }>>(
+      "/votings/global/trends",
+    );
+  }, []);
+
+  const finalizeVoting = useCallback(async (id: string) => {
+    setState((prev) => ({ ...prev, loading: true, error: null }));
+    const response = await api.post(`/votings/${id}/finalize`, {});
+    if (!response.error) {
+      setState((prev) => ({
+        ...prev,
+        votings: prev.votings.map((v) =>
+          v.id === id ? { ...v, isFinalized: true, status: "completed" } : v,
+        ),
+        currentVoting:
+          prev.currentVoting?.id === id
+            ? { ...prev.currentVoting, isFinalized: true, status: "completed" }
+            : prev.currentVoting,
+        loading: false,
+      }));
+    } else {
+      setState((prev) => ({ ...prev, loading: false, error: response.error }));
+    }
+    return response;
   }, []);
 
   return {
@@ -413,6 +459,7 @@ export function useVotings() {
     createVoting,
     requestToken,
     castVote,
+    finalizeVoting,
     deleteVoting,
     updateVotingResults,
     syncResults,

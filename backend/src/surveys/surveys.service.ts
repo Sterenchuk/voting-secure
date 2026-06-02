@@ -33,7 +33,7 @@ export class SurveysService {
     await this.groupsService.checkAdminPermission(userId, dto.groupId);
 
     let startAt = dto.startAt ? new Date(dto.startAt) : undefined;
-    if (dto.isOpen && (!startAt || startAt > new Date())) {
+    if (dto.isPublic && (!startAt || startAt > new Date())) {
       startAt = new Date();
     }
 
@@ -42,7 +42,7 @@ export class SurveysService {
       title: dto.title,
       description: dto.description,
       groupId: dto.groupId,
-      isOpen: dto.isOpen ?? false,
+      isPublic: dto.isPublic ?? false,
       allowAbstain: dto.allowAbstain ?? true,
       startAt,
       endAt: dto.endAt ? new Date(dto.endAt) : undefined,
@@ -104,7 +104,7 @@ export class SurveysService {
     if (dto.groupId) where.groupId = dto.groupId;
     if (dto.title) where.title = { contains: dto.title, mode: 'insensitive' };
     if (dto.creatorId) where.creatorId = dto.creatorId;
-    if (dto.isOpen !== undefined) where.isOpen = dto.isOpen;
+    if (dto.isPublic !== undefined) where.isPublic = dto.isPublic;
     if (dto.isFinalized !== undefined) where.isFinalized = dto.isFinalized;
 
     const surveys = await this.repo.findSurveys(where, userId);
@@ -119,11 +119,12 @@ export class SurveysService {
     const survey = await this.repo.findSurveyById(id, userId);
     if (!survey || (survey as any).deletedAt)
       throw new NotFoundException('Survey not found');
-    
+
     return {
       ...survey,
       responsesCount: survey._count.participations,
-      hasParticipated: survey.participations && survey.participations.length > 0,
+      hasParticipated:
+        survey.participations && survey.participations.length > 0,
     };
   }
 
@@ -139,14 +140,14 @@ export class SurveysService {
     }
 
     let startAt = dto.startAt ? new Date(dto.startAt) : undefined;
-    if (dto.isOpen && (!startAt || startAt > new Date())) {
+    if (dto.isPublic && (!startAt || startAt > new Date())) {
       startAt = new Date();
     }
 
     const updateData: Partial<ICreateSurveyData> = {
       title: dto.title,
       description: dto.description,
-      isOpen: dto.isOpen,
+      isPublic: dto.isPublic,
       startAt,
       endAt: dto.endAt ? new Date(dto.endAt) : undefined,
     };

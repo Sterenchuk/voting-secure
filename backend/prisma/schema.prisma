@@ -152,7 +152,7 @@
     description String?
     type        VotingType @default(SINGLE_CHOICE)
     isFinalized Boolean    @default(false)
-    isOpen      Boolean    @default(false)
+    isPublic    Boolean    @default(false)
     deletedAt   DateTime?
 
     allowOther   Boolean @default(false)
@@ -257,7 +257,7 @@
     groupId     String
     group       Group   @relation(fields: [groupId], references: [id])
 
-    isOpen       Boolean   @default(false)
+    isPublic      Boolean   @default(false)
     isFinalized  Boolean   @default(false)
     allowAbstain Boolean   @default(true)
     deletedAt    DateTime?
@@ -285,7 +285,6 @@
 
     options      SurveyOption[]
     ballots      SurveyBallot[]
-    freeforms    SurveyFreeformBallot[]
     choiceConfig SurveyChoiceConfig?
     scaleConfig  SurveyScaleConfig?
 
@@ -352,9 +351,6 @@
     survey Survey @relation(fields: [surveyId], references: [id])
     user   User   @relation(fields: [userId], references: [id])
 
-    ballots         SurveyBallot[]
-    freeformBallots SurveyFreeformBallot[]
-
     @@unique([userId, surveyId])
   }
 
@@ -368,28 +364,11 @@
     optionId   String?
     isAbstention Boolean @default(false)
     ballotHash String  @unique
-    tokenId    String?
 
     question SurveyQuestion @relation(fields: [questionId], references: [id])
     option   SurveyOption?   @relation(fields: [optionId], references: [id])
-    token    SurveyToken?   @relation(fields: [tokenId], references: [id])
 
     @@index([questionId])
-    @@index([tokenId])
-  }
-
-  model SurveyFreeformBallot {
-    id         String  @id @default(uuid())
-    questionId String
-    text       String
-    ballotHash String  @unique
-    tokenId    String?
-
-    question SurveyQuestion @relation(fields: [questionId], references: [id])
-    token    SurveyToken?   @relation(fields: [tokenId], references: [id])
-
-    @@index([questionId])
-    @@index([tokenId])
   }
 
   model SurveyResult {

@@ -5,6 +5,8 @@ import { useI18n } from "@/lib/i18n/context";
 import { Voting } from "@/hooks/api/useVotings";
 import { VotingType } from "@/types/voting";
 import { Button } from "@/components/common/Button";
+import { Checkbox } from "@/components/common/Checkbox";
+import { Radio } from "@/components/common/Radio";
 import { cn } from "@/lib/utils";
 import styles from "./VotingForm.module.css";
 
@@ -41,7 +43,7 @@ export function VotingForm({
 
   const isMultiple = voting.type === VotingType.MULTIPLE_CHOICE;
   const options = voting.options;
-  const canVote = voting.isOpen && !voting.isFinalized && !voting.hasVoted;
+  const canVote = voting.isPublic && !voting.isFinalized && !voting.hasVoted;
 
   if (!canVote && !tokenRequested) return null;
 
@@ -57,40 +59,24 @@ export function VotingForm({
       <ul className={styles.optionList}>
         {options.map((option) => {
           const isSelected = selectedOptions.includes(option.id);
+          const Control = isMultiple ? Checkbox : Radio;
           return (
             <li
               key={option.id}
               className={cn(
                 styles.optionItem,
                 !tokenRequested && styles.optionClickable,
-                isSelected && styles.optionSelected
+                isSelected && styles.optionSelected,
               )}
-              onClick={() => onToggle(option.id)}
+              onClick={() => !tokenRequested && onToggle(option.id)}
             >
-              <div className={styles.optionRow}>
-                <div
-                  className={cn(
-                    styles.optionControl,
-                    isSelected && styles.optionControlSelected
-                  )}
-                >
-                  {isMultiple
-                    ? isSelected && (
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="3"
-                          width="12"
-                          height="12"
-                        >
-                          <path d="M5 13l4 4L19 7" />
-                        </svg>
-                      )
-                    : isSelected && <div className={styles.radioInner} />}
-                </div>
-                <span className={styles.optionText}>{option.text}</span>
-              </div>
+              <Control
+                checked={isSelected}
+                onChange={() => !tokenRequested && onToggle(option.id)}
+                disabled={tokenRequested}
+                label={<span className={styles.optionText}>{option.text}</span>}
+                className={styles.fullWidthControl}
+              />
             </li>
           );
         })}
@@ -100,45 +86,53 @@ export function VotingForm({
             className={cn(
               styles.optionItem,
               !tokenRequested && styles.optionClickable,
-              showOtherInput && styles.optionSelected
+              showOtherInput && styles.optionSelected,
             )}
-            onClick={() => onToggle("OTHER")}
+            onClick={() => !tokenRequested && onToggle("OTHER")}
           >
-            <div className={styles.optionRow}>
-              <div
-                className={cn(
-                  styles.optionControl,
-                  showOtherInput && styles.optionControlSelected
-                )}
-              >
-                {isMultiple
-                  ? showOtherInput && (
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        width="12"
-                        height="12"
-                      >
-                        <path d="M5 13l4 4L19 7" />
-                      </svg>
-                    )
-                  : showOtherInput && <div className={styles.radioInner} />}
-              </div>
-              <div className={styles.otherInputInline}>
-                <span className={styles.optionText}>{t.common.other}:</span>
-                <input
-                  type="text"
-                  className={styles.inlineInput}
-                  placeholder="___________________"
-                  value={otherText}
-                  disabled={tokenRequested}
-                  onChange={(e) => onOtherTextChange(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </div>
-            </div>
+            {isMultiple ? (
+              <Checkbox
+                checked={showOtherInput}
+                onChange={() => !tokenRequested && onToggle("OTHER")}
+                disabled={tokenRequested}
+                label={
+                  <div className={styles.otherInputInline}>
+                    <span className={styles.optionText}>{t.common.other}:</span>
+                    <input
+                      type="text"
+                      className={styles.inlineInput}
+                      placeholder="___________________"
+                      value={otherText}
+                      disabled={tokenRequested}
+                      onChange={(e) => onOtherTextChange(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                }
+                className={styles.fullWidthControl}
+              />
+            ) : (
+              <Radio
+                checked={showOtherInput}
+                onChange={() => !tokenRequested && onToggle("OTHER")}
+                disabled={tokenRequested}
+                label={
+                  <div className={styles.otherInputInline}>
+                    <span className={styles.optionText}>{t.common.other}:</span>
+                    <input
+                      type="text"
+                      className={styles.inlineInput}
+                      placeholder="___________________"
+                      value={otherText}
+                      disabled={tokenRequested}
+                      onChange={(e) => onOtherTextChange(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                }
+                className={styles.fullWidthControl}
+              />
+            )}
           </li>
         )}
 
@@ -147,21 +141,19 @@ export function VotingForm({
             className={cn(
               styles.optionItem,
               !tokenRequested && styles.optionClickable,
-              isAbstention && styles.optionSelected
+              isAbstention && styles.optionSelected,
             )}
-            onClick={() => onToggle("ABSTAIN")}
+            onClick={() => !tokenRequested && onToggle("ABSTAIN")}
           >
-            <div className={styles.optionRow}>
-              <div
-                className={cn(
-                  styles.optionControl,
-                  isAbstention && styles.optionControlSelected
-                )}
-              >
-                {isAbstention && <div className={styles.radioInner} />}
-              </div>
-              <span className={styles.optionText}>{t.common.abstain}</span>
-            </div>
+            <Radio
+              checked={isAbstention}
+              onChange={() => !tokenRequested && onToggle("ABSTAIN")}
+              disabled={tokenRequested}
+              label={
+                <span className={styles.optionText}>{t.common.abstain}</span>
+              }
+              className={styles.fullWidthControl}
+            />
           </li>
         )}
       </ul>
@@ -200,11 +192,7 @@ export function VotingForm({
               >
                 {t.votings.resendEmail}
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={onCancelToken}
-              >
+              <Button size="sm" variant="ghost" onClick={onCancelToken}>
                 {t.votings.changeSelection}
               </Button>
             </div>

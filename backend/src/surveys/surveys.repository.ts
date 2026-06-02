@@ -57,8 +57,8 @@ export class SurveysRepository {
 
   // ________________FIND_SURVEYS________________
 
-  findSurveys(where: ISurveyWhereInput, userId?: string) {
-    return this.db.survey.findMany({
+  async findSurveys(where: ISurveyWhereInput, userId?: string) {
+    const surveys = await this.db.survey.findMany({
       where: { ...where, deletedAt: null },
       select: {
         ...SELECT_SURVEY_WITH_QUESTIONS,
@@ -71,13 +71,29 @@ export class SurveysRepository {
               select: { id: true },
             }
           : undefined,
+        group: {
+          select: {
+            id: true,
+            users: userId
+              ? {
+                  where: { userId },
+                  select: { role: true },
+                }
+              : false,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    return surveys.map((s) => ({
+      ...s,
+      userGroupRole: (s as any).group?.users?.[0]?.role,
+    }));
   }
 
-  findSurveyById(surveyId: string, userId?: string) {
-    return this.db.survey.findUnique({
+  async findSurveyById(surveyId: string, userId?: string) {
+    const survey = await this.db.survey.findUnique({
       where: { id: surveyId, deletedAt: null },
       select: {
         ...SELECT_SURVEY_WITH_QUESTIONS,
@@ -90,8 +106,26 @@ export class SurveysRepository {
               select: { id: true },
             }
           : undefined,
+        group: {
+          select: {
+            id: true,
+            users: userId
+              ? {
+                  where: { userId },
+                  select: { role: true },
+                }
+              : false,
+          },
+        },
       },
     });
+
+    if (!survey) return null;
+
+    return {
+      ...survey,
+      userGroupRole: (survey as any).group?.users?.[0]?.role,
+    };
   }
 
   findSurveyRawById(surveyId: string) {
@@ -148,6 +182,18 @@ export class SurveysRepository {
         surveyId: true,
         totalResponses: true,
         tally: true,
+        tallyHash: true,
+        sealedAt: true,
+      },
+    });
+  }
+
+  async findSurveyResult(surveyId: string) {
+    return this.db.surveyResult.findUnique({
+      where: { surveyId },
+      select: {
+        tally: true,
+        totalResponses: true,
         tallyHash: true,
         sealedAt: true,
       },
@@ -322,98 +368,45 @@ export class SurveysRepository {
 
   // _____________SURVEY BALLOTS________________
 
-  createBallotsTx(
+  async createBallotsTx(
     tx: PrismaTx,
     surveyId: string,
     ballots: {
       questionId: string;
-      optionId?: string;
-      text?: string;
+      optionId: string;
       ballotHash: string;
-      tokenId?: string;
     }[],
   ) {
     return Promise.all(
-      ballots.map(
-        async ({ questionId, optionId, text, ballotHash, tokenId }) => {
-          const question = await tx.surveyQuestion.findUnique({
-            where: { id: questionId },
-            select: { type: true },
-          });
-
-          if (!question) throw new Error(`Question ${questionId} not found`);
-
-          if (question.type === 'FREEFORM') {
-            return tx.surveyFreeformBallot.create({
-              data: { questionId, text: text || '', ballotHash, tokenId },
-              select: SELECT_SURVEY_BALLOT,
-            });
-          }
-
-          let finalOptionId = optionId;
-
-          // If optionId is provided but is not a UUID, it might be a SCALE value or 'OTHER'
-          const isUuid =
-            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-              optionId || '',
-            );
-
-          if (optionId && !isUuid) {
-            const option = await tx.surveyOption.findFirst({
-              where: { questionId, text: optionId },
-            });
-            if (option) {
-              finalOptionId = option.id;
-            } else {
-              // Handle 'OTHER' or missing scale option
-              let dynamicOption = await tx.surveyOption.findFirst({
-                where: {
-                  questionId,
-                  text: text || optionId,
-                  isDynamic: true,
-                },
-              });
-
-              if (!dynamicOption) {
-                dynamicOption = await tx.surveyOption.create({
-                  data: {
-                    questionId,
-                    text: text || optionId,
-                    isDynamic: true,
-                  },
-                });
-              }
-              finalOptionId = dynamicOption.id;
-            }
-          } else if (!optionId && text) {
-            // Handle 'Other' for choice questions where optionId wasn't sent
-            let dynamicOption = await tx.surveyOption.findFirst({
-              where: { questionId, text, isDynamic: true },
-            });
-
-            if (!dynamicOption) {
-              dynamicOption = await tx.surveyOption.create({
-                data: { questionId, text, isDynamic: true },
-              });
-            }
-            finalOptionId = dynamicOption.id;
-          }
-
-          if (finalOptionId) {
-            return tx.surveyBallot.create({
-              data: { questionId, optionId: finalOptionId, ballotHash, tokenId },
-              select: SELECT_SURVEY_BALLOT,
-            });
-          }
-
-          // Fallback to abstention or error?
-          return tx.surveyBallot.create({
-            data: { questionId, isAbstention: true, ballotHash, tokenId },
-            select: SELECT_SURVEY_BALLOT,
-          });
-        },
+      ballots.map((b) =>
+        tx.surveyBallot.create({
+          data: {
+            questionId: b.questionId,
+            optionId: b.optionId,
+            ballotHash: b.ballotHash,
+          },
+          select: SELECT_SURVEY_BALLOT,
+        }),
       ),
     );
+  }
+
+  async getOrCreateDynamicOption(
+    questionId: string,
+    text: string,
+    tx: PrismaTx = this.db,
+  ): Promise<string> {
+    const existing = await tx.surveyOption.findFirst({
+      where: { questionId, text, isDynamic: true },
+    });
+
+    if (existing) return existing.id;
+
+    const created = await tx.surveyOption.create({
+      data: { questionId, text, isDynamic: true, order: 999 },
+    });
+
+    return created.id;
   }
 
   countBallotsByQuestion(questionId: string) {
@@ -422,9 +415,29 @@ export class SurveysRepository {
     });
   }
 
-  findFreeformBallotsByQuestion(questionId: string) {
-    return this.db.surveyFreeformBallot.findMany({
-      where: { questionId },
+  async findFreeformBallotsByQuestion(questionId: string) {
+    const options = await this.db.surveyOption.findMany({
+      where: { questionId, isDynamic: true },
+      include: {
+        ballots: { select: { id: true } },
+      },
+    });
+
+    const texts: { text: string }[] = [];
+    for (const opt of options) {
+      for (let i = 0; i < opt.ballots.length; i++) {
+        texts.push({ text: opt.text });
+      }
+    }
+    return texts;
+  }
+
+  async countFreeformBallotsByQuestion(questionId: string) {
+    return this.db.surveyBallot.count({
+      where: {
+        questionId,
+        option: { isDynamic: true },
+      },
     });
   }
 
@@ -435,40 +448,11 @@ export class SurveysRepository {
   }
 
   async countTotalResponsesBySurvey(surveyId: string) {
-    const [standardCount, freeformCount] = await Promise.all([
-      this.db.surveyBallot.count({
-        where: { question: { surveyId } },
-      }),
-      this.db.surveyFreeformBallot.count({
-        where: { question: { surveyId } },
-      }),
-    ]);
-
-    return standardCount + freeformCount;
-  }
-
-  // ___________FREFORM BALLOTS_________________
-
-  countFreeformBallotsByQuestion(questionId: string) {
-    return this.db.surveyFreeformBallot.count({
-      where: { questionId },
+    return this.db.surveyBallot.count({
+      where: { question: { surveyId } },
     });
   }
 
-  createFreeformBallotTx(
-    tx: PrismaTx,
-    data: {
-      questionId: string;
-      text: string;
-      ballotHash: string;
-      tokenId?: string;
-    },
-  ) {
-    return tx.surveyFreeformBallot.create({
-      data,
-      select: SELECT_SURVEY_BALLOT,
-    });
-  }
   // _______________SURVEY_TOKENS________________
 
   async findSurveyToken(tx: PrismaTx, userId: string, surveyId: string) {

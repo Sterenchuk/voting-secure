@@ -1,6 +1,6 @@
-"use client";
-
-import { useState } from "react";
+import React, { useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { useI18n } from "@/lib/i18n/context";
 import { VotingOption } from "@/hooks/api/useVotings";
 import styles from "./OtherOptionRow.module.css";
 
@@ -18,6 +18,7 @@ export function OtherOptionRow({
   showResults,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const { t } = useI18n();
 
   const pct = totalVotes > 0 ? Math.round((otherTotal / totalVotes) * 100) : 0;
 
@@ -26,7 +27,7 @@ export function OtherOptionRow({
   return (
     <li className={styles.otherRow}>
       <div className={styles.optionRow}>
-        <span className={styles.optionText}>Other</span>
+        <span className={styles.optionText}>{t.common.other || "Other"}</span>
         {showResults && <span className={styles.optionPct}>{pct}%</span>}
       </div>
 
@@ -41,8 +42,11 @@ export function OtherOptionRow({
           className={styles.toggleBtn}
           onClick={() => setExpanded((e) => !e)}
         >
-          {expanded ? "▲" : "▼"} {expanded ? "Hide" : "Show"} responses (
-          {dynamicOptions.length})
+          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          <span>
+            {expanded ? "Hide" : "Show"} responses
+          </span>
+          <span className={styles.badge}>{dynamicOptions.length}</span>
         </button>
       )}
 

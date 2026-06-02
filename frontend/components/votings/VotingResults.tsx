@@ -32,7 +32,7 @@ export function VotingResults({
 
   const options = voting.options;
   const totalVotes = voting.totalVotes;
-  const showResults = voting.isFinalized || voting.hasVoted || !voting.isOpen;
+  const showResults = voting.isFinalized || voting.hasVoted || !voting.isPublic;
 
   const trendData = participationStats
     .map((s) => {
@@ -51,7 +51,11 @@ export function VotingResults({
     votes: opt.voteCount,
   }));
 
-  if (voting.allowOther && voting.otherTotal !== undefined && voting.otherTotal > 0) {
+  if (
+    voting.allowOther &&
+    voting.otherTotal !== undefined &&
+    voting.otherTotal > 0
+  ) {
     chartData.push({
       name: t.common.other,
       votes: voting.otherTotal,
@@ -76,22 +80,24 @@ export function VotingResults({
           <div className={styles.trendChart}>
             <div className={styles.trendHeader}>
               <BarChart2 className={styles.trendIcon} />
-              <h3 className={styles.trendTitle}>
-                Vote Distribution
-              </h3>
+              <h3 className={styles.trendTitle}>Vote Distribution</h3>
             </div>
             <div className={styles.chartContainer}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} layout="vertical" margin={{ left: 40, right: 40 }}>
+                <BarChart
+                  data={chartData}
+                  layout="vertical"
+                  margin={{ left: 40, right: 40 }}
+                >
                   <XAxis type="number" hide />
-                  <YAxis 
-                    dataKey="name" 
-                    type="category" 
-                    tick={{ fontSize: 10 }} 
+                  <YAxis
+                    dataKey="name"
+                    type="category"
+                    tick={{ fontSize: 10 }}
                     width={80}
                   />
-                  <Tooltip 
-                    cursor={{ fill: 'transparent' }}
+                  <Tooltip
+                    cursor={{ fill: "transparent" }}
                     contentStyle={{
                       borderRadius: "8px",
                       border: "none",
@@ -183,7 +189,9 @@ export function VotingResults({
           <li className={styles.optionItem}>
             <div className={styles.optionRow}>
               <span className={styles.optionText}>{t.common.abstentions}</span>
-              <span className={styles.optionPct}>{voting.abstentionsCount}</span>
+              <span className={styles.optionPct}>
+                {voting.abstentionsCount}
+              </span>
             </div>
           </li>
         )}

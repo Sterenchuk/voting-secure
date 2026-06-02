@@ -29,9 +29,7 @@ export default function GroupDetailPage() {
     }
   }, [id, fetchGroup, fetchVotings]);
 
-  const handleFinalize = async (e: React.MouseEvent, votingId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleFinalize = async (votingId: string) => {
     await finalizeVoting(votingId);
     fetchVotings({ groupId: id });
   };
@@ -218,8 +216,9 @@ export default function GroupDetailPage() {
                       <div style={{ marginTop: "var(--space-sm)" }}>
                         <Button
                           size="sm"
-                          onClick={(e) => handleFinalize(e, v.id)}
+                          onClick={() => handleFinalize(v.id)}
                         >
+
                           Finalize Results
                         </Button>
                       </div>

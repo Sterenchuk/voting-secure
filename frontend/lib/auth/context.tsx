@@ -14,7 +14,7 @@ export interface User {
   email: string;
   name: string;
   avatar?: string;
-  role: "user" | "admin" | "auditor";
+  role: "user" | "admin" | "owner" | "auditor";
   createdAt: string;
   theme?: string;
   language?: string;

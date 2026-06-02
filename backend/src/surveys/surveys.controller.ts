@@ -1,3 +1,4 @@
+import { EmlGenerator } from '../common/utils/eml-generator';
 import {
   Controller,
   Get,
@@ -64,13 +65,19 @@ export class SurveysController {
   }
 
   @Get()
-  async findAll(@Query() query: FindSurveyQueryDto) {
-    return this.surveysService.findAll(query);
+  async findAll(
+    @Query() query: FindSurveyQueryDto,
+    @CurrentUser() user: UserPayloadDto,
+  ) {
+    return this.surveysService.findAll(query, user.sub);
   }
 
   @Get(':id')
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.surveysService.findOne(id);
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: UserPayloadDto,
+  ) {
+    return this.surveysService.findOne(id, user.sub);
   }
 
   @Put(':id')
@@ -160,9 +167,6 @@ export class SurveysController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SubmitSurveyResponseDto,
   ) {
-    // Pass all DTO fields through — previously token/isAbstention/isPractice
-    // were silently dropped, causing practice mode and email-confirmed flows
-    // to always behave as a plain non-practice submission.
     return this.submitService.submitResponse(
       id,
       user.sub,
@@ -176,8 +180,7 @@ export class SurveysController {
   @Get(':id/results')
   async getResults(
     @Param('id', ParseUUIDPipe) id: string,
-    // optional: true prevents ParseBoolPipe from throwing when the query
-    // param is absent; the default value covers that case.
+
     @Query('includeRaw', new ParseBoolPipe({ optional: true }))
     includeRaw = false,
   ) {
@@ -208,6 +211,58 @@ export class SurveysController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.submitService.finalizeSurvey(id, user.sub);
+  }
+
+  @Get(':id/results/eml')
+  async downloadEml(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: UserPayloadDto,
+    @Res() res: Response,
+  ) {
+    const survey = await this.surveysService.findOne(id);
+    const questionIds = survey.questions.map((q) => q.id);
+    const results = await this.submitService.getResults(id, questionIds, true);
+    const stats = await this.submitService.getParticipationStats(id);
+
+    const xml = EmlGenerator.generateSurveyEML(survey, results, stats);
+
+    res.set({
+      'Content-Type': 'application/xml',
+      'Content-Disposition': `attachment; filename="survey-${id}-results.xml"`,
+    });
+
+    return res.status(HttpStatus.OK).send(xml);
+  }
+
+  @Get(':id/results/csv')
+  async downloadCsv(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: UserPayloadDto,
+    @Res() res: Response,
+  ) {
+    const survey = await this.surveysService.findOne(id);
+    const questionIds = survey.questions.map((q) => q.id);
+    const results = await this.submitService.getResults(id, questionIds, true);
+
+    let csv = 'Question,Option,Count\n';
+    results.results.forEach((qRes) => {
+      const question = survey.questions.find((q) => q.id === qRes.questionId);
+      const qText = question?.text || 'Unknown';
+
+      qRes.options.forEach((opt) => {
+        csv += `"${qText}","${opt.text}",${opt.count}\n`;
+      });
+      if ((qRes.otherCount ?? 0) > 0) {
+        csv += `"${qText}","Other",${qRes.otherCount ?? 0}\n`;
+      }
+    });
+
+    res.set({
+      'Content-Type': 'text/csv',
+      'Content-Disposition': `attachment; filename="survey-${id}-results.csv"`,
+    });
+
+    return res.status(HttpStatus.OK).send(csv);
   }
 
   @Get(':id/my-status')

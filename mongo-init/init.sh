@@ -21,8 +21,10 @@ db.getSiblingDB('audit').audit_security.createIndex({ action: 1 });
 db.getSiblingDB('audit').createRole({
   role: 'auditWriter',
   privileges: [
-    { resource: { db: 'audit', collection: 'audit_chain' }, actions: ['insert', 'find'] },
+    { resource: { db: 'audit', collection: 'audit_chain' }, actions: ['insert', 'find', 'update'] },
     { resource: { db: 'audit', collection: 'audit_security' }, actions: ['insert', 'find'] },
+    { resource: { db: 'audit', collection: 'audit_checkpoints' }, actions: ['insert', 'find'] },
+    { resource: { db: 'audit', collection: 'audit_verification' }, actions: ['insert', 'find', 'update'] },
   ],
   roles: [],
 });

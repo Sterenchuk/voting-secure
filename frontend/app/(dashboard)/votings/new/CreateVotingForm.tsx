@@ -28,7 +28,7 @@ export default function CreateVotingForm() {
     description: "",
     groupId: prefilledGroupId,
     type: VotingType.SINGLE_CHOICE as VotingType,
-    isOpen: true,
+    isPublic: true,
     allowOther: true,
     allowAbstain: true,
     minChoices: 1,
@@ -79,7 +79,7 @@ export default function CreateVotingForm() {
       description: form.description.trim() || undefined,
       groupId: form.groupId,
       type: form.type,
-      isOpen: form.isOpen,
+      isPublic: form.isPublic,
       allowOther: form.allowOther,
       allowAbstain: form.allowAbstain,
       minChoices: form.minChoices,
@@ -143,7 +143,7 @@ export default function CreateVotingForm() {
             type={form.type}
             minChoices={form.minChoices}
             maxChoices={form.maxChoices}
-            isOpen={form.isOpen}
+            isPublic={form.isPublic}
             allowOther={form.allowOther}
             allowAbstain={form.allowAbstain}
             onChange={setField}

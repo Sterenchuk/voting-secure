@@ -1,8 +1,233 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xl);
-  padding: var(--space-lg);
+  gap: 2rem;
+  padding: 1.5rem;
+}
+
+.pageHeader {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.pageTitle {
+  font-size: 2.25rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  margin-bottom: 0.5rem;
+}
+
+.pageSubtitle {
+  color: hsl(var(--muted-foreground));
+  font-size: 1.125rem;
+  max-width: 42rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.contentWrapper {
+  max-width: 56rem;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+  display: grid;
+  gap: 2rem;
+}
+
+.explorerCard {
+  border-color: hsl(var(--primary) / 0.2);
+  box-shadow: var(--shadow-lg);
+}
+
+.cardTitleWrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.explorerIcon {
+  height: 1.25rem;
+  width: 1.25rem;
+  color: hsl(var(--primary));
+}
+
+.filterSection {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.filterRow {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+@media (min-width: 768px) {
+  .filterRow {
+    flex-direction: row;
+  }
+}
+
+.searchInputWrapper {
+  flex: 1;
+  width: 100%;
+}
+
+.searchInputWrapper label {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.checkboxGroup {
+  display: flex;
+  gap: 1rem;
+  padding-bottom: 0.5rem;
+}
+
+.checkboxWrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.checkboxLabel {
+  cursor: pointer;
+}
+
+.chainList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chainItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid hsl(var(--muted-foreground) / 0.1);
+  background-color: hsl(var(--card));
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-sm);
+}
+
+.chainItem:hover {
+  background-color: hsl(var(--muted) / 0.5);
+  border-color: hsl(var(--primary) / 0.3);
+}
+
+.chainItemInfo {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.chainIconWrapper {
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  background-color: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
+}
+
+.chainDetails {
+  display: flex;
+  flex-direction: column;
+}
+
+.chainTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chainTitle {
+  font-weight: 600;
+  transition: color 0.2s ease;
+}
+
+.chainItem:hover .chainTitle {
+  color: hsl(var(--primary));
+}
+
+.statusBadge {
+  font-size: 9px;
+  text-transform: uppercase;
+  height: 1rem;
+  padding: 0 0.25rem;
+}
+
+.statusBadgeLive {
+  background-color: hsl(142.1 76.2% 36.3% / 0.2);
+  color: hsl(142.1 76.2% 36.3%);
+  border-color: hsl(142.1 76.2% 36.3% / 0.2);
+}
+
+.statusBadgeClosed {
+  background-color: hsl(var(--gray-500) / 0.1);
+  color: hsl(var(--gray-500));
+}
+
+.chainMetaRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.typeBadge {
+  font-size: 10px;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 0;
+  height: 1rem;
+}
+
+.groupIdText {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+}
+.chainItemIcon {
+  height: 1rem;
+  width: 1rem;
+}
+
+.chevronIcon {
+  height: 1.25rem;
+  width: 1.25rem;
+  color: hsl(var(--muted-foreground));
+  transition: all 0.2s ease;
+}
+
+.chainItem:hover .chevronIcon {
+  color: hsl(var(--primary));
+  transform: translateX(0.25rem);
+}
+
+.loadingState {
+  padding: 3rem 0;
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}
+
+.emptyState {
+  padding: 3rem 0;
+  text-align: center;
+  border: 1px dashed hsl(var(--border));
+  border-radius: 0.75rem;
+}
+
+.emptyState p {
+  color: hsl(var(--muted-foreground));
 }
 
 .hashValue {
@@ -14,13 +239,6 @@
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   color: var(--color-text-secondary);
-}
-
-.dialogContent {
-  max-width: 600px;
-  background-color: hsl(var(--card)) !important;
-  border: 1px solid hsl(var(--border));
-  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
 }
 
 .scrollArea {

@@ -80,12 +80,15 @@ export class VotingsController {
     const voting = await this.votingsService.create(user.sub, dto);
 
     // Update global active votings count
-    const stats = await this.votingsService.findAll(
-      { isOpen: true },
-      user.sub,
-      user.role,
+    const stats = await this.votingsService.findAll({}, user.sub, user.role);
+    const activeVotings = stats.filter(
+      (v) =>
+        !v.isFinalized &&
+        v.startAt &&
+        new Date() >= new Date(v.startAt) &&
+        (!v.endAt || new Date() <= new Date(v.endAt)),
     );
-    await this.redisService.updateActiveVotingsCount(stats.length);
+    await this.redisService.updateActiveVotingsCount(activeVotings.length);
 
     return voting;
   }
@@ -119,12 +122,15 @@ export class VotingsController {
     const voting = await this.votingsService.update(id, dto, user.sub);
 
     // Update global active votings count
-    const stats = await this.votingsService.findAll(
-      { isOpen: true },
-      user.sub,
-      user.role,
+    const stats = await this.votingsService.findAll({}, user.sub, user.role);
+    const activeVotings = stats.filter(
+      (v) =>
+        !v.isFinalized &&
+        v.startAt &&
+        new Date() >= new Date(v.startAt) &&
+        (!v.endAt || new Date() <= new Date(v.endAt)),
     );
-    await this.redisService.updateActiveVotingsCount(stats.length);
+    await this.redisService.updateActiveVotingsCount(activeVotings.length);
 
     return voting;
   }
@@ -141,7 +147,7 @@ export class VotingsController {
 
     // Update global active votings count
     const stats = await this.votingsService.findAll(
-      { isOpen: true },
+      { isPublic: true },
       user.sub,
       user.role,
     );
@@ -212,7 +218,7 @@ export class VotingsController {
   ) {
     return this.voteService.vote(
       votingId,
-      dto.ballots,
+      dto.optionIds,
       {
         id: user.sub,
         email: user.email,

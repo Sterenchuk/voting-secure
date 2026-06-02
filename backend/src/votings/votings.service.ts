@@ -45,17 +45,13 @@ export class VotingsService {
       throw new BadRequestException('minChoices cannot exceed maxChoices');
     }
 
-    let startAt = dto.startAt ? new Date(dto.startAt) : undefined;
-    if (dto.isOpen && (!startAt || startAt > new Date())) {
-      startAt = new Date();
-    }
-
+    const startAt = dto.startAt ? new Date(dto.startAt) : undefined;
     const data: ICreateVotingData = {
       title: dto.title,
       description: dto.description,
       groupId: dto.groupId,
       type: (dto.type as VotingType) ?? VotingType.SINGLE_CHOICE,
-      isOpen: dto.isOpen ?? false,
+      isPublic: dto.isPublic ?? false,
       allowOther: dto.allowOther ?? false,
       allowAbstain: dto.allowAbstain ?? true,
       minChoices: dto.minChoices ?? 1,
@@ -75,11 +71,16 @@ export class VotingsService {
     if (dto.title) where.title = { contains: dto.title, mode: 'insensitive' };
     if (dto.startAt) where.startAt = { gte: new Date(dto.startAt) };
     if (dto.endAt) where.endAt = { lte: new Date(dto.endAt) };
-    if (dto.isOpen !== undefined) where.isOpen = dto.isOpen;
+    if (dto.isPublic !== undefined) where.isPublic = dto.isPublic;
 
     const isAdmin = role === Role.ADMIN;
     const isAuditor = role === Role.AUDITOR;
-    const votings = await this.repo.findVotings(where, userId, isAdmin, isAuditor);
+    const votings = await this.repo.findVotings(
+      where,
+      userId,
+      isAdmin,
+      isAuditor,
+    );
 
     const votingData = await Promise.all(
       votings.map(async (v) => ({
@@ -102,7 +103,12 @@ export class VotingsService {
   async findOne(id: string, userId?: string, role?: Role) {
     const isAdmin = role === Role.ADMIN;
     const isAuditor = role === Role.AUDITOR;
-    const voting = await this.repo.findVotingById(id, userId, isAdmin, isAuditor);
+    const voting = await this.repo.findVotingById(
+      id,
+      userId,
+      isAdmin,
+      isAuditor,
+    );
     if (!voting || (voting as any).deletedAt)
       throw new NotFoundException('Voting not found');
 
@@ -143,27 +149,21 @@ export class VotingsService {
       throw new BadRequestException('minChoices cannot exceed maxChoices');
     }
 
-    let startAt = dto.startAt ? new Date(dto.startAt) : undefined;
-    if (dto.isOpen && (!startAt || startAt > new Date())) {
-      // If manually opening, ensure startAt is not blocking
-      startAt = new Date();
-    }
-
     const data: IUpdateVotingData = {
       title: dto.title,
       description: dto.description,
-      isOpen: dto.isOpen,
+      isPublic: dto.isPublic,
       allowOther: dto.allowOther,
       minChoices: dto.minChoices,
       maxChoices: dto.maxChoices,
-      startAt,
+      startAt: dto.startAt ? new Date(dto.startAt) : undefined,
       endAt: dto.endAt ? new Date(dto.endAt) : undefined,
       broadcastInterval: dto.broadcastInterval,
     };
 
     const updated = await this.repo.updateVoting(id, data);
 
-    // Notify clients about the change (e.g. title, isOpen, etc)
+    // Notify clients about the change
     const results = await this.voteService.getResults(id);
     this.voteService.broadcastResults(id, results);
 

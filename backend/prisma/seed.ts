@@ -33,17 +33,16 @@ async function main() {
   // 1. Create Users
   console.log('Creating users...');
   const hashedPassword = await argon2.hash('Password123!');
-  const userMap = new Map<string, string>();
 
+  // Seed standard users first
+  const userMap = new Map<string, string>();
   for (const userData of USERS_DATA) {
     const encryptedEmail = CryptoUtils.encrypt(userData.email);
     const emailHash = CryptoUtils.getBlindIndex(userData.email);
 
     const user = await prisma.user.upsert({
       where: { emailHash: emailHash },
-      update: {
-        email: encryptedEmail,
-      },
+      update: { email: encryptedEmail },
       create: {
         ...userData,
         email: encryptedEmail,
@@ -55,7 +54,44 @@ async function main() {
     userMap.set(userData.email, user.id);
   }
 
-  // 2. Create Groups
+  // Seed 10,000 stress test users in batches
+  console.log('Creating 10,000 stress test users...');
+  const BATCH_SIZE = 500;
+  for (let i = 0; i < 10000; i += BATCH_SIZE) {
+    const usersBatch: {
+      email: string;
+      emailHash: string;
+      name: string;
+      password: string;
+      isEmailVerified: boolean;
+    }[] = [];
+    for (let j = 0; j < BATCH_SIZE; j++) {
+      const userNum = i + j;
+      const email = `stress_user_${userNum}@demo.local`;
+      const encryptedEmail = CryptoUtils.encrypt(email);
+      const emailHash = CryptoUtils.getBlindIndex(email);
+
+      usersBatch.push({
+        email: encryptedEmail,
+        emailHash: emailHash,
+        name: `Stress User ${userNum}`,
+        password: hashedPassword,
+        isEmailVerified: true,
+      });
+    }
+    await prisma.user.createMany({
+      data: usersBatch,
+      skipDuplicates: true,
+    });
+    console.log(`Processed ${i + BATCH_SIZE} stress users...`);
+    }
+
+    // Force set all users as verified
+    console.log('Force verifying all users...');
+    await prisma.$executeRaw`UPDATE "User" SET "isEmailVerified" = true;`;
+
+    // 2. Create Alpha Group
+
   console.log('Creating groups...');
   const groupMap = new Map<string, string>();
   for (const groupData of GROUPS_DATA) {

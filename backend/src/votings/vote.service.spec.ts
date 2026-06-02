@@ -30,12 +30,14 @@ describe('VoteService', () => {
         {
           provide: VotingsRepository,
           useValue: {
-            $transaction: jest.fn((cb) => cb({
-              voting: { findUnique: jest.fn() },
-              voteParticipation: { findUnique: jest.fn(), create: jest.fn() },
-              ballot: { create: jest.fn() },
-              option: { findFirst: jest.fn(), create: jest.fn() },
-            })),
+            $transaction: jest.fn((cb) =>
+              cb({
+                voting: { findUnique: jest.fn() },
+                voteParticipation: { findUnique: jest.fn(), create: jest.fn() },
+                ballot: { create: jest.fn() },
+                option: { findFirst: jest.fn(), create: jest.fn() },
+              }),
+            ),
             findVotingById: jest.fn(),
             findVotingForVote: jest.fn(),
             findParticipation: jest.fn(),
@@ -63,6 +65,12 @@ describe('VoteService', () => {
             setTemporaryReceipts: jest.fn(),
             getSnapshot: jest.fn(),
             setSnapshot: jest.fn(),
+            setSelections: jest.fn(),
+            getSelections: jest.fn(),
+            deleteSelections: jest.fn(),
+            lookupTokenByHash: jest.fn(),
+            getStoredHash: jest.fn(),
+            issueToken: jest.fn(),
           },
         },
         {
@@ -75,6 +83,7 @@ describe('VoteService', () => {
           provide: MailService,
           useValue: {
             sendVoteReceipt: jest.fn(),
+            sendVotingToken: jest.fn(),
           },
         },
         {
@@ -108,36 +117,41 @@ describe('VoteService', () => {
 
   describe('vote', () => {
     const votingId = 'voting-1';
-    const user = { id: 'user-1', email: 'user@example.com', language: 'en', theme: 'light' };
-    const ballots = [{ optionId: 'opt-1' }];
+    const user = {
+      id: 'user-1',
+      email: 'user@example.com',
+      language: 'en',
+      theme: 'light',
+    };
+    const optionIds = ['opt-1'];
     const token = 'token-123';
 
     it('should throw ForbiddenException if lock cannot be acquired', async () => {
       redis.acquireLock.mockResolvedValue(null);
 
-      await expect(service.vote(votingId, ballots, user, token)).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(
+        service.vote(votingId, optionIds, user, token),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should throw ForbiddenException if user already voted (redis check)', async () => {
       redis.acquireLock.mockResolvedValue('lock-token');
       redis.hasUserVoted.mockResolvedValue(true);
 
-      await expect(service.vote(votingId, ballots, user, token)).rejects.toThrow(
-        'Already participated',
-      );
+      await expect(
+        service.vote(votingId, optionIds, user, token),
+      ).rejects.toThrow('Already participated');
       expect(redis.releaseLock).toHaveBeenCalled();
     });
 
     it('should successfully cast a vote', async () => {
       redis.acquireLock.mockResolvedValue('lock-token');
       redis.hasUserVoted.mockResolvedValue(false);
-      
+
       const voting = {
         id: votingId,
         isFinalized: false,
-        isOpen: true,
+        isPublic: true,
         groupId: 'group-1',
         title: 'Title',
         options: [{ id: 'opt-1' }],
@@ -146,22 +160,22 @@ describe('VoteService', () => {
         maxChoices: 1,
         allowOther: false,
       };
-      
+
       repo.findVotingById.mockResolvedValue(voting as any);
       redis.verifyToken.mockResolvedValue({ isPractice: false } as any);
       redis.getSnapshot.mockResolvedValue(null);
       repo.findOptionsWithBallotCounts.mockResolvedValue([]);
       repo.countAbstentions.mockResolvedValue(0);
-      
+
       // Mock the transaction context
       repo.$transaction.mockImplementation((cb) =>
         cb({
           voteParticipation: { findUnique: jest.fn().mockResolvedValue(null) },
-          option: { findFirst: jest.fn() }
+          option: { findFirst: jest.fn() },
         } as any),
       );
 
-      const result = await service.vote(votingId, ballots, user, token);
+      const result = await service.vote(votingId, optionIds, user, token);
 
       expect(result.participated).toBe(true);
       expect(redis.verifyToken).toHaveBeenCalled();
@@ -170,7 +184,7 @@ describe('VoteService', () => {
       expect(auditService.appendChain).toHaveBeenCalled();
     });
 
-    it('should allow abstention with empty ballots', async () => {
+    it('should allow abstention with empty optionIds', async () => {
       redis.acquireLock.mockResolvedValue('lock-token');
       redis.hasUserVoted.mockResolvedValue(false);
       redis.verifyToken.mockResolvedValue({ isPractice: false } as any);
@@ -178,7 +192,7 @@ describe('VoteService', () => {
       const voting = {
         id: votingId,
         isFinalized: false,
-        isOpen: true,
+        isPublic: true,
         groupId: 'group-1',
         title: 'Title',
         options: [{ id: 'opt-1' }],
@@ -195,11 +209,18 @@ describe('VoteService', () => {
       repo.$transaction.mockImplementation((cb) =>
         cb({
           voteParticipation: { findUnique: jest.fn().mockResolvedValue(null) },
-          option: { findFirst: jest.fn() }
+          option: { findFirst: jest.fn() },
         } as any),
       );
 
-      const result = await service.vote(votingId, [], user, token, undefined, true);
+      const result = await service.vote(
+        votingId,
+        [],
+        user,
+        token,
+        undefined,
+        true,
+      );
 
       expect(result.participated).toBe(true);
       expect(redis.performVote).toHaveBeenCalledWith(
@@ -211,7 +232,7 @@ describe('VoteService', () => {
       );
     });
 
-    it('should throw BadRequestException if empty ballots and NOT abstention', async () => {
+    it('should throw BadRequestException if empty optionIds and NOT abstention', async () => {
       redis.acquireLock.mockResolvedValue('lock-token');
       redis.hasUserVoted.mockResolvedValue(false);
       redis.verifyToken.mockResolvedValue({ isPractice: false } as any);
@@ -219,7 +240,7 @@ describe('VoteService', () => {
       const voting = {
         id: votingId,
         isFinalized: false,
-        isOpen: true,
+        isPublic: true,
         groupId: 'group-1',
         title: 'Title',
         options: [{ id: 'opt-1' }],
@@ -231,9 +252,9 @@ describe('VoteService', () => {
 
       repo.findVotingById.mockResolvedValue(voting as any);
 
-      await expect(service.vote(votingId, [], user, token, undefined, false)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.vote(votingId, [], user, token, undefined, false),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should bypass DB and Audit Chain in practice mode', async () => {
@@ -244,7 +265,7 @@ describe('VoteService', () => {
       const voting = {
         id: votingId,
         isFinalized: false,
-        isOpen: true,
+        isPublic: true,
         groupId: 'group-1',
         title: 'Title',
         options: [{ id: 'opt-1' }],
@@ -256,7 +277,15 @@ describe('VoteService', () => {
 
       repo.findVotingById.mockResolvedValue(voting as any);
 
-      const result = await service.vote(votingId, ballots, user, token, undefined, false, true);
+      const result = await service.vote(
+        votingId,
+        optionIds,
+        user,
+        token,
+        undefined,
+        false,
+        true,
+      );
 
       expect(result.participated).toBe(true);
       expect(result.isPractice).toBe(true);
@@ -277,7 +306,10 @@ describe('VoteService', () => {
     const userId = 'admin-1';
 
     it('should throw ConflictException if already finalized', async () => {
-      repo.findVotingRaw.mockResolvedValue({ id: votingId, isFinalized: true } as any);
+      repo.findVotingRaw.mockResolvedValue({
+        id: votingId,
+        isFinalized: true,
+      } as any);
 
       await expect(service.finalizeVoting(votingId, userId)).rejects.toThrow(
         ConflictException,
@@ -285,27 +317,33 @@ describe('VoteService', () => {
     });
 
     it('should successfully finalize voting and verify chain', async () => {
-      repo.findVotingRaw.mockResolvedValue({ id: votingId, isFinalized: false, groupId: 'group-1' } as any);
+      repo.findVotingRaw.mockResolvedValue({
+        id: votingId,
+        isFinalized: false,
+        groupId: 'group-1',
+      } as any);
       repo.findOptionsWithBallotCounts.mockResolvedValue([]);
       repo.countBallotsByVoting.mockResolvedValue(0);
       repo.finalizeVoting.mockResolvedValue({ id: 'result-1' } as any);
-      
+
       auditService.verifyVotingChain.mockResolvedValue({
         valid: true,
         totalChecked: 10,
         brokenAt: null,
         reason: null,
         scope: 'voting',
-        scopeId: votingId
+        scopeId: votingId,
       });
 
       const result = await service.finalizeVoting(votingId, userId);
 
       expect(auditService.verifyVotingChain).toHaveBeenCalledWith(votingId);
       expect(repo.finalizeVoting).toHaveBeenCalled();
-      expect(auditService.appendChain).toHaveBeenCalledWith(expect.objectContaining({
-        action: 'VOTING_RESULT_SEALED'
-      }));
+      expect(auditService.appendChain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'VOTING_RESULT_SEALED',
+        }),
+      );
       expect(result.chainVerified).toBe(true);
     });
   });

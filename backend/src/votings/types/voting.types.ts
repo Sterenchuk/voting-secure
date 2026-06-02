@@ -14,7 +14,7 @@ export interface IVoting {
   title: string;
   description: string | null;
   type: VotingType;
-  isOpen: boolean;
+  isPublic: boolean;
   isFinalized: boolean;
   allowOther: boolean;
   allowAbstain: boolean;
@@ -24,6 +24,7 @@ export interface IVoting {
   endAt: Date | null;
   finalizedAt: Date | null;
   createdAt: Date;
+  userGroupRole?: string;
 }
 
 export interface IVotingWithOptions extends IVoting {
@@ -39,7 +40,7 @@ export interface ICreateVotingData {
   title: string;
   description?: string;
   type: VotingType;
-  isOpen: boolean;
+  isPublic: boolean;
   allowOther: boolean;
   allowAbstain: boolean;
   minChoices: number;
@@ -55,7 +56,7 @@ export interface IUpdateVotingData {
   description?: string;
   isFinalized?: boolean;
   finalizedAt?: Date;
-  isOpen?: boolean;
+  isPublic?: boolean;
   allowOther?: boolean;
   allowAbstain?: boolean;
   minChoices?: number;
@@ -71,7 +72,7 @@ export interface IVotingWhereInput {
   title?: { contains: string; mode: 'insensitive' };
   startAt?: { gte: Date };
   endAt?: { lte: Date };
-  isOpen?: boolean;
+  isPublic?: boolean;
   isFinalized?: boolean;
   deletedAt?: null;
 }

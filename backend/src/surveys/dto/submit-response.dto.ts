@@ -13,15 +13,13 @@ export class SurveyBallotInputDto {
   questionId: string;
 
   @IsOptional()
-  @IsString()
-  optionId?: string;
+  @IsArray()
+  @IsUUID('4', { each: true })
+  optionIds?: string[];
 
   @IsOptional()
   @IsString()
   text?: string;
-
-  @IsString()
-  ballotHash: string;
 }
 
 export class SubmitSurveyResponseDto {

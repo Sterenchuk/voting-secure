@@ -77,6 +77,77 @@ export class EmlGenerator {
     return xml;
   }
 
+  static generateSurveyEML(
+    survey: any,
+    results: any,
+    participationStats?: Array<{ time: string; votes: number }>,
+  ): string {
+    const timestamp = new Date().toISOString();
+    const surveyId = survey.id;
+    const surveyTitle = this.escapeXml(survey.title);
+    const xslBase64 = Buffer.from(this.getXslContent()).toString('base64');
+
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="data:text/xsl;base64,${xslBase64}"?>
+<EML Id="510" SchemaVersion="7.0" xmlns="urn:oasis:names:tc:evs:schema:eml" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <TransactionId>${surveyId}</TransactionId>
+  <ElectionReport>
+    <Election>
+      <ElectionIdentifier Id="${surveyId}">
+        <ElectionName>${surveyTitle}</ElectionName>
+      </ElectionIdentifier>
+      <Contest>
+        <ContestIdentifier Id="1">
+          <ContestName>${surveyTitle}</ContestName>
+        </ContestIdentifier>
+        <TotalVotes>${results.totalResponses}</TotalVotes>
+`;
+
+    results.results.forEach((qResult: any) => {
+      const question = survey.questions.find((q: any) => q.id === qResult.questionId);
+      const qText = this.escapeXml(question?.text || 'Unknown Question');
+
+      qResult.options.forEach((opt: any) => {
+        xml += `        <Selection>
+          <SelectionIdentifier Id="${opt.id}">
+            <CandidateName>[${qText}] ${this.escapeXml(opt.text)}</CandidateName>
+          </SelectionIdentifier>
+          <Votes>${opt.count}</Votes>
+        </Selection>
+`;
+      });
+
+      if (qResult.otherCount > 0) {
+        xml += `        <Selection>
+          <SelectionIdentifier Id="${qResult.questionId}_other">
+            <CandidateName>[${qText}] Other</CandidateName>
+          </SelectionIdentifier>
+          <Votes>${qResult.otherCount}</Votes>
+        </Selection>
+`;
+      }
+    });
+
+    xml += `      </Contest>
+    </Election>
+  </ElectionReport>
+  <ParticipationTrends>
+`;
+
+    if (participationStats && participationStats.length > 0) {
+      participationStats.forEach((stat) => {
+        xml += `    <Trend Time="${stat.time}" Count="${stat.votes}" />
+`;
+      });
+    }
+
+    xml += `  </ParticipationTrends>
+  <IssueDate>${timestamp}</IssueDate>
+</EML>`;
+
+    return xml;
+  }
+
   private static generateSelection(
     opt: IOptionResult,
     isDynamic = false,

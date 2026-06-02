@@ -25,5 +25,5 @@ export class FindVotingQueryDto {
     return value;
   })
   @IsBoolean()
-  isOpen?: boolean;
+  isPublic?: boolean;
 }

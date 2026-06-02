@@ -17,7 +17,6 @@ import {
   SELECT_GROUP_WITH_USERS,
   SELECT_GROUP_MEMBERS,
 } from './dto/group.response.dto';
-import { handlePrismaError } from '../common/utils/prisma-error';
 import { CryptoUtils } from '../common/utils/crypto-utils';
 import { Role } from '../common/enums/role';
 
@@ -28,34 +27,49 @@ export class GroupsService {
   private maskEmail(email: string): string {
     const [local, domain] = email.split('@');
     if (!local || !domain) return email;
-    if (local.length <= 2) return `${local[0]}***@${domain}`;
-    return `${local[0]}***${local[local.length - 1]}@${domain}`;
+    if (local.length <= 2) return `${local}*******@${domain}`;
+    return `${local.substring(0, 2)}*******@${domain}`;
   }
 
-  private processMemberEmails(group: any, userId?: string, platformRole?: Role): any {
-    if (!group || !group.users) return group;
+  private processMemberEmails(
+    group: GroupResponseDto,
+    userId?: string,
+    platformRole?: Role,
+  ): GroupResponseDto {
+    if (!group) return group;
 
-    const userMembership = userId 
-      ? group.users.find((u: any) => u.userId === userId)
-      : null;
-    
-    const canSeeFullEmails = 
-      platformRole === Role.ADMIN || 
-      userMembership?.role === GroupRole.OWNER || 
+    const userMembership =
+      userId && group.users
+        ? group.users.find((u: any) => u.userId === userId)
+        : null;
+
+    const canSeeFullEmails =
+      platformRole === Role.ADMIN ||
+      userMembership?.role === GroupRole.OWNER ||
       userMembership?.role === GroupRole.ADMIN;
 
-    group.users = group.users.map((m: any) => {
-      if (!m.user || !m.user.email) return m;
-      
-      const decrypted = CryptoUtils.decrypt(m.user.email);
-      const isSelf = m.userId === userId;
+    // Process creator email
+    if (group.creator && group.creator.email) {
+      const decrypted = CryptoUtils.decrypt(group.creator.email);
+      const isSelf = group.creatorId === userId;
+      group.creator.email =
+        canSeeFullEmails || isSelf ? decrypted : this.maskEmail(decrypted);
+    }
 
-      m.user.email = (canSeeFullEmails || isSelf) 
-        ? decrypted 
-        : this.maskEmail(decrypted);
-      
-      return m;
-    });
+    // Process member emails
+    if (group.users) {
+      group.users = group.users.map((m: any) => {
+        if (!m.user || !m.user.email) return m;
+
+        const decrypted = CryptoUtils.decrypt(m.user.email);
+        const isSelf = m.userId === userId;
+
+        m.user.email =
+          canSeeFullEmails || isSelf ? decrypted : this.maskEmail(decrypted);
+
+        return m;
+      });
+    }
 
     return group;
   }
@@ -74,7 +88,6 @@ export class GroupsService {
       },
     });
 
-    // Enforce 404 Privacy Policy: non-members should not know group exists
     if (!membership) {
       throw new NotFoundException('Group or resource not found');
     }
@@ -112,7 +125,6 @@ export class GroupsService {
       },
     });
 
-    // Enforce 404 Privacy Policy: non-members should not know group exists
     if (!membership) {
       throw new NotFoundException('Group or resource not found');
     }
@@ -138,6 +150,7 @@ export class GroupsService {
   async create(
     userId: string,
     groupCreateDto: GroupCreateDto,
+    platformRole?: Role,
   ): Promise<GroupResponseDto> {
     const userIds = await this.getUserIdsByEmails(groupCreateDto.userEmails);
 
@@ -145,7 +158,7 @@ export class GroupsService {
       ? userIds
       : [userId, ...userIds];
 
-    return this.databaseService.group.create({
+    const group = await this.databaseService.group.create({
       data: {
         name: groupCreateDto.name,
         creatorId: userId,
@@ -163,7 +176,9 @@ export class GroupsService {
         },
       },
       select: SELECT_GROUP_WITH_USERS,
-    }).catch(e => handlePrismaError(e, 'Creating group'));
+    });
+
+    return this.processMemberEmails(group as any, userId, platformRole);
   }
 
   async findAll(userId: string, name?: string): Promise<GroupResponseDto[]> {
@@ -178,7 +193,7 @@ export class GroupsService {
           select: { role: true },
         },
       },
-    }).catch(e => handlePrismaError(e, 'Finding all groups'));
+    });
 
     return groupsResult.map((group) => ({
       id: group.id,
@@ -193,35 +208,27 @@ export class GroupsService {
     })) as any;
   }
 
-  async findOne(id: string, userId?: string, platformRole?: Role): Promise<GroupResponseDto> {
+  async findOne(
+    id: string,
+    userId?: string,
+    platformRole?: Role,
+  ): Promise<GroupResponseDto> {
     const group = await this.databaseService.group.findUnique({
       where: { id },
-      select: {
-        ...SELECT_GROUP_WITH_USERS,
-        users: {
-          select: {
-            id: true,
-            userId: true,
-            groupId: true,
-            role: true,
-            user: {
-              select: {
-                email: true,
-                name: true,
-              },
-            },
-          },
-        },
-      },
-    }).catch(e => handlePrismaError(e, 'Finding group'));
+      select: SELECT_GROUP_WITH_USERS,
+    });
 
     if (!group) {
       throw new NotFoundException('Group not found');
     }
 
-    const processedGroup = this.processMemberEmails(group, userId, platformRole);
-    const membership = userId 
-      ? processedGroup.users.find((u: any) => u.userId === userId)
+    const processedGroup = this.processMemberEmails(
+      group as any,
+      userId,
+      platformRole,
+    );
+    const membership = userId
+      ? processedGroup.users?.find((u: any) => u.userId === userId)
       : null;
 
     return {
@@ -231,16 +238,23 @@ export class GroupsService {
     } as any;
   }
 
-  async findMembers(groupId: string, userId?: string, platformRole?: Role): Promise<any[]> {
+  async findMembers(
+    groupId: string,
+    userId?: string,
+    platformRole?: Role,
+  ): Promise<any[]> {
     const members = await this.databaseService.userGroup.findMany({
       where: { groupId },
       include: SELECT_GROUP_MEMBERS,
-    }).catch(e => handlePrismaError(e, 'Finding group members'));
+    });
 
-    // Re-use processMemberEmails logic but for a flat list
-    const dummyGroup = { users: members };
-    const processed = this.processMemberEmails(dummyGroup, userId, platformRole);
-    return processed.users;
+    const dummyGroup = { users: members } as any;
+    const processed = this.processMemberEmails(
+      dummyGroup,
+      userId,
+      platformRole,
+    );
+    return processed?.users ?? [];
   }
 
   async update(
@@ -254,27 +268,15 @@ export class GroupsService {
     const updated = await this.databaseService.group.update({
       where: { id },
       data: groupUpdateDto,
-      select: {
-        ...SELECT_GROUP_WITH_USERS,
-        users: {
-          select: {
-            id: true,
-            userId: true,
-            groupId: true,
-            role: true,
-            user: {
-              select: {
-                email: true,
-                name: true,
-              },
-            },
-          },
-        },
-      },
-    }).catch(e => handlePrismaError(e, 'Updating group'));
+      select: SELECT_GROUP_WITH_USERS,
+    });
 
-    const processed = this.processMemberEmails(updated, userId, platformRole);
-    const membership = processed.users.find((u: any) => u.userId === userId);
+    const processed = this.processMemberEmails(
+      updated as any,
+      userId,
+      platformRole,
+    );
+    const membership = processed?.users?.find((u: any) => u.userId === userId);
 
     return {
       ...processed,
@@ -287,6 +289,7 @@ export class GroupsService {
     userId: string,
     groupId: string,
     userIds: string[],
+    platformRole?: Role,
   ): Promise<GroupResponseDto> {
     if (!userIds.length) {
       throw new BadRequestException('At least one user is required');
@@ -294,7 +297,7 @@ export class GroupsService {
 
     await this.checkAdminPermission(userId, groupId);
 
-    return this.databaseService.group.update({
+    const updated = await this.databaseService.group.update({
       where: { id: groupId },
       data: {
         users: {
@@ -308,13 +311,16 @@ export class GroupsService {
         },
       },
       select: SELECT_GROUP_WITH_USERS,
-    }).catch(e => handlePrismaError(e, 'Adding users to group'));
+    });
+
+    return this.processMemberEmails(updated as any, userId, platformRole);
   }
 
   async removeUsers(
     userId: string,
     groupId: string,
     userIds: string[],
+    platformRole?: Role,
   ): Promise<GroupResponseDto> {
     if (!userIds.length) {
       throw new BadRequestException('At least one user is required');
@@ -322,7 +328,7 @@ export class GroupsService {
 
     await this.checkAdminPermission(userId, groupId);
 
-    return this.databaseService.group.update({
+    const updated = await this.databaseService.group.update({
       where: { id: groupId },
       data: {
         users: {
@@ -332,20 +338,21 @@ export class GroupsService {
         },
       },
       select: SELECT_GROUP_WITH_USERS,
-    }).catch(e => handlePrismaError(e, 'Removing users from group'));
+    });
+
+    return this.processMemberEmails(updated as any, userId, platformRole);
   }
 
   async changeUserRole(
     adminId: string,
     groupId: string,
     changeRoleDto: ChangeRoleDto & { targetUserId?: string },
+    platformRole?: Role,
   ): Promise<GroupResponseDto> {
     await this.checkAdminPermission(adminId, groupId);
 
     if (changeRoleDto.role === GroupRole.OWNER) {
-      throw new BadRequestException(
-        'Cannot assign OWNER role to another user',
-      );
+      throw new BadRequestException('Cannot assign OWNER role to another user');
     }
 
     const targetUserId = changeRoleDto.targetUserId;
@@ -354,16 +361,16 @@ export class GroupsService {
       throw new BadRequestException('Target user ID is required');
     }
 
-    const group = await this.databaseService.group.findUnique({
+    const groupCheck = await this.databaseService.group.findUnique({
       where: { id: groupId },
       select: { creatorId: true },
     });
 
-    if (!group) {
+    if (!groupCheck) {
       throw new NotFoundException('Group not found');
     }
 
-    if (targetUserId === group.creatorId) {
+    if (targetUserId === groupCheck.creatorId) {
       throw new BadRequestException('Cannot change role of the group owner');
     }
 
@@ -377,7 +384,7 @@ export class GroupsService {
       data: {
         role: changeRoleDto.role,
       },
-    }).catch(e => handlePrismaError(e, 'Changing user role in group'));
+    });
 
     const updatedGroup = await this.databaseService.group.findUnique({
       where: { id: groupId },
@@ -388,7 +395,7 @@ export class GroupsService {
       throw new NotFoundException('Group not found');
     }
 
-    return updatedGroup;
+    return this.processMemberEmails(updatedGroup as any, adminId, platformRole);
   }
 
   async delete(userId: string, id: string) {
@@ -396,11 +403,11 @@ export class GroupsService {
 
     await this.databaseService.userGroup.deleteMany({
       where: { groupId: id },
-    }).catch(e => handlePrismaError(e, 'Deleting group members'));
+    });
 
     await this.databaseService.group.delete({
       where: { id },
-    }).catch(e => handlePrismaError(e, 'Deleting group'));
+    });
 
     return { message: 'Group deleted successfully' };
   }

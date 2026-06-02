@@ -120,7 +120,9 @@ export default function SignInPage() {
           <div className={styles.headerActions}>
             <button
               className={styles.iconButton}
-              onClick={() => handleLanguageChange(language === "en" ? "uk" : "en")}
+              onClick={() =>
+                handleLanguageChange(language === "en" ? "uk" : "en")
+              }
               aria-label="Change language"
             >
               {language.toUpperCase()}
@@ -161,9 +163,9 @@ export default function SignInPage() {
           </div>
 
           <form onSubmit={handleSubmit} className={styles.form}>
-            {error && (
+            {error && error.message === "Unauthorized" && (
               <div className={styles.errorAlert} role="alert">
-                {error.message === "Unauthorized" ? <></> : error.message}
+                {error.message}
               </div>
             )}
 

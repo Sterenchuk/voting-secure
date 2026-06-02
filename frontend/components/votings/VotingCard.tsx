@@ -81,33 +81,9 @@ export function VotingCard({ voting }: VotingCardProps) {
                 </span>
               </div>
             )}
-            {/* Option bars — top 3 options with relative fill */}
-            {voting.totalVotes > 0 && (
-              <div className={styles.optionBars}>
-                {[...previewOptions]
-                  .sort((a, b) => b.voteCount - a.voteCount)
-                  .slice(0, 3)
-                  .map((opt) => (
-                    <div key={opt.id} className={styles.optionBar}>
-                      <div className={styles.optionBarLabel}>
-                        <span className={styles.optionBarText}>{opt.text}</span>
-                        <span className={styles.optionBarPct}>
-                          {Math.round(opt.percentage)}%
-                        </span>
-                      </div>
-                      <div className={styles.optionBarTrack}>
-                        <div
-                          className={styles.optionBarFill}
-                          style={{ width: `${opt.percentage}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
+            {/* Stats column */}
           </div>
 
-          {/* Stats column */}
           <div className={styles.cardStats}>
             <div className={styles.stat}>
               <span className={styles.statValue}>{voting.participantsCount}</span>

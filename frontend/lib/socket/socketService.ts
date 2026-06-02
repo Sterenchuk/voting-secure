@@ -17,8 +17,17 @@ export interface VoteUpdate {
 
 export interface SurveyUpdate {
   surveyId: string;
-  // Survey results structure from backend
-  [key: string]: any;
+  totalResponses: number;
+  results: Array<{
+    questionId: string;
+    options: Array<{
+      id: string;
+      text: string;
+      count: number;
+    }>;
+    otherCount: number;
+    freeformAnswers: string[];
+  }>;
 }
 
 export interface AuditUpdate {
@@ -236,14 +245,15 @@ class SocketService {
       socket.on("voting:vote_success", onSuccess);
       socket.on("voting:error", onError);
 
-      // Backend expects token: string (raw secret) 
-      // and ballots: { optionId: string }[]
+      // Backend expects token: string (raw secret)
+      // and optionIds: string[]
       socket.emit("voting:cast", {
         votingId: payload.votingId,
         token: payload.token,
-        ballots: payload.optionIds.map(id => ({ optionId: id })),
+        optionIds: payload.optionIds,
         otherText: payload.otherText
       }, (response: any) => {
+
         if (response?.error) {
           cleanup();
           reject(new Error(response.message || "Failed to cast vote"));

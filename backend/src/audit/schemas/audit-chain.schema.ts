@@ -61,6 +61,34 @@ export class AuditChain {
 
 export const AuditChainSchema = SchemaFactory.createForClass(AuditChain);
 
+// ─── Scoped Uniqueness ────────────────────────────────────────────────────────
+// Ensure that within a specific scope (group, voting, or survey), the sequence
+// is unique. This prevents race conditions from resulting in duplicate entries.
+
+AuditChainSchema.index(
+  { groupId: 1, groupSequence: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { groupSequence: { $exists: true, $ne: null } },
+  },
+);
+
+AuditChainSchema.index(
+  { votingId: 1, votingSequence: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { votingSequence: { $exists: true, $ne: null } },
+  },
+);
+
+AuditChainSchema.index(
+  { surveyId: 1, surveySequence: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { surveySequence: { $exists: true, $ne: null } },
+  },
+);
+
 AuditChainSchema.pre(
   [
     'updateOne',

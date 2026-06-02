@@ -30,7 +30,7 @@ export class SurveyCreateDto {
 
   @IsOptional()
   @IsBoolean()
-  isOpen?: boolean;
+  isPublic?: boolean;
 
   @IsOptional()
   @IsBoolean()
@@ -87,5 +87,5 @@ export class FindSurveyQueryDto {
     if (value === 'false') return false;
     return value;
   })
-  isOpen?: boolean;
+  isPublic?: boolean;
 }

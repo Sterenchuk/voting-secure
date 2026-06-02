@@ -164,7 +164,7 @@ export class SubmitService {
     if (!survey) throw new NotFoundException('Survey not found');
     if (survey.isFinalized) throw new ForbiddenException('Survey is finalized');
 
-    if (!isPractice && !survey.isOpen)
+    if (!isPractice && !survey.isPublic)
       throw new ForbiddenException('Survey is closed');
 
     const now = new Date();
@@ -199,20 +199,60 @@ export class SubmitService {
     }
 
     const receipts: string[] = [];
-    const dbBallots = ballots.map((b) => {
-      const receipt = CryptoUtils.generateBallotReceipt(
-        surveyId,
-        b.optionId || b.questionId,
-        tokenHashed || userId,
-      );
-      receipts.push(receipt);
-      return {
-        questionId: b.questionId,
-        optionId: b.optionId,
-        text: b.text,
-        ballotHash: receipt,
-      };
-    });
+    const dbBallots: {
+      questionId: string;
+      optionId: string;
+      ballotHash: string;
+    }[] = [];
+
+    for (const b of ballots) {
+      if (b.optionIds && b.optionIds.length > 0) {
+        for (const optId of b.optionIds) {
+          const isUuid =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              optId,
+            );
+
+          let finalOptionId = optId;
+          if (!isUuid) {
+            // SCALE or other dynamic value sent as ID
+            finalOptionId = await this.repo.getOrCreateDynamicOption(
+              b.questionId,
+              optId,
+            );
+          }
+
+          const receipt = CryptoUtils.generateBallotReceipt(
+            surveyId,
+            finalOptionId,
+            tokenHashed || userId,
+          );
+          receipts.push(receipt);
+          dbBallots.push({
+            questionId: b.questionId,
+            optionId: finalOptionId,
+            ballotHash: receipt,
+          });
+        }
+      } else if (b.text) {
+        // Freeform or 'Other' text
+        const finalOptionId = await this.repo.getOrCreateDynamicOption(
+          b.questionId,
+          b.text,
+        );
+        const receipt = CryptoUtils.generateBallotReceipt(
+          surveyId,
+          finalOptionId,
+          tokenHashed || userId,
+        );
+        receipts.push(receipt);
+        dbBallots.push({
+          questionId: b.questionId,
+          optionId: finalOptionId,
+          ballotHash: receipt,
+        });
+      }
+    }
 
     if (isAbstention) {
       const receipt = CryptoUtils.generateBallotReceipt(
@@ -241,8 +281,8 @@ export class SubmitService {
 
     const redisAnswers = ballots.map((b) => ({
       questionId: b.questionId,
-      optionIds: b.optionId ? [b.optionId] : [],
-      hasOther: !!b.text && !b.optionId,
+      optionIds: b.optionIds || [],
+      hasOther: !!b.text && (!b.optionIds || b.optionIds.length === 0),
     }));
 
     await this.redis.performSurveySubmission(
@@ -327,7 +367,17 @@ export class SubmitService {
     if (survey.isFinalized)
       throw new ConflictException('Survey is already finalized');
 
-    const verifyResult = await this.auditService.verifySurveyChain(surveyId);
+    if (survey.endAt && new Date() < new Date(survey.endAt)) {
+      throw new ForbiddenException('Survey has not ended yet');
+    }
+
+    // Secure gate: Check audit status
+    const auditStatus = await this.auditService.getAuditStatus('survey', surveyId);
+    if (!auditStatus.isSecure) {
+      throw new ForbiddenException(
+        `Cannot finalize survey: Audit chain is not secure. ${auditStatus.reason || ''}`,
+      );
+    }
 
     const questionIds = survey.questions.map((q) => q.id);
     const results = await this.getResults(surveyId, questionIds);
@@ -343,8 +393,13 @@ export class SubmitService {
     const totalResponses = results.totalResponses;
     const tallyHash = CryptoUtils.generateTallyHash(tally, totalResponses);
 
+    // Encrypt tally for storage
+    const encryptedTally = {
+      encrypted: CryptoUtils.encrypt(JSON.stringify(tally)),
+    };
+
     const result = await this.repo.$transaction((tx) =>
-      this.repo.finalizeSurvey(tx, surveyId, tally, totalResponses, tallyHash),
+      this.repo.finalizeSurvey(tx, surveyId, encryptedTally, totalResponses, tallyHash),
     );
 
     try {
@@ -353,8 +408,8 @@ export class SubmitService {
         payload: {
           tallyHash,
           totalResponses,
-          chainVerified: verifyResult.valid,
-          chainBlocksChecked: verifyResult.totalChecked,
+          chainVerified: true, // Known true because of secure gate
+          chainBlocksChecked: auditStatus.lastVerifiedSequence,
         },
         surveyId,
         groupId: survey.groupId,
@@ -363,7 +418,7 @@ export class SubmitService {
       this.logger.error(`Audit write failed for SURVEY_RESULT_SEALED: ${err}`);
     }
 
-    return { ...result, chainVerified: verifyResult.valid };
+    return { ...result, tally, chainVerified: true };
   }
 
   async getUserSurveyStatus(surveyId: string, userId: string) {
@@ -383,11 +438,66 @@ export class SubmitService {
     return this.auditService.findBallotReceipt(surveyId, hash, 'survey');
   }
 
+  async getSealedResult(surveyId: string) {
+    const result = await this.repo.findSurveyResult(surveyId);
+    if (!result)
+      throw new NotFoundException('This survey has not been finalized yet');
+
+    // Decrypt tally if encrypted
+    if (result.tally && (result.tally as any).encrypted) {
+      const decrypted = CryptoUtils.decrypt((result.tally as any).encrypted);
+      try {
+        result.tally = JSON.parse(decrypted);
+      } catch (err) {
+        this.logger.error(
+          `Failed to parse decrypted tally for survey ${surveyId}`,
+          err,
+        );
+      }
+    }
+
+    return result;
+  }
+
   async getResults(
     surveyId: string,
     questionIds: string[],
     includeRawFreeForm = false,
   ): Promise<ISurveyResults> {
+    const survey = await this.repo.findSurveyById(surveyId);
+    if (survey?.isFinalized) {
+      try {
+        const sealed = await this.getSealedResult(surveyId);
+        if (sealed && sealed.tally) {
+          const tally = sealed.tally as any;
+          const results: IQuestionResult[] = [];
+
+          for (const qId of questionIds) {
+            const qTally = tally.results?.find((r: any) => r.questionId === qId);
+            const question = survey.questions.find((q) => q.id === qId);
+
+            if (qTally && question) {
+              const options = question.options.map((opt) => ({
+                id: opt.id,
+                text: opt.text,
+                count: qTally.counts[opt.id] || 0,
+              }));
+
+              results.push({
+                questionId: qId,
+                options,
+                otherCount: qTally.otherCount || 0,
+              });
+            }
+          }
+          return { surveyId, totalResponses: sealed.totalResponses, results };
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Could not fetch sealed results for finalized survey ${surveyId}, falling back to live data.`,
+        );
+      }
+    }
     const redisResults = await Promise.all(
       questionIds.map((id) => this.redis.getQuestionResults(surveyId, id)),
     );

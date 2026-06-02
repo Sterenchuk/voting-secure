@@ -69,9 +69,10 @@
 }
 
 .grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: var(--space-lg);
+  width: 100%;
 }
 
 .cardLink {
@@ -253,9 +254,5 @@
 
   .statusFilters {
     overflow-x: auto;
-  }
-
-  .grid {
-    grid-template-columns: 1fr;
   }
 }

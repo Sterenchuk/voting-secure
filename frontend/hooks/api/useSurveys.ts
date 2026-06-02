@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from "react";
 import { api, ApiError } from "./useApi";
-import { generateSurveyBallotHash } from "@/lib/security/crypto";
 import { SurveyQuestionType } from "@/types/survey";
 
 export interface SurveyChoiceConfig {
@@ -44,7 +43,7 @@ export interface Survey {
   groupName: string;
   title: string;
   description: string | null;
-  isOpen: boolean;
+  isPublic: boolean;
   isFinalized: boolean;
   startAt: string | null;
   endAt: string | null;
@@ -54,7 +53,9 @@ export interface Survey {
   questions: SurveyQuestion[];
   status: "draft" | "active" | "completed";
   responsesCount: number;
+  allowAbstain: boolean;
   hasParticipated?: boolean;
+  userGroupRole?: string;
 }
 
 export interface SurveyAnswer {
@@ -67,9 +68,8 @@ export interface SurveyAnswer {
 
 interface SurveyBallotInput {
   questionId: string;
-  optionId?: string;
+  optionIds?: string[];
   text?: string;
-  ballotHash: string;
 }
 
 interface SubmitSurveyPayload {
@@ -82,6 +82,7 @@ interface SubmitSurveyPayload {
 export interface SurveyQuestionResult {
   questionId: string;
   options: { id: string; text: string; count: number }[];
+  totalVotes?: number;
   otherCount?: number;
   freeformAnswers?: string[];
 }
@@ -96,7 +97,8 @@ export interface CreateSurveyData {
   title: string;
   description?: string;
   groupId: string;
-  isOpen?: boolean;
+  isPublic?: boolean;
+  allowAbstain?: boolean;
   startAt?: string;
   endAt?: string;
   questions: Array<{
@@ -104,7 +106,7 @@ export interface CreateSurveyData {
     text: string;
     isRequired?: boolean;
     order?: number;
-    options?: string[];
+    options?: Array<{ text: string; order: number }>;
     choiceConfig?: Partial<SurveyChoiceConfig>;
     scaleConfig?: Partial<SurveyScaleConfig>;
   }>;
@@ -124,7 +126,7 @@ const mapSurvey = (s: any): Survey => {
 
   let status: Survey["status"] = "draft";
   if (s.isFinalized || (endAt && endAt < now)) status = "completed";
-  else if (s.isOpen) status = "active";
+  else if (s.isPublic) status = "active";
 
   const questions: SurveyQuestion[] = (s.questions ?? []).map(
     (q: any): SurveyQuestion => ({
@@ -152,7 +154,7 @@ const mapSurvey = (s: any): Survey => {
     groupName: s.group?.name ?? "",
     title: s.title,
     description: s.description ?? null,
-    isOpen: s.isOpen,
+    isPublic: s.isPublic,
     isFinalized: s.isFinalized,
     startAt: s.startAt ?? null,
     endAt: s.endAt ?? null,
@@ -162,77 +164,41 @@ const mapSurvey = (s: any): Survey => {
     questions,
     status,
     responsesCount: s.responsesCount ?? s._count?.participations ?? 0,
+    allowAbstain: s.allowAbstain ?? false,
     hasParticipated: s.hasParticipated,
+    userGroupRole: s.userGroupRole,
   };
 };
 
-const buildBallots = async (
+const buildBallots = (
   surveyId: string,
   answers: SurveyAnswer[],
-): Promise<SurveyBallotInput[]> => {
+): SurveyBallotInput[] => {
   const ballots: SurveyBallotInput[] = [];
 
   for (const answer of answers) {
     switch (answer.type) {
       case SurveyQuestionType.SINGLE_CHOICE:
-        if (answer.text) {
-          ballots.push({
-            questionId: answer.questionId,
-            text: answer.text,
-            ballotHash: await generateSurveyBallotHash(
-              surveyId,
-              answer.questionId,
-              "OTHER",
-            ),
-          });
-        } else if (answer.optionIds?.[0]) {
-          ballots.push({
-            questionId: answer.questionId,
-            optionId: answer.optionIds[0],
-            ballotHash: await generateSurveyBallotHash(
-              surveyId,
-              answer.questionId,
-              answer.optionIds[0],
-            ),
-          });
-        }
+        ballots.push({
+          questionId: answer.questionId,
+          optionIds: answer.optionIds?.[0] ? [answer.optionIds[0]] : [],
+          text: answer.text,
+        });
         break;
 
       case SurveyQuestionType.MULTIPLE_CHOICE:
-        if (answer.text) {
-          ballots.push({
-            questionId: answer.questionId,
-            text: answer.text,
-            ballotHash: await generateSurveyBallotHash(
-              surveyId,
-              answer.questionId,
-              "OTHER",
-            ),
-          });
-        }
-        for (const optionId of answer.optionIds ?? []) {
-          ballots.push({
-            questionId: answer.questionId,
-            optionId,
-            ballotHash: await generateSurveyBallotHash(
-              surveyId,
-              answer.questionId,
-              optionId,
-            ),
-          });
-        }
+        ballots.push({
+          questionId: answer.questionId,
+          optionIds: answer.optionIds ?? [],
+          text: answer.text,
+        });
         break;
 
       case SurveyQuestionType.SCALE: {
         const scaleValue = String(answer.scale ?? 0);
         ballots.push({
           questionId: answer.questionId,
-          optionId: scaleValue,
-          ballotHash: await generateSurveyBallotHash(
-            surveyId,
-            answer.questionId,
-            scaleValue,
-          ),
+          optionIds: [scaleValue],
         });
         break;
       }
@@ -242,11 +208,6 @@ const buildBallots = async (
           ballots.push({
             questionId: answer.questionId,
             text: answer.text,
-            ballotHash: await generateSurveyBallotHash(
-              surveyId,
-              answer.questionId,
-              "FREEFORM",
-            ),
           });
         }
         break;
@@ -266,13 +227,13 @@ export function useSurveys() {
   });
 
   const fetchSurveys = useCallback(
-    async (filters?: { groupId?: string; isOpen?: boolean }) => {
+    async (filters?: { groupId?: string; isPublic?: boolean }) => {
       setState((prev) => ({ ...prev, loading: true, error: null }));
 
       const queryParams = new URLSearchParams();
       if (filters?.groupId) queryParams.append("groupId", filters.groupId);
-      if (filters?.isOpen !== undefined)
-        queryParams.append("isOpen", String(filters.isOpen));
+      if (filters?.isPublic !== undefined)
+        queryParams.append("isPublic", String(filters.isPublic));
 
       const url = `/surveys${queryParams.toString() ? `?${queryParams}` : ""}`;
       const response = await api.get<any[]>(url);
@@ -317,16 +278,11 @@ export function useSurveys() {
   const fetchResults = useCallback(async (id: string) => {
     const response = await api.get<SurveyResults>(`/surveys/${id}/results`);
     if (response.data) {
-      // Store the full typed results object; callers access .results for the
-      // per-question array and .totalResponses for the participant count.
       setState((prev) => ({ ...prev, results: response.data! }));
     }
     return response;
   }, []);
 
-  // Called by the WebSocket gateway when a live update arrives.
-  // The payload shape from the server is ISurveyResults:
-  //   { surveyId, totalResponses, results: IQuestionResult[] }
   const syncResults = useCallback((data: SurveyResults) => {
     if (data?.results) {
       setState((prev) => ({ ...prev, results: data }));
@@ -353,16 +309,18 @@ export function useSurveys() {
   }, []);
 
   const requestToken = useCallback(
-    async (surveyId: string, answers: SurveyAnswer[], isPractice = false) => {
+    async (
+      surveyId: string,
+      answers: SurveyAnswer[],
+      isAbstention = false,
+      isPractice = false,
+    ) => {
       setState((prev) => ({ ...prev, loading: true, error: null }));
-      const ballots = await buildBallots(surveyId, answers);
+      const ballots = buildBallots(surveyId, answers);
 
-      // The server returns { status, token? }:
-      //   - practice mode: token is present for immediate use in submitSurvey
-      //   - real mode: token is undefined (sent via email instead)
       const response = await api.post<{ status: string; token?: string }>(
         `/surveys/${surveyId}/token`,
-        { ballots, isPractice },
+        { ballots, isAbstention, isPractice },
       );
 
       setState((prev) => ({
@@ -371,6 +329,66 @@ export function useSurveys() {
         error: response.error ?? null,
       }));
       return response;
+    },
+    [],
+  );
+
+  const practiceSubmit = useCallback(
+    async (surveyId: string, answers: SurveyAnswer[]) => {
+      setState((prev) => ({ ...prev, loading: true, error: null }));
+
+      const ballots = buildBallots(surveyId, answers);
+
+      // Step 1: request token in practice mode
+      const tokenRes = await api.post<{ status: string; token?: string }>(
+        `/surveys/${surveyId}/token`,
+        { ballots, isPractice: true },
+      );
+
+      if (!tokenRes.data?.token) {
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          error: tokenRes.error ?? null,
+        }));
+        return tokenRes;
+      }
+
+      // Step 2: submit immediately using the returned token
+      const payload: SubmitSurveyPayload = {
+        ballots,
+        token: tokenRes.data.token,
+        isAbstention: false,
+        isPractice: true,
+      };
+
+      const submitRes = await api.post<any>(
+        `/surveys/${surveyId}/submit`,
+        payload,
+      );
+
+      if (submitRes.data) {
+        const refreshed = await api.get<any>(`/surveys/${surveyId}`);
+        if (refreshed.data) {
+          const mapped = mapSurvey(refreshed.data);
+          setState((prev) => ({
+            ...prev,
+            currentSurvey: mapped,
+            surveys: prev.surveys.map((s) => (s.id === surveyId ? mapped : s)),
+            loading: false,
+          }));
+        } else {
+          setState((prev) => ({ ...prev, loading: false }));
+        }
+      } else {
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          error: submitRes.error ?? null,
+        }));
+      }
+
+      return submitRes;
     },
     [],
   );
@@ -412,7 +430,7 @@ export function useSurveys() {
     ) => {
       setState((prev) => ({ ...prev, loading: true, error: null }));
 
-      const ballots = await buildBallots(surveyId, answers);
+      const ballots = buildBallots(surveyId, answers);
       const payload: SubmitSurveyPayload = {
         ballots,
         token,
@@ -479,6 +497,7 @@ export function useSurveys() {
     syncResults,
     createSurvey,
     requestToken,
+    practiceSubmit,
     getMyStatus,
     fetchParticipationStats,
     finalizeSurvey,

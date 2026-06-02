@@ -42,7 +42,7 @@ export const SELECT_SURVEY = {
   groupId: true,
   title: true,
   description: true,
-  isOpen: true,
+  isPublic: true,
   isFinalized: true,
   allowAbstain: true,
   createdAt: true,
@@ -80,22 +80,13 @@ export const SELECT_SURVEY_BALLOT = {
   questionId: true,
   optionId: true,
   ballotHash: true,
-  tokenId: true,
-} as const;
-
-export const SELECT_SURVEY_FREEFORM_BALLOT = {
-  id: true,
-  questionId: true,
-  text: true,
-  ballotHash: true,
-  tokenId: true,
 } as const;
 
 export const SELECT_SURVEY_FOR_SUBMISSION = {
   id: true,
   title: true,
   description: true,
-  isOpen: true,
+  isPublic: true,
   isFinalized: true,
   startAt: true,
   endAt: true,

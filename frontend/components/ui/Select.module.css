@@ -1,0 +1,28 @@
+.selectTrigger {
+  background-color: var(--background) !important;
+  border: 1px solid var(--border);
+  opacity: 1 !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.selectContent {
+  background-color: var(--popover) !important;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  opacity: 1 !important;
+  z-index: 100;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* Ensure consistent colors in dark mode using data attributes or global classes */
+:global(.dark) .selectTrigger {
+  background-color: var(--card) !important;
+}
+
+:global(.dark) .selectContent {
+  background-color: var(--card) !important;
+}

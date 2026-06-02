@@ -1,0 +1,180 @@
+.questionCard {
+  margin-bottom: var(--space-md);
+}
+
+.questionText {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-md);
+}
+
+.required {
+  color: var(--color-error);
+  margin-left: 2px;
+}
+
+.questionBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+/* ── Choice options ── */
+.choiceLabel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+  user-select: none;
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.choiceLabel:hover {
+  border-color: var(--color-accent-secondary);
+  background: rgba(64, 138, 113, 0.05);
+}
+
+.choiceLabelSelected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+}
+
+.otherLabelContent {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.choiceLabel input[type="radio"],
+.choiceLabel input[type="checkbox"] {
+  display: none;
+}
+
+.otherInput {
+  margin-left: 8px;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  outline: none;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  padding: 2px 4px;
+  flex: 1;
+}
+
+.otherInput:focus {
+  border-color: var(--color-accent-primary);
+}
+
+/* ── Scale (horizontal Google-Forms style) ── */
+.scaleRow {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.scaleStep {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.scaleNum {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  transition: color 0.15s;
+}
+
+.scaleStepActive .scaleNum {
+  color: var(--color-accent-primary);
+}
+
+.scaleConnector {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.scaleLine {
+  height: 2px;
+  background: var(--color-border);
+  flex: 1;
+}
+
+.scaleCircle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--color-accent-secondary);
+  background: var(--color-bg-primary);
+  flex-shrink: 0;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.scaleStepActive .scaleCircle {
+  border-color: var(--color-accent-primary);
+  background: var(--color-accent-primary);
+}
+
+/* ── Freeform ── */
+.freeformWrap {
+  position: relative;
+}
+
+.freeformInput {
+  width: 100%;
+  min-height: 110px;
+  padding: 12px 40px 12px 14px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.freeformInput:focus {
+  border-color: var(--color-accent-primary);
+  background: var(--color-bg-primary);
+}
+
+.freeformIcon {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.freeformBar {
+  height: 2px;
+  background: var(--color-border);
+  border-radius: 1px;
+  margin-top: 4px;
+  transition: background 0.2s;
+}
+
+.freeformWrap:focus-within .freeformBar {
+  background: var(--color-accent-primary);
+}

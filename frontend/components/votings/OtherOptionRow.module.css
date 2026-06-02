@@ -32,19 +32,31 @@
   transition: width 0.3s ease;
 }
 .toggleBtn {
-  background: none;
-  border: none;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 13px;
-  color: var(--color-text-muted);
-  padding: var(--space-xs) 0;
-  display: flex;
+  color: var(--color-text-secondary);
+  padding: var(--space-xs) var(--space-sm);
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  transition: color 0.15s;
+  gap: var(--space-xs);
+  transition: all var(--transition-fast);
+  margin-top: var(--space-sm);
 }
 .toggleBtn:hover {
-  color: var(--color-text-primary);
+  border-color: var(--color-accent-primary);
+  color: var(--color-accent-primary);
+}
+.badge {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  margin-left: 2px;
 }
 .dynamicList {
   list-style: none;

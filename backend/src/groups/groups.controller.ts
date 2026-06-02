@@ -46,9 +46,10 @@ export class GroupsController {
   })
   create(
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
+    @CurrentUser('role') role: Role,
     @Body() groupCreateDto: GroupCreateDto,
   ): Promise<GroupResponseDto> {
-    return this.groupsService.create(userId, groupCreateDto);
+    return this.groupsService.create(userId, groupCreateDto, role);
   }
 
   @Get()
@@ -106,9 +107,15 @@ export class GroupsController {
   addUsers(
     @Param('id') id: UuidDto['id'],
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
+    @CurrentUser('role') role: Role,
     @Body() addUsersDto: AddUsersDto & { targetUserIds: string[] },
   ): Promise<GroupResponseDto> {
-    return this.groupsService.addUsers(userId, id, addUsersDto.targetUserIds);
+    return this.groupsService.addUsers(
+      userId,
+      id,
+      addUsersDto.targetUserIds,
+      role,
+    );
   }
 
   @Patch(':id/remove/users')
@@ -123,12 +130,14 @@ export class GroupsController {
   removeUsers(
     @Param('id') id: UuidDto['id'],
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
+    @CurrentUser('role') role: Role,
     @Body() addUsersDto: AddUsersDto & { targetUserIds: string[] },
   ): Promise<GroupResponseDto> {
     return this.groupsService.removeUsers(
       userId,
       id,
       addUsersDto.targetUserIds,
+      role,
     );
   }
 
@@ -145,9 +154,10 @@ export class GroupsController {
   changeUserRole(
     @Param('id') id: UuidDto['id'],
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
+    @CurrentUser('role') role: Role,
     @Body() changeRoleDto: ChangeRoleDto & { targetUserId: string },
   ): Promise<GroupResponseDto> {
-    return this.groupsService.changeUserRole(userId, id, changeRoleDto);
+    return this.groupsService.changeUserRole(userId, id, changeRoleDto, role);
   }
 
   @Delete(':id')

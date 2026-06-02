@@ -111,9 +111,13 @@ export interface VerifyResult {
   totalChecked: number;
   brokenAt: number | null;
   reason: string | null;
+  errorType?: 'TAMPERED_HASH' | 'BROKEN_LINK';
   expectedHash?: string;
   foundHash?: string;
+  expectedPrevHash?: string;
+  foundPrevHash?: string;
   tamperedBlock?: any;
+  victimBlock?: any;
 }
 
 export interface ScopedVerifyResult extends VerifyResult {

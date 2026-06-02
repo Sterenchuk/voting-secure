@@ -6,7 +6,7 @@ export const SELECT_VOTING = {
   description: true,
   groupId: true,
   type: true,
-  isOpen: true,
+  isPublic: true,
   allowOther: true,
   minChoices: true,
   maxChoices: true,
@@ -22,7 +22,7 @@ export const SELECT_VOTING_WITH_OPTIONS = {
 
 export const SELECT_VOTING_FOR_VOTE = {
   id: true,
-  isOpen: true,
+  isPublic: true,
   groupId: true,
   type: true,
   allowOther: true,

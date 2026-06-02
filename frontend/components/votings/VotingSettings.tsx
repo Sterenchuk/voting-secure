@@ -5,6 +5,7 @@ import { useI18n } from "@/lib/i18n/context";
 import { Card } from "@/components/common/Card";
 import { Input } from "@/components/common/Input";
 import { RadioGroupField } from "@/components/common/RadioGroupField";
+import { Toggle } from "@/components/common/Toggle";
 import { VotingType } from "@/types/voting";
 import styles from "./CreateVotingComponents.module.css";
 
@@ -12,7 +13,7 @@ interface VotingSettingsProps {
   type: VotingType;
   minChoices: number;
   maxChoices: string;
-  isOpen: boolean;
+  isPublic: boolean;
   allowOther: boolean;
   allowAbstain: boolean;
   onChange: (field: string, value: any) => void;
@@ -22,7 +23,7 @@ export function VotingSettings({
   type,
   minChoices,
   maxChoices,
-  isOpen,
+  isPublic,
   allowOther,
   allowAbstain,
   onChange,
@@ -71,50 +72,26 @@ export function VotingSettings({
         </div>
       )}
 
-      <div className={styles.toggleRow}>
-        <div>
-          <span className={styles.toggleLabel}>{t.votings.openImmediately}</span>
-          <span className={styles.toggleHint}>{t.votings.openImmediatelyHint}</span>
-        </div>
-        <button
-          type="button"
-          className={`${styles.toggle} ${isOpen ? styles.toggleOn : ""}`}
-          onClick={() => onChange("isOpen", !isOpen)}
-          role="switch"
-        >
-          <div className={styles.toggleKnob} />
-        </button>
-      </div>
+      <Toggle
+        checked={isPublic}
+        onChange={(val) => onChange("isPublic", val)}
+        label={t.votings.isPublic}
+        hint={t.votings.isPublicHint}
+      />
 
-      <div className={styles.toggleRow}>
-        <div>
-          <span className={styles.toggleLabel}>{t.votings.allowOther}</span>
-          <span className={styles.toggleHint}>{t.votings.allowOtherHint}</span>
-        </div>
-        <button
-          type="button"
-          className={`${styles.toggle} ${allowOther ? styles.toggleOn : ""}`}
-          onClick={() => onChange("allowOther", !allowOther)}
-          role="switch"
-        >
-          <div className={styles.toggleKnob} />
-        </button>
-      </div>
+      <Toggle
+        checked={allowOther}
+        onChange={(val) => onChange("allowOther", val)}
+        label={t.votings.allowOther}
+        hint={t.votings.allowOtherHint}
+      />
 
-      <div className={styles.toggleRow}>
-        <div>
-          <span className={styles.toggleLabel}>{t.votings.allowAbstain}</span>
-          <span className={styles.toggleHint}>{t.votings.allowAbstainHint}</span>
-        </div>
-        <button
-          type="button"
-          className={`${styles.toggle} ${allowAbstain ? styles.toggleOn : ""}`}
-          onClick={() => onChange("allowAbstain", !allowAbstain)}
-          role="switch"
-        >
-          <div className={styles.toggleKnob} />
-        </button>
-      </div>
+      <Toggle
+        checked={allowAbstain}
+        onChange={(val) => onChange("allowAbstain", val)}
+        label={t.votings.allowAbstain}
+        hint={t.votings.allowAbstainHint}
+      />
     </Card>
   );
 }

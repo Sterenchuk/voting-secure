@@ -24,15 +24,3 @@ export async function generateBallotHash(
 ): Promise<string> {
   return sha256(`${entityId}:${optionId}:${nonce}`);
 }
-
-/**
- * Generates a survey ballot hash for a question option.
- */
-export async function generateSurveyBallotHash(
-  surveyId: string,
-  questionId: string,
-  optionId: string,
-  nonce: string = crypto.randomUUID(),
-): Promise<string> {
-  return sha256(`${surveyId}:${questionId}:${optionId}:${nonce}`);
-}

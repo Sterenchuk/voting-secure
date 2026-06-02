@@ -1,0 +1,219 @@
+.dialogContent {
+  max-width: 740px !important;
+  background-color: hsl(var(--background)) !important;
+  color: hsl(var(--foreground)) !important;
+  opacity: 1 !important;
+  border: 1px solid hsl(var(--border)) !important;
+  box-shadow: var(--shadow-lg) !important;
+  border-radius: 1rem !important;
+  padding: 1.5rem !important;
+  backdrop-filter: none !important;
+}
+
+.dialogTitleWrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dialogTitleIcon {
+  height: 1.25rem;
+  width: 1.25rem;
+  flex-shrink: 0;
+}
+
+.badgeTampered {
+  font-size: 10px;
+  background-color: hsl(0 72% 51%);
+  color: white;
+  font-weight: 900;
+}
+
+.badgeVictim {
+  font-size: 10px;
+  background-color: hsl(38 92% 50%);
+  color: white;
+  font-weight: 900;
+}
+
+.hashBlockContainer {
+  font-family: monospace;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.75rem;
+  background: hsl(var(--muted) / 0.35);
+  color: hsl(var(--foreground));
+  text-align: left;
+  word-break: break-all;
+}
+
+/* Inline hash rows for tampered / expected */
+.hashRowTampered {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.4rem;
+  background: hsl(0 84% 60% / 0.08);
+  border: 1px solid hsl(0 84% 60% / 0.25);
+}
+
+.hashRowExpected {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.4rem;
+  background: hsl(142 71% 45% / 0.08);
+  border: 1px solid hsl(142 71% 45% / 0.25);
+}
+
+.corruptedValue {
+  color: hsl(0 84% 45%);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.expectedValue {
+  color: hsl(142 71% 32%);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.hashLabelExpected {
+  font-weight: 700;
+  color: hsl(142 71% 32%);
+  margin-right: 0.5rem;
+}
+
+.hashLabelAccent {
+  font-weight: 700;
+  color: hsl(160 84% 34%);
+  margin-right: 0.5rem;
+}
+
+.hashLabelMuted {
+  font-weight: 700;
+  opacity: 0.65;
+  margin-right: 0.5rem;
+}
+
+.hashSeparator {
+  border-top: 1px solid hsl(var(--border));
+  padding-top: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.globalHashLabel {
+  font-weight: 700;
+  margin-right: 0.5rem;
+}
+
+.globalPrevContainer {
+  opacity: 0.6;
+}
+
+/* Hash diff widget */
+.hashDiffBlock {
+  margin-top: 0.75rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.75rem;
+  background: hsl(var(--muted) / 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.hashDiffLabel {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 0.25rem;
+}
+
+.hashDiffRow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.hashDiffTag {
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.3rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.hashDiffTagBad {
+  background: hsl(0 84% 60% / 0.15);
+  color: hsl(0 84% 40%);
+  border: 1px solid hsl(0 84% 60% / 0.3);
+}
+
+.hashDiffTagGood {
+  background: hsl(142 71% 45% / 0.12);
+  color: hsl(142 71% 28%);
+  border: 1px solid hsl(142 71% 45% / 0.25);
+}
+
+.hashDiffCode {
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+/* Per-character diff */
+.diffCharOk {
+  color: hsl(var(--muted-foreground));
+  opacity: 0.6;
+}
+.diffCharBad {
+  color: hsl(0 84% 38%);
+  font-weight: 900;
+  background: hsl(0 84% 60% / 0.15);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.diffCharGood {
+  color: hsl(142 71% 28%);
+  font-weight: 900;
+  background: hsl(142 71% 45% / 0.18);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* SCROLL AREA */
+.scrollArea {
+  height: 280px;
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.4);
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.payloadContainer {
+  margin-top: 1rem;
+}
+
+.payloadPre {
+  font-size: 0.75rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
