@@ -1,8 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuditController } from './audit.controller';
 import { AuditService } from './audit.service';
-import { DatabaseService } from '../database/database.service';
+import { AuditQueueService } from './worker/audit-queue.service';
+import { getModelToken } from '@nestjs/mongoose';
+import { AuditVerificationJob } from './schemas/audit-verification-job.schema';
 import { Reflector } from '@nestjs/core';
+import { DatabaseService } from '../database/database.service';
 
 describe('AuditController', () => {
   let controller: AuditController;
@@ -12,16 +15,19 @@ describe('AuditController', () => {
     verifyVotingChain: jest.fn(),
     verifySurveyChain: jest.fn(),
     getVotingChain: jest.fn(),
+    searchChain: jest.fn(),
   };
 
-  const mockDatabaseService = {
-    voting: {
-      findUnique: jest.fn(),
-    },
-    userGroup: {
-      findUnique: jest.fn(),
-    },
+  const mockAuditQueueService = {
+    startVerification: jest.fn(),
+    enqueueAppend: jest.fn(),
   };
+
+  const mockJobModel = {
+    findById: jest.fn(),
+  };
+
+  const mockDatabaseService = {};
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -30,6 +36,14 @@ describe('AuditController', () => {
         {
           provide: AuditService,
           useValue: mockAuditService,
+        },
+        {
+          provide: AuditQueueService,
+          useValue: mockAuditQueueService,
+        },
+        {
+          provide: getModelToken(AuditVerificationJob.name),
+          useValue: mockJobModel,
         },
         {
           provide: DatabaseService,

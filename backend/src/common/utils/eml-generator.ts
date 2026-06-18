@@ -95,49 +95,45 @@ export class EmlGenerator {
     <Election>
       <ElectionIdentifier Id="${surveyId}">
         <ElectionName>${surveyTitle}</ElectionName>
-      </ElectionIdentifier>
-      <Contest>
-        <ContestIdentifier Id="1">
-          <ContestName>${surveyTitle}</ContestName>
-        </ContestIdentifier>
-        <TotalVotes>${results.totalResponses}</TotalVotes>
-`;
+      </ElectionIdentifier>\n`;
 
-    results.results.forEach((qResult: any) => {
+    results.results.forEach((qResult: any, index: number) => {
       const question = survey.questions.find((q: any) => q.id === qResult.questionId);
       const qText = this.escapeXml(question?.text || 'Unknown Question');
+
+      xml += `      <Contest>
+        <ContestIdentifier Id="${index + 1}">
+          <ContestName>${qText}</ContestName>
+        </ContestIdentifier>
+        <TotalVotes>${results.totalResponses}</TotalVotes>\n`;
 
       qResult.options.forEach((opt: any) => {
         xml += `        <Selection>
           <SelectionIdentifier Id="${opt.id}">
-            <CandidateName>[${qText}] ${this.escapeXml(opt.text)}</CandidateName>
+            <CandidateName>${this.escapeXml(opt.text)}</CandidateName>
           </SelectionIdentifier>
           <Votes>${opt.count}</Votes>
-        </Selection>
-`;
+        </Selection>\n`;
       });
 
       if (qResult.otherCount > 0) {
         xml += `        <Selection>
           <SelectionIdentifier Id="${qResult.questionId}_other">
-            <CandidateName>[${qText}] Other</CandidateName>
+            <CandidateName>Other</CandidateName>
           </SelectionIdentifier>
           <Votes>${qResult.otherCount}</Votes>
-        </Selection>
-`;
+        </Selection>\n`;
       }
+      xml += `      </Contest>\n`;
     });
 
-    xml += `      </Contest>
-    </Election>
+    xml += `    </Election>
   </ElectionReport>
-  <ParticipationTrends>
-`;
+  <ParticipationTrends>\n`;
 
     if (participationStats && participationStats.length > 0) {
       participationStats.forEach((stat) => {
-        xml += `    <Trend Time="${stat.time}" Count="${stat.votes}" />
-`;
+        xml += `    <Trend Time="${stat.time}" Count="${stat.votes}" />\n`;
       });
     }
 

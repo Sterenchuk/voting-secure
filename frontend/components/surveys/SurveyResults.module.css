@@ -1,0 +1,589 @@
+/* ─── Section shell ─────────────────────────────────────────────────────────── */
+
+.resultsSection {
+  margin-top: var(--space-xl);
+}
+
+.sectionTitle {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* ─── Trend chart ───────────────────────────────────────────────────────────── */
+
+.trendChart {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  margin-bottom: var(--space-xl);
+}
+
+.trendHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.trendIcon {
+  color: var(--color-accent-primary);
+  width: 20px;
+  height: 20px;
+}
+
+.trendTitle {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.chartContainer {
+  height: 200px;
+  width: 100%;
+}
+
+/* ─── Results grid ──────────────────────────────────────────────────────────── */
+
+.resultsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: var(--space-lg);
+}
+
+@media (max-width: 640px) {
+  .resultsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── Card ──────────────────────────────────────────────────────────────────── */
+
+.resultCard {
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* freeform cards span both columns if grid can fit them */
+.resultCardWide {
+  grid-column: 1 / -1;
+}
+
+.resultHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.resultIcon {
+  color: var(--color-primary);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.resultQuestionTitle {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  flex: 1;
+  min-width: 0;
+}
+
+.questionTypeBadge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--color-bg-subtle, rgba(0, 0, 0, 0.06));
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+/* ─── Choice: pie + legend layout ──────────────────────────────────────────── */
+
+.choiceWrapper {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  min-height: 180px;
+}
+
+.choicePie {
+  flex-shrink: 0;
+  width: 180px;
+  height: 180px;
+}
+
+/* Legend list */
+.choiceLegend {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+  min-width: 0;
+}
+
+.legendItem {
+  display: grid;
+  grid-template-columns: 10px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm, 6px);
+  transition: background 0.12s;
+  cursor: default;
+}
+
+.legendItem:hover,
+.legendItemActive {
+  background: var(--color-bg-subtle, rgba(0, 0, 0, 0.04));
+}
+
+.legendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.legendName {
+  font-size: 13px;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.legendCount {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.legendPct {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  text-align: right;
+  white-space: nowrap;
+  min-width: 42px;
+}
+
+.legendTotal {
+  display: grid;
+  grid-template-columns: 10px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--color-border);
+}
+
+.legendTotalLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Other row gets a slightly different grid to fit the expand button */
+.legendItemOther {
+  grid-template-columns: 10px 1fr auto auto auto;
+}
+
+.otherExpandBtn {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1;
+  transition:
+    transform 0.15s,
+    color 0.15s;
+  display: flex;
+  align-items: center;
+}
+
+.otherExpandBtn:hover {
+  color: var(--color-accent-primary);
+}
+
+.otherExpandBtnOpen {
+  transform: rotate(180deg);
+  color: var(--color-accent-primary);
+}
+
+/* Breakdown row — spans the legend list as a <li> */
+.otherBreakdown {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.otherBreakdownList {
+  list-style: none;
+  padding: 4px 0 4px 18px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-left: 2px solid var(--color-border);
+  margin-left: 5px;
+  margin-bottom: 4px;
+}
+
+.otherBreakdownItem {
+  display: grid;
+  grid-template-columns: 6px 1fr auto auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.otherBreakdownDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-secondary);
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.otherBreakdownText {
+  font-size: 12px;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.otherBreakdownCount {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.otherBreakdownPct {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  text-align: right;
+  white-space: nowrap;
+  min-width: 38px;
+}
+
+@media (max-width: 480px) {
+  .choiceWrapper {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .choicePie {
+    width: 160px;
+    height: 160px;
+  }
+
+  .choiceLegend {
+    width: 100%;
+  }
+}
+
+/* ─── Scale question ────────────────────────────────────────────────────────── */
+
+.scaleWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.scaleStats {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.scaleStat {
+  flex: 1;
+  min-width: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--color-bg-subtle, rgba(0, 0, 0, 0.04));
+  border-radius: var(--radius-md, 8px);
+  gap: 2px;
+}
+
+.scaleStatLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+}
+
+.scaleStatValue {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-accent-primary);
+}
+
+.scaleBars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scaleBarRow {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.scaleBarLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-align: right;
+}
+
+.scaleBarTrack {
+  height: 10px;
+  background: var(--color-bg-subtle, rgba(0, 0, 0, 0.07));
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.scaleBarFill {
+  height: 100%;
+  background: var(--color-accent-primary);
+  border-radius: 99px;
+  transition: width 0.3s ease;
+}
+
+.scaleBarCount {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.scaleBarPct {
+  font-weight: 400;
+  color: var(--color-text-secondary);
+}
+
+/* ─── Freeform question ─────────────────────────────────────────────────────── */
+
+.freeformWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.freeformToolbar {
+  display: flex;
+  gap: 6px;
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.viewToggleBtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.viewToggleBtn:hover {
+  background: var(--color-bg-subtle, rgba(0, 0, 0, 0.04));
+  color: var(--color-text-primary);
+}
+
+.viewToggleActive {
+  background: var(--color-accent-primary);
+  color: #fff;
+  border-color: var(--color-accent-primary);
+}
+
+.viewToggleActive:hover {
+  background: var(--color-accent-primary);
+  color: #fff;
+}
+
+.viewBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.25);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.viewToggleBtn:not(.viewToggleActive) .viewBadge {
+  background: var(--color-bg-subtle, rgba(0, 0, 0, 0.07));
+  color: var(--color-text-primary);
+}
+
+/* Raw list */
+.freeformEmpty {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  padding: var(--space-md) 0;
+}
+
+.freeformHint {
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+  font-size: 12px;
+}
+
+.freeformList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.freeformItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-bg-subtle, rgba(0, 0, 0, 0.03));
+  border: 1px solid var(--color-border);
+}
+
+.freeformIndex {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  padding-top: 2px;
+  white-space: nowrap;
+  min-width: 28px;
+}
+
+.freeformText {
+  font-size: 13px;
+  color: var(--color-text-primary);
+  line-height: 1.5;
+}
+
+/* Aggregate table */
+.freeformTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.freeformTh {
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.freeformThSortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.freeformThSortable:hover {
+  color: var(--color-text-primary);
+}
+
+.freeformRow {
+  transition: background 0.1s;
+}
+
+.freeformRow:hover {
+  background: var(--color-bg-subtle, rgba(0, 0, 0, 0.03));
+}
+
+.freeformTd {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  vertical-align: middle;
+}
+
+.freeformTdNum {
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.freeformShareCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+}
+
+.freeformShareBar {
+  flex: 1;
+  height: 6px;
+  background: var(--color-bg-subtle, rgba(0, 0, 0, 0.07));
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.freeformShareFill {
+  height: 100%;
+  background: var(--color-accent-primary);
+  border-radius: 99px;
+  transition: width 0.3s ease;
+}
+
+.freeformSharePct {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  min-width: 38px;
+  text-align: right;
+}

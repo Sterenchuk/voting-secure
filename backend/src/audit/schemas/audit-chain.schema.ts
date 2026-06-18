@@ -13,13 +13,13 @@ export class AuditChain {
   @Prop({ required: true, unique: true, index: true })
   sequence: number;
 
-  @Prop({ type: Number, default: null })
+  @Prop({ type: Number })
   groupSequence: number | null;
 
-  @Prop({ type: Number, default: null })
+  @Prop({ type: Number })
   votingSequence: number | null;
 
-  @Prop({ type: Number, default: null })
+  @Prop({ type: Number })
   surveySequence: number | null;
 
   @Prop({ required: true, type: String, enum: Object.values(ChainAction) })
@@ -28,16 +28,16 @@ export class AuditChain {
   @Prop({ required: true, type: Object })
   payload: Record<string, unknown>;
 
-  @Prop({ type: String, default: null, index: true })
+  @Prop({ type: String, index: true })
   userId: string | null;
 
-  @Prop({ type: String, default: null, index: true })
+  @Prop({ type: String, index: true })
   groupId: string | null;
 
-  @Prop({ type: String, default: null, index: true })
+  @Prop({ type: String, index: true })
   votingId: string | null;
 
-  @Prop({ type: String, default: null, index: true })
+  @Prop({ type: String, index: true })
   surveyId: string | null;
 
   @Prop({ required: true })
@@ -46,13 +46,13 @@ export class AuditChain {
   @Prop({ required: true })
   prevHash: string;
 
-  @Prop({ type: String, default: null })
+  @Prop({ type: String })
   groupPrevHash: string | null;
 
-  @Prop({ type: String, default: null })
+  @Prop({ type: String })
   votingPrevHash: string | null;
 
-  @Prop({ type: String, default: null })
+  @Prop({ type: String })
   surveyPrevHash: string | null;
 
   @Prop({ required: true, unique: true })

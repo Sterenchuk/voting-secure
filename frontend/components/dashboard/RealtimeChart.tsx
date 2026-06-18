@@ -89,6 +89,22 @@ export function RealtimeChart() {
     });
   });
 
+  // Global updates listener
+  useEffect(() => {
+    const { socketService } = require("@/lib/socket/socketService");
+    const unsubscribe = socketService.on<any>("global:stats", (data: any) => {
+      if (selectedVotingId === "global") {
+        if (data.trends) {
+          setParticipationData(data.trends.map((d: any) => ({
+            time: d.timestamp.split('T')[1].substring(0, 5),
+            votes: d.count
+          })));
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [selectedVotingId]);
+
   const maxValue = useMemo(() => {
     const data = view === "distribution" ? distributionData : participationData;
     return Math.max(...data.map(d => d.votes), 5);
@@ -156,13 +172,17 @@ export function RealtimeChart() {
           </div>
         </div>
         <div className={styles.xAxis}>
-          {(view === "distribution" ? distributionData : participationData).map(
-            (point, index) => (
-              <span key={index} className={styles.xLabel}>
-                {view === "distribution" ? (point as any).label.slice(0, 6) : (index % 3 === 0 ? point.time : "")}
-              </span>
-            ),
-          )}
+          {view === "distribution"
+            ? distributionData.map((point, index) => (
+                <span key={index} className={styles.xLabel}>
+                  {point.label.slice(0, 6)}
+                </span>
+              ))
+            : participationData.map((point, index) => (
+                <span key={index} className={styles.xLabel}>
+                  {index % 3 === 0 ? point.time : ""}
+                </span>
+              ))}
         </div>
       </CardContent>
     </Card>

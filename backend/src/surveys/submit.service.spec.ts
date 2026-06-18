@@ -7,7 +7,7 @@ import { SubmitGateway } from './submit.gateway';
 import { AuditService } from '../audit/audit.service';
 import { MailService } from '../mail/mail.service';
 import { UsersService } from '../users/users.service';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { SurveyQuestionType } from './types/survey.types';
 
 describe('SubmitService', () => {
@@ -16,6 +16,7 @@ describe('SubmitService', () => {
   let groupService: jest.Mocked<GroupsService>;
   let redis: jest.Mocked<RedisVotingService>;
   let gateway: jest.Mocked<SubmitGateway>;
+  let usersService: jest.Mocked<UsersService>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -58,6 +59,9 @@ describe('SubmitService', () => {
             setSurveySelections: jest.fn(),
             consumeToken: jest.fn(),
             verifyToken: jest.fn(),
+            lookupTokenByHash: jest.fn(),
+            getSurveySelections: jest.fn(),
+            deleteSurveySelections: jest.fn(),
           },
         },
         {
@@ -93,10 +97,45 @@ describe('SubmitService', () => {
     groupService = module.get(GroupsService);
     redis = module.get(RedisVotingService);
     gateway = module.get(SubmitGateway);
+    usersService = module.get(UsersService);
   });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('confirmSurveyFromEmail', () => {
+    const surveyId = 'survey-1';
+    const token = 'token-123';
+    const userId = 'user-1';
+
+    it('should correctly pass isAbstention from stored selections', async () => {
+      const hash = 'hashed-token';
+      redis.lookupTokenByHash.mockResolvedValue({
+        userId,
+        entityId: surveyId,
+        type: 'survey',
+      });
+      redis.getSurveySelections.mockResolvedValue({
+        ballots: [],
+        isPractice: false,
+        isAbstention: true,
+      });
+      usersService.findOne.mockResolvedValue({ id: userId } as any);
+      
+      const submitResponseSpy = jest.spyOn(service, 'submitResponse').mockResolvedValue({ success: true, receipts: ['r1'] } as any);
+
+      await service.confirmSurveyFromEmail(surveyId, token);
+
+      expect(submitResponseSpy).toHaveBeenCalledWith(
+        surveyId,
+        userId,
+        [],
+        token,
+        true, // isAbstention should be true
+        false,
+      );
+    });
   });
 
   describe('submitResponse', () => {
@@ -132,13 +171,80 @@ describe('SubmitService', () => {
       ).rejects.toThrow('You have already submitted this survey');
     });
 
+    it('should throw BadRequestException if a required question is missing', async () => {
+      const survey = {
+        id: surveyId,
+        isPublic: true,
+        isFinalized: false,
+        questions: [
+          { id: 'q-required', text: 'Required Q', isRequired: true }
+        ],
+      };
+      repo.findSurveyRawById.mockResolvedValue(survey as any);
+      redis.hasUserSubmittedSurvey.mockResolvedValue(false);
+
+      await expect(
+        service.submitResponse(surveyId, userId, [])
+      ).rejects.toThrow('Question "Required Q" is required.');
+    });
+
+    it('should throw BadRequestException if minChoices is not met', async () => {
+      const survey = {
+        id: surveyId,
+        isPublic: true,
+        isFinalized: false,
+        questions: [
+          {
+            id: 'q-multi',
+            text: 'Multi Q',
+            type: SurveyQuestionType.MULTIPLE_CHOICE,
+            isRequired: true,
+            choiceConfig: { minChoices: 2, maxChoices: 5 }
+          }
+        ],
+      };
+      repo.findSurveyRawById.mockResolvedValue(survey as any);
+      redis.hasUserSubmittedSurvey.mockResolvedValue(false);
+
+      await expect(
+        service.submitResponse(surveyId, userId, [
+          { questionId: 'q-multi', optionIds: ['opt-1'] }
+        ])
+      ).rejects.toThrow('Question "Multi Q" requires at least 2 choices.');
+    });
+
+    it('should throw BadRequestException if maxChoices is exceeded', async () => {
+      const survey = {
+        id: surveyId,
+        isPublic: true,
+        isFinalized: false,
+        questions: [
+          {
+            id: 'q-multi',
+            text: 'Multi Q',
+            type: SurveyQuestionType.MULTIPLE_CHOICE,
+            isRequired: true,
+            choiceConfig: { minChoices: 1, maxChoices: 2 }
+          }
+        ],
+      };
+      repo.findSurveyRawById.mockResolvedValue(survey as any);
+      redis.hasUserSubmittedSurvey.mockResolvedValue(false);
+
+      await expect(
+        service.submitResponse(surveyId, userId, [
+          { questionId: 'q-multi', optionIds: ['opt-1', 'opt-2', 'opt-3'] }
+        ])
+      ).rejects.toThrow('Question "Multi Q" allows at most 2 choices.');
+    });
+
     it('should successfully submit a response', async () => {
       const survey = {
         id: surveyId,
         isPublic: true,
         isFinalized: false,
         groupId: 'group-1',
-        questions: [{ id: 'q-1' }],
+        questions: [{ id: 'q-1', options: [{ id: 'opt-1' }] }],
       };
       repo.findSurveyRawById.mockResolvedValue(survey as any);
       redis.hasUserSubmittedSurvey.mockResolvedValue(false);
@@ -165,7 +271,16 @@ describe('SubmitService', () => {
         isPublic: true,
         isFinalized: false,
         groupId: 'group-1',
-        questions: [{ id: 'q-2' }],
+        questions: [
+          {
+            id: 'q-2',
+            options: [
+              { id: 'opt-2-1' },
+              { id: 'opt-2-2' },
+              { id: 'opt-2-3' },
+            ],
+          },
+        ],
       };
       repo.findSurveyRawById.mockResolvedValue(survey as any);
       redis.hasUserSubmittedSurvey.mockResolvedValue(false);
@@ -209,6 +324,44 @@ describe('SubmitService', () => {
           expect.objectContaining({ optionId: 'opt-2-2' }),
           expect.objectContaining({ optionId: 'opt-2-3' }),
         ]),
+      );
+    });
+
+    it('should resolve raw SCALE values to UUIDs for Redis tracking', async () => {
+      const scaleValue = '5';
+      const resolvedUuid = 'uuid-for-5';
+      const survey = {
+        id: surveyId,
+        isPublic: true,
+        isFinalized: false,
+        groupId: 'group-1',
+        questions: [
+          {
+            id: 'q-scale',
+            type: SurveyQuestionType.SCALE,
+            options: [{ id: resolvedUuid, text: scaleValue }],
+          },
+        ],
+      };
+      repo.findSurveyRawById.mockResolvedValue(survey as any);
+      redis.hasUserSubmittedSurvey.mockResolvedValue(false);
+      repo.getOrCreateDynamicOption.mockResolvedValue(resolvedUuid);
+
+      await service.submitResponse(surveyId, userId, [
+        { questionId: 'q-scale', optionIds: [scaleValue] },
+      ]);
+
+      expect(redis.performSurveySubmission).toHaveBeenCalledWith(
+        surveyId,
+        userId,
+        expect.arrayContaining([
+          expect.objectContaining({
+            questionId: 'q-scale',
+            optionIds: [resolvedUuid], // Must be the UUID, not '5'
+          }),
+        ]),
+        false,
+        false,
       );
     });
   });

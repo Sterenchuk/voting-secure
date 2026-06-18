@@ -8,24 +8,29 @@ import styles from "./StatsCards.module.css";
 export function StatsCards() {
   const { t } = useI18n();
   const { fetchGlobalStats } = useVotings();
-  const [statsData, setStatsData] = useState({ totalVotes: 0, activeVotings: 0 });
+  const [statsData, setStatsData] = useState({
+    totalVotes: 0,
+    activeVotings: 0,
+    participationRate: 0,
+    avgTurnout: 0,
+  });
 
   useEffect(() => {
-    fetchGlobalStats().then(res => {
+    fetchGlobalStats().then((res) => {
       if (res.data) {
         setStatsData(res.data);
       }
     });
-    
+
     // Refresh stats every 30 seconds
     const interval = setInterval(() => {
-      fetchGlobalStats().then(res => {
+      fetchGlobalStats().then((res) => {
         if (res.data) {
           setStatsData(res.data);
         }
       });
     }, 30000);
-    
+
     return () => clearInterval(interval);
   }, [fetchGlobalStats]);
 
@@ -65,8 +70,8 @@ export function StatsCards() {
     },
     {
       label: t.dashboard.stats.participation,
-      value: "82%",
-      change: "+5%",
+      value: `${statsData.participationRate}%`,
+      change: statsData.participationRate > 0 ? "Real-time" : "N/A",
       changeType: "positive" as const,
       icon: (
         <svg
@@ -83,9 +88,9 @@ export function StatsCards() {
     },
     {
       label: t.dashboard.stats.avgTurnout,
-      value: "85%",
-      change: "-2%",
-      changeType: "negative" as const,
+      value: `${statsData.avgTurnout}%`,
+      change: statsData.avgTurnout > 0 ? "Avg" : "N/A",
+      changeType: "positive" as const,
       icon: (
         <svg
           viewBox="0 0 24 24"

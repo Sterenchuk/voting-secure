@@ -11,7 +11,6 @@ import {
 } from '@nestjs/common';
 
 import { AuditService } from './audit.service';
-import { AuditVerificationQueueService } from './worker/queue.service';
 import { AuditVerifyGuard } from './audit-verify.guard';
 import { GroupRoleGuard } from '../common/guards/group-role.guard';
 import { GroupRoles } from '../common/decorators/group-roles.decorator';
@@ -28,7 +27,6 @@ import { Model } from 'mongoose';
 export class AuditController {
   constructor(
     private readonly auditService: AuditService,
-    private readonly queueService: AuditVerificationQueueService,
     @InjectModel(AuditVerificationJob.name)
     private readonly jobModel: Model<AuditVerificationJob>,
   ) {}
@@ -75,7 +73,7 @@ export class AuditController {
   @UseGuards(AuditVerifyGuard)
   @HttpCode(HttpStatus.OK)
   async verifyFullChain() {
-    const jobId = await this.queueService.startVerification('global');
+    const jobId = await this.auditService.startVerification('global');
     return { jobId };
   }
 
@@ -95,7 +93,7 @@ export class AuditController {
   async startVerification(
     @Body() body: { scope: string; scopeId?: string; forceFull?: boolean },
   ) {
-    const jobId = await this.queueService.startVerification(
+    const jobId = await this.auditService.startVerification(
       body.scope,
       body.scopeId,
       body.forceFull,
@@ -118,7 +116,7 @@ export class AuditController {
   @GroupRoles(GroupRole.OWNER, GroupRole.ADMIN)
   @HttpCode(HttpStatus.OK)
   async verifyGroupChain(@Param('groupId') groupId: string) {
-    const jobId = await this.queueService.startVerification('group', groupId);
+    const jobId = await this.auditService.startVerification('group', groupId);
     return { jobId };
   }
 
@@ -128,7 +126,7 @@ export class AuditController {
   @Public()
   @HttpCode(HttpStatus.OK)
   async verifyVotingChain(@Param('votingId') votingId: string) {
-    const jobId = await this.queueService.startVerification('voting', votingId);
+    const jobId = await this.auditService.startVerification('voting', votingId);
     return { jobId };
   }
 

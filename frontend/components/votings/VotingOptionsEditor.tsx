@@ -28,7 +28,7 @@ export function VotingOptionsEditor({
 
       <div className={styles.optionList}>
         {options.map((opt, idx) => (
-          <div key={idx} className={styles.optionRow}>
+          <div key={idx} className={`${styles.optionRow} animate-fade-in-down`}>
             <span className={styles.optionIndex}>{idx + 1}</span>
             <Input
               value={opt}

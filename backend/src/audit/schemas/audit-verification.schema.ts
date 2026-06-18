@@ -12,13 +12,13 @@ export class AuditVerification {
   @Prop({ required: true, type: String, index: true })
   scope: 'global' | 'group' | 'voting' | 'survey';
 
-  @Prop({ type: String, default: null, index: true })
+  @Prop({ type: String, index: true })
   scopeId: string | null;
 
   @Prop({ required: true, type: Number })
   lastVerifiedSequence: number;
 
-  @Prop({ type: Date, default: null })
+  @Prop({ type: Date })
   lastFullVerificationAt: Date | null;
 
   @Prop({ required: true })

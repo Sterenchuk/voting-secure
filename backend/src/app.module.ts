@@ -12,11 +12,14 @@ import { AuditModule } from './audit/audit.module';
 import { AuditInterceptor } from './audit/audit.interceptor';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { MongooseModule } from '@nestjs/mongoose';
+import { BullModule } from '@nestjs/bullmq';
+import { BroadcastModule } from './broadcast/broadcast.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     MongooseModule.forRootAsync({
+      imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const uri = config.getOrThrow<string>('MONGO_URI');
@@ -30,25 +33,37 @@ import { MongooseModule } from '@nestjs/mongoose';
     MailModule,
     VotingsModule,
     GroupsModule,
-    ThrottlerModule.forRoot([
-      {
-        name: 'short',
-        ttl: 1000,
-        limit: 3,
-      },
-      {
-        name: 'medium',
-        ttl: 10000,
-        limit: 20,
-      },
-      {
-        name: 'long',
-        ttl: 60000,
-        limit: 100,
-      },
-    ]),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        {
+          name: 'short',
+          ttl: 1000,
+          limit: 3,
+        },
+        {
+          name: 'medium',
+          ttl: 10000,
+          limit: 20,
+        },
+        {
+          name: 'long',
+          ttl: 60000,
+          limit: 100,
+        },
+      ],
+    }),
     SurveysModule,
     AuditModule,
+    BroadcastModule,
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: {
+          host: config.get('REDIS_HOST', 'localhost'),
+          port: config.get('REDIS_PORT', 6379),
+        },
+      }),
+    }),
   ],
   providers: [
     {

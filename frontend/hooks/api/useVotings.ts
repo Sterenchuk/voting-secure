@@ -109,8 +109,9 @@ const mapVoting = (v: any): Voting => {
   );
 
   const otherTotal = v.otherTotal ?? 0;
+  const abstentionsCount = v.abstentionsCount ?? 0;
   const totalVotes =
-    options.reduce((sum, o) => sum + o.voteCount, 0) + otherTotal;
+    options.reduce((sum, o) => sum + o.voteCount, 0) + otherTotal + abstentionsCount;
   const participantsCount =
     v.participantsCount ?? v._count?.participations ?? 0;
 
@@ -378,6 +379,7 @@ export function useVotings() {
           otherTotal,
           dynamicOptions: updatedDynamicOptions,
           abstentionsCount,
+          participantsCount: results.totalBallots,
         };
 
         return {
@@ -418,15 +420,22 @@ export function useVotings() {
   }, []);
 
   const fetchGlobalStats = useCallback(async () => {
-    return api.get<{ totalVotes: number; activeVotings: number }>(
-      "/votings/global/stats",
-    );
+    return api.get<{
+      totalVotes: number;
+      activeVotings: number;
+      participationRate: number;
+      avgTurnout: number;
+    }>("/votings/global/stats");
   }, []);
 
   const fetchGlobalTrends = useCallback(async () => {
     return api.get<Array<{ timestamp: string; count: number }>>(
       "/votings/global/trends",
     );
+  }, []);
+
+  const fetchRecentActivity = useCallback(async (limit = 5) => {
+    return api.get<any[]>(`/votings/recent-activity?limit=${limit}`);
   }, []);
 
   const finalizeVoting = useCallback(async (id: string) => {
@@ -468,6 +477,7 @@ export function useVotings() {
     fetchParticipationStats,
     fetchGlobalStats,
     fetchGlobalTrends,
+    fetchRecentActivity,
   };
 }
 

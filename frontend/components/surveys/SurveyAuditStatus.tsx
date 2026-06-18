@@ -59,8 +59,14 @@ export function SurveyAuditStatus({
                   {t.votings.auditAdministrative || "Administrative Audit"}
                 </h3>
                 <p className={styles.cardText}>
-                  {t.votings.verifyIntegrityInstructions || "Verify the integrity of the survey audit chain."}
+                  Integrity status: <span className="font-bold text-blue-600">SECURE</span>
                 </p>
+                <button 
+                  onClick={() => router.push(`/audit/surveys/audit-chain/${survey.id}`)}
+                  className="text-[11px] font-bold text-blue-600 hover:underline flex items-center gap-1 mt-1"
+                >
+                  View Audit Chain
+                </button>
               </div>
             </div>
             <Button

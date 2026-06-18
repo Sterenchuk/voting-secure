@@ -56,8 +56,9 @@ async function main() {
 
   // Seed 10,000 stress test users in batches
   console.log('Creating 10,000 stress test users...');
-  const BATCH_SIZE = 500;
-  for (let i = 0; i < 10000; i += BATCH_SIZE) {
+  const TOTAL_STRESS_USERS = 10000;
+  const BATCH_SIZE = 1000;
+  for (let i = 0; i < TOTAL_STRESS_USERS; i += BATCH_SIZE) {
     const usersBatch: {
       email: string;
       emailHash: string;
@@ -83,15 +84,16 @@ async function main() {
       data: usersBatch,
       skipDuplicates: true,
     });
-    console.log(`Processed ${i + BATCH_SIZE} stress users...`);
+    if ((i + BATCH_SIZE) % 5000 === 0) {
+      console.log(`Processed ${i + BATCH_SIZE} stress users...`);
     }
+  }
 
-    // Force set all users as verified
-    console.log('Force verifying all users...');
-    await prisma.$executeRaw`UPDATE "User" SET "isEmailVerified" = true;`;
+  // Force set all users as verified
+  console.log('Force verifying all users...');
+  await prisma.$executeRaw`UPDATE "User" SET "isEmailVerified" = true;`;
 
-    // 2. Create Alpha Group
-
+  // 2. Create Groups
   console.log('Creating groups...');
   const groupMap = new Map<string, string>();
   for (const groupData of GROUPS_DATA) {
@@ -105,6 +107,107 @@ async function main() {
       },
     });
     groupMap.set(groupData.name, group.id);
+  }
+
+  // 2.5 Create Survey Test Suite
+  console.log('Creating Survey Test Suite...');
+  const surveyOwnerId = userMap.get('owner1@example.com');
+  const surveyGroupId = groupMap.get('Alpha Group');
+
+  if (surveyOwnerId && surveyGroupId) {
+    const survey = await prisma.survey.create({
+      data: {
+        title: 'Comprehensive Survey Test Suite',
+        description:
+          'A survey containing all question types and configurations for testing.',
+        creatorId: surveyOwnerId,
+        groupId: surveyGroupId,
+        isPublic: true,
+        questions: {
+          create: [
+            {
+              type: 'SINGLE_CHOICE',
+              text: 'Single Choice (No Other)',
+              isRequired: true,
+              order: 0,
+              options: {
+                create: [
+                  { text: 'Option 1', order: 0 },
+                  { text: 'Option 2', order: 1 },
+                  { text: 'Option 3', order: 2 },
+                ],
+              },
+            },
+            {
+              type: 'SINGLE_CHOICE',
+              text: 'Single Choice (With Other)',
+              isRequired: true,
+              order: 1,
+              choiceConfig: { create: { allowOther: true } },
+              options: {
+                create: [
+                  { text: 'Red', order: 0 },
+                  { text: 'Green', order: 1 },
+                  { text: 'Blue', order: 2 },
+                ],
+              },
+            },
+            {
+              type: 'MULTIPLE_CHOICE',
+              text: 'Multiple Choice (No Other)',
+              isRequired: true,
+              order: 2,
+              choiceConfig: {
+                create: { allowMultiple: true, minChoices: 1, maxChoices: 2 },
+              },
+              options: {
+                create: [
+                  { text: 'Apple', order: 0 },
+                  { text: 'Banana', order: 1 },
+                  { text: 'Cherry', order: 2 },
+                ],
+              },
+            },
+            {
+              type: 'MULTIPLE_CHOICE',
+              text: 'Multiple Choice (With Other)',
+              isRequired: true,
+              order: 3,
+              choiceConfig: {
+                create: { allowMultiple: true, allowOther: true },
+              },
+              options: {
+                create: [
+                  { text: 'C#', order: 0 },
+                  { text: 'TypeScript', order: 1 },
+                  { text: 'Rust', order: 2 },
+                ],
+              },
+            },
+            {
+              type: 'FREEFORM',
+              text: 'Freeform Text (Required)',
+              isRequired: true,
+              order: 4,
+            },
+            {
+              type: 'FREEFORM',
+              text: 'Freeform Text (Optional)',
+              isRequired: false,
+              order: 5,
+            },
+            {
+              type: 'SCALE',
+              text: 'Scale / Rating Question',
+              isRequired: true,
+              order: 6,
+              scaleConfig: { create: { scaleMin: 1, scaleMax: 5, step: 1 } },
+            },
+          ],
+        },
+      },
+    });
+    console.log(`Created survey: ${survey.title}`);
   }
 
   // 3. Create Memberships

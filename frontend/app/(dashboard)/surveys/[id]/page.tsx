@@ -6,6 +6,7 @@ import { useI18n } from "@/lib/i18n/context";
 import { useAuth } from "@/lib/auth/context";
 import { useSurveys, SurveyAnswer } from "@/hooks/api/useSurveys";
 import { useAudit } from "@/hooks/api/useAudit";
+import { useSurveyUpdates } from "@/hooks/useSocket";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
@@ -19,19 +20,23 @@ import {
   FileCode,
   Table,
   ShieldCheck,
+  Info,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { SurveyResults } from "@/components/surveys/SurveyResults";
+import { ScheduledComponent } from "@/components/common/ScheduledComponent";
 import styles from "./page.module.css";
 
 function CompletedBanner({ endAt }: { endAt: string | null }) {
+  const { t } = useI18n();
   return (
     <div className={styles.gateBanner} data-variant="completed">
       <Lock className={styles.gateIcon} />
       <div>
-        <p className={styles.gateTitle}>This survey has ended</p>
+        <p className={styles.gateTitle}>{t.surveys.surveyEnded}</p>
         {endAt && (
           <p className={styles.gateSub}>
-            Closed on {new Date(endAt).toLocaleDateString()}
+            {t.surveys.closedOn} {new Date(endAt).toLocaleDateString()}
           </p>
         )}
       </div>
@@ -40,16 +45,15 @@ function CompletedBanner({ endAt }: { endAt: string | null }) {
 }
 
 function AlreadyVotedBanner({ receipts }: { receipts?: string[] }) {
+  const { t } = useI18n();
   return (
     <div className={styles.gateBanner} data-variant="voted">
       <CheckCircle className={styles.gateIcon} />
       <div>
-        <p className={styles.gateTitle}>
-          You have already submitted a response
-        </p>
+        <p className={styles.gateTitle}>{t.surveys.alreadySubmitted}</p>
         {receipts && receipts.length > 0 && (
           <p className={styles.gateSub}>
-            Your receipt:{" "}
+            {t.surveys.yourReceipt}:{" "}
             <span className={styles.receiptHash}>
               {receipts[0].slice(0, 20)}…
             </span>
@@ -61,14 +65,13 @@ function AlreadyVotedBanner({ receipts }: { receipts?: string[] }) {
 }
 
 function DraftBanner() {
+  const { t } = useI18n();
   return (
     <div className={styles.gateBanner} data-variant="draft">
       <Clock className={styles.gateIcon} />
       <div>
-        <p className={styles.gateTitle}>This survey is not open yet</p>
-        <p className={styles.gateSub}>
-          Check back when the survey becomes active.
-        </p>
+        <p className={styles.gateTitle}>{t.surveys.notOpenYet}</p>
+        <p className={styles.gateSub}>{t.surveys.checkBackActive}</p>
       </div>
     </div>
   );
@@ -85,13 +88,16 @@ export default function SurveyDetailPage() {
 
   const {
     currentSurvey: survey,
+    results,
     loading,
     fetchSurvey,
+    fetchResults,
+    syncResults,
     getMyStatus,
     requestToken,
-    submitSurvey,
     practiceSubmit,
     finalizeSurvey,
+    fetchParticipationStats,
   } = useSurveys();
 
   const { getAuditStatus, status: auditStatus } = useAudit();
@@ -104,9 +110,24 @@ export default function SurveyDetailPage() {
   const [submitStep, setSubmitStep] = useState<
     "idle" | "awaitingToken" | "submitting" | "done" | "error"
   >("idle");
+  const [tokenRequested, setTokenRequested] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [emailToken, setEmailToken] = useState("");
   const [isAbstaining, setIsAbstaining] = useState(false);
+  const [isPractice, setIsPractice] = useState(false);
+  const [participationStats, setParticipationStats] = useState<
+    Array<{ time: string; votes: number }>
+  >([]);
+
+  useSurveyUpdates(surveyId, (data) => {
+    if (data.results) {
+      syncResults(data.results);
+    }
+    if (surveyId) {
+      fetchParticipationStats(surveyId).then((res) => {
+        if (res.data) setParticipationStats(res.data);
+      });
+    }
+  });
 
   const handleFinalize = async () => {
     if (!surveyId || !user || user.role !== "admin") return;
@@ -136,8 +157,22 @@ export default function SurveyDetailPage() {
 
   useEffect(() => {
     fetchSurvey(surveyId);
-    if (surveyId) getAuditStatus("survey", surveyId);
-  }, [fetchSurvey, surveyId, getAuditStatus]);
+    if (surveyId) {
+      getAuditStatus("survey", surveyId);
+      fetchParticipationStats(surveyId).then((res) => {
+        if (res.data) setParticipationStats(res.data);
+      });
+    }
+  }, [fetchSurvey, surveyId, getAuditStatus, fetchParticipationStats]);
+
+  useEffect(() => {
+    if (surveyId && (survey?.hasParticipated || submitStep === 'done' || survey?.isFinalized)) {
+      fetchResults(surveyId, true);
+      fetchParticipationStats(surveyId).then((res) => {
+        if (res.data) setParticipationStats(res.data);
+      });
+    }
+  }, [surveyId, survey?.hasParticipated, survey?.isFinalized, submitStep, fetchResults, fetchParticipationStats]);
 
   useEffect(() => {
     if (!surveyId) return;
@@ -145,6 +180,34 @@ export default function SurveyDetailPage() {
       if (res.data) setMyStatus(res.data);
     });
   }, [getMyStatus, surveyId]);
+
+  useEffect(() => {
+    if (!tokenRequested || submitStep === "done" || !surveyId) return;
+
+    const interval = setInterval(async () => {
+      const res = await getMyStatus(surveyId);
+      if (res.data?.submitted) {
+        setMyStatus(res.data);
+        setSubmitStep("done");
+        setTokenRequested(false);
+        clearInterval(interval);
+        await fetchSurvey(surveyId);
+        await fetchResults(surveyId, true);
+        const statsRes = await fetchParticipationStats(surveyId);
+        if (statsRes.data) setParticipationStats(statsRes.data);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [
+    tokenRequested,
+    submitStep,
+    surveyId,
+    getMyStatus,
+    fetchSurvey,
+    fetchResults,
+    fetchParticipationStats,
+  ]);
 
   const setAnswer = useCallback((answer: SurveyAnswer) => {
     setAnswers((prev) => {
@@ -166,13 +229,13 @@ export default function SurveyDetailPage() {
       if (
         q.type === SurveyQuestionType.SINGLE_CHOICE &&
         !a.optionIds?.length &&
-        !a.text
+        !a.text?.trim()
       )
         return true;
       if (
         q.type === SurveyQuestionType.MULTIPLE_CHOICE &&
         !a.optionIds?.length &&
-        !a.text
+        !a.text?.trim()
       )
         return true;
       if (q.type === SurveyQuestionType.SCALE && a.scale === undefined)
@@ -186,30 +249,13 @@ export default function SurveyDetailPage() {
   const handleRequestToken = async () => {
     setSubmitError(null);
     setIsAbstaining(false);
-    const res = await requestToken(surveyId, currentAnswers, false, false);
-    if (res.error) {
-      setSubmitError(res.error.message ?? t.common.error);
-    } else {
-      setSubmitStep("awaitingToken");
-    }
-  };
-
-  const handleConfirmWithToken = async () => {
-    setSubmitError(null);
     setSubmitStep("submitting");
-    const res = await submitSurvey(
-      surveyId,
-      isAbstaining ? [] : currentAnswers,
-      emailToken.trim(),
-      isAbstaining,
-      false,
-    );
+    const res = await requestToken(surveyId, currentAnswers, false, false);
+    setSubmitStep("idle");
     if (res.error) {
       setSubmitError(res.error.message ?? t.common.error);
-      setSubmitStep("awaitingToken");
     } else {
-      setMyStatus({ submitted: true });
-      setSubmitStep("done");
+      setTokenRequested(true);
     }
   };
 
@@ -231,14 +277,18 @@ export default function SurveyDetailPage() {
   const handleAbstain = async () => {
     setSubmitError(null);
     setIsAbstaining(true);
+    setSubmitStep("submitting");
     const res = await requestToken(surveyId, [], true, false);
+    setSubmitStep("idle");
     if (res.error) {
       setSubmitError(res.error.message ?? t.common.error);
       setIsAbstaining(false);
     } else {
-      setSubmitStep("awaitingToken");
+      setTokenRequested(true);
     }
   };
+
+  // ── Abstain ───────────────────────────────────────────────────────────────
 
   const breadcrumbs = [
     { label: t.common.dashboard, href: "/dashboard" },
@@ -274,6 +324,7 @@ export default function SurveyDetailPage() {
   // ── Determine voting eligibility ──────────────────────────────────────────
   const isCompleted = survey.status === "completed";
   const isDraft = survey.status === "draft";
+  const isScheduled = survey.startAt && new Date(survey.startAt) > new Date();
   
   const userRole = survey.userGroupRole;
   const isGroupAdmin = userRole === "ADMIN" || userRole === "OWNER";
@@ -284,11 +335,30 @@ export default function SurveyDetailPage() {
 
   const hasParticipated =
     myStatus?.submitted ?? survey.hasParticipated ?? false;
-  const canVote = !isCompleted && !isDraft && !hasParticipated;
+  const canVote = !isCompleted && !isDraft && !hasParticipated && !isScheduled;
 
   return (
     <div className={styles.page}>
       <Breadcrumbs items={breadcrumbs} />
+
+      {isPractice && (
+        <div className={styles.sandboxBanner}>
+          <div className={styles.sandboxContent}>
+            <span className={styles.sandboxBadge}>SANDBOX MODE</span>
+            <p className={styles.sandboxText}>
+              This is a simulation. No real data will be recorded in the
+              permanent audit chain.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setIsPractice(false)}
+          >
+            Exit Practice
+          </Button>
+        </div>
+      )}
 
       <div className={styles.header}>
         <div>
@@ -311,13 +381,13 @@ export default function SurveyDetailPage() {
                <Lock className="w-3 h-3" /> Audit required
              </div>
           )}
-          {survey.isFinalized && isAdmin && (
+          {(survey.isFinalized || isCompleted) && isAdmin && (
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={downloadCsvResults}>
-                <Table className="w-4 h-4 mr-2" /> Export CSV
+                <Table className="w-4 h-4 mr-2" /> {t.surveys.exportCsv}
               </Button>
               <Button variant="outline" size="sm" onClick={downloadEmlResults}>
-                <FileCode className="w-4 h-4 mr-2" /> Export EML
+                <FileCode className="w-4 h-4 mr-2" /> {t.surveys.exportEml}
               </Button>
             </div>
           )}
@@ -331,6 +401,14 @@ export default function SurveyDetailPage() {
             >
               Verify Chain
             </Button>
+          )}
+          {isAdmin && (
+             <button 
+                onClick={() => router.push(`/audit/surveys/audit-chain/${surveyId}`)}
+                className="text-[11px] font-bold text-blue-600 hover:underline flex items-center gap-1"
+              >
+                <Info size={12} /> View Audit Explorer
+              </button>
           )}
           <div className={styles.meta}>
             <span
@@ -351,63 +429,78 @@ export default function SurveyDetailPage() {
 
       {isAdmin && !survey.isFinalized && auditStatus && (
         <Card className="mb-6 p-4 border-dashed bg-slate-50/50">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="text-sm font-bold flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-blue-500" />
-              Audit Integrity Status
-            </h3>
-            <Badge variant={isSecure ? "default" : "destructive"} className={isSecure ? "bg-green-600" : ""}>
-              {isSecure ? "SECURE" : "UNVERIFIED"}
-            </Badge>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div>
-              <span className="block text-muted-foreground mb-1 uppercase tracking-wider font-semibold" style={{ fontSize: '10px' }}>Last Full Scan</span>
-              <span className="font-mono font-medium text-slate-700">
-                {auditStatus.lastFullVerificationAt 
-                  ? new Date(auditStatus.lastFullVerificationAt).toLocaleString() 
-                  : "Never (Scan required)"}
-              </span>
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-blue-500" />
+                Audit Integrity Status
+              </h3>
+              <Badge variant={isSecure ? "default" : "destructive"} className={`${isSecure ? "bg-green-600" : ""} text-[10px] h-5`}>
+                {isSecure ? "SECURE" : "UNVERIFIED"}
+              </Badge>
+              <button 
+                onClick={() => router.push(`/audit/surveys/audit-chain/${surveyId}`)}
+                className="text-[11px] font-bold text-blue-600 hover:underline flex items-center gap-1"
+              >
+                <Info size={12} /> View Audit Explorer
+              </button>
             </div>
-            <div>
-              <span className="block text-muted-foreground mb-1 uppercase tracking-wider font-semibold" style={{ fontSize: '10px' }}>Verified Sequence</span>
-              <span className="font-mono font-medium text-slate-700">Block #{auditStatus.lastVerifiedSequence}</span>
-            </div>
+            {!isSecure && (
+              <p className="text-[10px] text-orange-600 flex items-center gap-1 font-medium bg-orange-100/50 px-2 py-1 rounded">
+                <AlertCircle className="w-3 h-3" />
+                Audit required
+              </p>
+            )}
           </div>
-          {!isSecure && (
-            <p className="mt-3 text-[11px] text-orange-600 flex items-center gap-1 font-medium bg-orange-100/50 p-2 rounded">
-              <AlertCircle className="w-3 h-3" />
-              {auditStatus.reason || "A full audit scan is required before finalization can be performed."}
-            </p>
-          )}
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="mt-4 w-full bg-white border-slate-200 hover:bg-slate-50 text-slate-600 font-bold"
-            onClick={() => router.push(`/audit/surveys/audit-chain/${surveyId}`)}
-          >
-            Open Audit Explorer
-          </Button>
         </Card>
       )}
 
+      {!isScheduled && !isPractice && canVote && (
+        <div className={styles.practicePrompt}>
+          <p>Want to try before you submit?</p>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setIsPractice(true)}
+          >
+            Start Practice Mode
+          </Button>
+        </div>
+      )}
+
       {/* ── Voting gate ── */}
-      {isCompleted && <CompletedBanner endAt={survey.endAt} />}
-      {!isCompleted && isDraft && <DraftBanner />}
-      {!isCompleted && !isDraft && hasParticipated && (
+      {isScheduled && <ScheduledComponent startAt={survey.startAt!} />}
+      {!isScheduled && isCompleted && <CompletedBanner endAt={survey.endAt} />}
+      {!isScheduled && !isCompleted && isDraft && <DraftBanner />}
+      {!isScheduled && !isCompleted && !isDraft && hasParticipated && (
         <AlreadyVotedBanner receipts={myStatus?.receipts} />
       )}
 
-      {/* ── Success state after submission ── */}
-      {submitStep === "done" && (
-        <div className={styles.successBanner}>
-          <CheckCircle className={styles.successIcon} />
-          <div>
-            <p className={styles.successTitle}>Response submitted!</p>
-            <p className={styles.successSub}>
-              Thank you for participating. Your response has been recorded.
-            </p>
+      {/* ── Success state after submission or if finalized ── */}
+      {(submitStep === "done" || hasParticipated || isCompleted) && (
+        <div className="space-y-6">
+          {submitStep === "done" && (
+            <div className={styles.successBanner}>
+              <CheckCircle className={styles.successIcon} />
+              <div>
+                <p className={styles.successTitle}>Response submitted!</p>
+                <p className={styles.successSub}>
+                  Thank you for participating. Your response has been recorded.
+                </p>
+              </div>
+            </div>
+          )}
+          
+          <div className="mt-8">
+          {results && (
+            <SurveyResults
+              survey={survey}
+              results={results}
+              participationStats={participationStats}
+            />
+          )}
           </div>
+
         </div>
       )}
 
@@ -427,58 +520,57 @@ export default function SurveyDetailPage() {
 
           {submitError && <p className={styles.errorMsg}>{submitError}</p>}
 
-          {/* Token confirmation step */}
-          {submitStep === "awaitingToken" && (
-            <Card className={styles.tokenCard}>
-              <p className={styles.tokenInfo}>
-                A confirmation link has been sent to your email. Enter the token
-                from the email below to confirm your submission.
-              </p>
-              <input
-                className={styles.tokenInput}
-                placeholder="Paste your token here…"
-                value={emailToken}
-                onChange={(e) => setEmailToken(e.target.value)}
-              />
-              <div className={styles.tokenActions}>
+          <div className={styles.submitActions}>
+            {!tokenRequested ? (
+              <>
                 <Button
-                  onClick={handleConfirmWithToken}
-                  disabled={!emailToken.trim()}
+                  onClick={handleRequestToken}
+                  disabled={missingRequired.length > 0}
                   loading={isSubmitting}
                 >
-                  Confirm Submission
+                  Submit Response
                 </Button>
-                <Button variant="ghost" onClick={() => setSubmitStep("idle")}>
-                  Cancel
+
+                <Button
+                  variant="outline"
+                  onClick={handlePracticeSubmit}
+                  disabled={missingRequired.length > 0}
+                  loading={isSubmitting}
+                >
+                  Practice Submit
                 </Button>
+
+                {survey.allowAbstain && (
+                  <Button variant="ghost" onClick={handleAbstain} disabled={isSubmitting}>
+                    Abstain
+                  </Button>
+                )}
+              </>
+            ) : (
+              <div className={styles.emailCheck}>
+                <div className={styles.emailCheckHeader}>
+                  <div className={styles.spinnerSmall} />
+                  <span>📧 Check your email to confirm</span>
+                </div>
+                <p className={styles.emailCheckText}>
+                  We've sent a confirmation link to your email. Please click it to finalize your response.
+                </p>
+                <div className={styles.emailCheckActions}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRequestToken}
+                    disabled={isSubmitting}
+                  >
+                    Resend Email
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setTokenRequested(false)}>
+                    Change Selection
+                  </Button>
+                </div>
               </div>
-            </Card>
-          )}
-
-          {submitStep === "idle" && (
-            <div className={styles.submitActions}>
-              <Button
-                onClick={handleRequestToken}
-                disabled={missingRequired.length > 0}
-              >
-                Submit Response
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={handlePracticeSubmit}
-                disabled={missingRequired.length > 0}
-              >
-                Practice Submit
-              </Button>
-
-              {survey.allowAbstain && (
-                <Button variant="ghost" onClick={handleAbstain}>
-                  Abstain
-                </Button>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </div>

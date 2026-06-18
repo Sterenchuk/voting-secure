@@ -16,6 +16,7 @@ import { VotingDetailHeader } from "@/components/votings/VotingDetailHeader";
 import { VotingResults } from "@/components/votings/VotingResults";
 import { VotingForm } from "@/components/votings/VotingForm";
 import { AuditStatus } from "@/components/votings/AuditStatus";
+import { ScheduledComponent } from "@/components/common/ScheduledComponent";
 import styles from "./page.module.css";
 
 export default function VotingDetailPage() {
@@ -121,8 +122,13 @@ export default function VotingDetailPage() {
 
   const isMultiple = currentVoting.type === VotingType.MULTIPLE_CHOICE;
   const alreadyVoted = currentVoting.hasVoted || submitted;
+  const isScheduled =
+    currentVoting.startAt && new Date(currentVoting.startAt) > new Date();
   const canVote =
-    currentVoting.isPublic && !currentVoting.isFinalized && !alreadyVoted;
+    currentVoting.isPublic &&
+    !currentVoting.isFinalized &&
+    !alreadyVoted &&
+    !isScheduled;
 
   const handleToggle = (optionId: string | "OTHER" | "ABSTAIN") => {
     if (!canVote || tokenRequested) return;
@@ -290,7 +296,11 @@ export default function VotingDetailPage() {
 
       <VotingDetailHeader voting={currentVoting} />
 
-      {!isPractice && currentVoting.isPublic && !alreadyVoted && (
+      {isScheduled && (
+        <ScheduledComponent startAt={currentVoting.startAt!} />
+      )}
+
+      {!isScheduled && !isPractice && currentVoting.isPublic && !alreadyVoted && (
         <div className={styles.practicePrompt}>
           <p>{t.votings.practiceModeHint || "Want to try before you vote?"}</p>
           <Button

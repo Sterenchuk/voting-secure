@@ -93,49 +93,29 @@ export function AuditStatus({
                     : t.votings.verifyIntegrityInstructions}
                 </p>
 
-                {/* Audit Metadata */}
+                {/* Simplified Audit Badge & Link */}
                 {!isFinalized && hasPermission && auditStatus && (
-                  <div className={styles.metaGrid}>
-                    <div className={styles.metaItem}>
-                      <span className={styles.metaLabel}>Last Full Scan:</span>
-                      <span className={styles.metaValue}>
-                        {auditStatus.lastFullVerificationAt
-                          ? new Date(
-                              auditStatus.lastFullVerificationAt,
-                            ).toLocaleString()
-                          : "Never"}
-                      </span>
-                    </div>
-                    <div className={styles.metaItem}>
-                      <span className={styles.metaLabel}>Verified Up To:</span>
-                      <span className={styles.metaValue}>
-                        Block #{auditStatus.lastVerifiedSequence}
-                      </span>
-                    </div>
-                    <div className={styles.metaItem}>
-                      <span className={styles.metaLabel}>Status:</span>
-                      <span
-                        className={`${styles.statusBadge} ${isSecure ? styles.statusSecure : styles.statusWarning}`}
+                  <div className="flex items-center gap-3 mt-2">
+                    <span
+                        className={`${styles.statusBadge} ${isSecure ? styles.statusSecure : styles.statusWarning} text-[10px] py-0.5 px-2`}
                       >
                         {isSecure ? (
                           <>
-                            <CheckCircle size={12} className="mr-1" /> SECURE
+                            <CheckCircle size={10} className="mr-1" /> SECURE
                           </>
                         ) : (
                           <>
-                            <AlertTriangle size={12} className="mr-1" />{" "}
+                            <AlertTriangle size={10} className="mr-1" />{" "}
                             UNVERIFIED
                           </>
                         )}
-                      </span>
-                    </div>
-                    {!isSecure && (
-                      <div className={styles.secureHint}>
-                        <Info size={12} className="mr-1" />
-                        {auditStatus.reason ||
-                          "Full scan required for finalization."}
-                      </div>
-                    )}
+                    </span>
+                    <button 
+                      onClick={() => router.push(`/audit/votings/audit-chain/${voting.id}`)}
+                      className="text-[11px] font-bold text-blue-600 hover:underline flex items-center gap-1"
+                    >
+                      <Info size={12} /> View Audit Chain
+                    </button>
                   </div>
                 )}
               </div>
@@ -172,14 +152,16 @@ export function AuditStatus({
                   <Table className={styles.btnIcon} /> {t.votings.exportCsv}
                 </Button>
               )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onExportEml}
-                className={styles.actionBtn}
-              >
-                <FileCode className={styles.btnIcon} /> {t.votings.exportEml}
-              </Button>
+              {isFinalized && hasEnded && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onExportEml}
+                  className={styles.actionBtn}
+                >
+                  <FileCode className={styles.btnIcon} /> {t.votings.exportEml}
+                </Button>
+              )}
             </div>
           )}
         </div>

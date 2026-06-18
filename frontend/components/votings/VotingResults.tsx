@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { Voting } from "@/hooks/api/useVotings";
 import { OtherOptionRow } from "@/components/votings/OtherOptionRow";
@@ -32,9 +32,9 @@ export function VotingResults({
 
   const options = voting.options;
   const totalVotes = voting.totalVotes;
-  const showResults = voting.isFinalized || voting.hasVoted || !voting.isPublic;
+  const showResults = voting.isFinalized || voting.hasVoted;
 
-  const trendData = participationStats
+  const trendData = useMemo(() => participationStats
     .map((s) => {
       const d = s.time ? new Date(s.time) : new Date(NaN);
       return {
@@ -44,30 +44,35 @@ export function VotingResults({
         votes: s.votes,
       };
     })
-    .filter((d) => d.time !== "Invalid");
+    .filter((d) => d.time !== "Invalid"), [participationStats]);
 
-  const chartData = options.map((opt) => ({
-    name: opt.text,
-    votes: opt.voteCount,
-  }));
+  const chartData = useMemo(() => {
+    const data = options.map((opt) => ({
+      name: opt.text,
+      votes: opt.voteCount,
+    }));
 
-  if (
-    voting.allowOther &&
-    voting.otherTotal !== undefined &&
-    voting.otherTotal > 0
-  ) {
-    chartData.push({
-      name: t.common.other,
-      votes: voting.otherTotal,
-    });
-  }
+    if (
+      voting.allowOther &&
+      voting.otherTotal !== undefined &&
+      voting.otherTotal > 0
+    ) {
+      data.push({
+        name: t.common.other,
+        votes: voting.otherTotal,
+      });
+    }
 
-  if (voting.abstentionsCount > 0) {
-    chartData.push({
-      name: t.common.abstain,
-      votes: voting.abstentionsCount,
-    });
-  }
+    if (voting.abstentionsCount > 0) {
+      data.push({
+        name: t.common.abstain,
+        votes: voting.abstentionsCount,
+      });
+    }
+
+    // Sort descending by votes
+    return data.sort((a, b) => b.votes - a.votes);
+  }, [options, voting.allowOther, voting.otherTotal, voting.abstentionsCount, t.common.other, t.common.abstain]);
 
   if (!showResults) return null;
 
@@ -190,8 +195,20 @@ export function VotingResults({
             <div className={styles.optionRow}>
               <span className={styles.optionText}>{t.common.abstentions}</span>
               <span className={styles.optionPct}>
-                {voting.abstentionsCount}
+                {totalVotes > 0
+                  ? Math.round((voting.abstentionsCount / totalVotes) * 100)
+                  : 0}
+                %
               </span>
+            </div>
+            <div className={styles.progressBar}>
+              <div
+                className={styles.progressFill}
+                style={{
+                  width: `${totalVotes > 0 ? Math.round((voting.abstentionsCount / totalVotes) * 100) : 0}%`,
+                  opacity: 0.7,
+                }}
+              />
             </div>
           </li>
         )}

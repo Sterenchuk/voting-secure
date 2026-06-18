@@ -17,7 +17,6 @@ import { AuditModule } from '../audit/audit.module';
     RedisModule,
     UsersModule,
     MailModule,
-    JwtModule.register({}),
     GroupsModule,
     AuditModule,
   ],

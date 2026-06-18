@@ -19,6 +19,7 @@ import type { FindVotingQueryDto } from './dto/find.voting.query.dto';
 import { GroupsService } from '../groups/groups.service';
 import { VoteService } from './vote.service';
 import { Role } from '../common/enums/role';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class VotingsService {
@@ -27,6 +28,7 @@ export class VotingsService {
     private readonly groupService: GroupsService,
     @Inject(forwardRef(() => VoteService))
     private readonly voteService: VoteService,
+    private readonly auditService: AuditService,
   ) {}
 
   // ─── Voting CRUD ─────────────────────────────────────────────────────────────
@@ -213,6 +215,44 @@ export class VotingsService {
       throw new ForbiddenException('Cannot delete a finalized voting');
     }
 
-    await this.repo.softDeleteVoting(id);
+    return await this.repo.softDeleteVoting(id);
+  }
+
+  async getRecentActivity(limit = 10) {
+    const { records } = await this.auditService.searchChain({ limit });
+    return records.map((r: any) => ({
+      id: r._id?.toString() || r.sequence.toString(),
+      type: this.mapActionToType(r.action),
+      title: this.mapActionToTitle(r.action),
+      description: this.mapActionToDescription(r),
+      timestamp: r.createdAt,
+    }));
+  }
+
+  private mapActionToType(action: string) {
+    if (action.includes('VOTING')) return 'vote';
+    if (action.includes('SURVEY')) return 'survey';
+    if (action.includes('GROUP')) return 'group';
+    return 'audit';
+  }
+
+  private mapActionToTitle(action: string) {
+    const map: Record<string, string> = {
+      VOTING_CREATED: 'New voting created',
+      BALLOT_CAST: 'New vote cast',
+      VOTING_RESULT_SEALED: 'Voting finalized',
+      SURVEY_CREATED: 'New survey created',
+      SURVEY_BALLOT_CAST: 'Survey response received',
+      GROUP_CREATED: 'New group formed',
+    };
+    return map[action] || 'System activity';
+  }
+
+  private mapActionToDescription(record: any) {
+    const { action, payload } = record;
+    if (action === 'BALLOT_CAST') return `A vote was cast in "${payload.votingId}"`;
+    if (action === 'VOTING_CREATED') return `Voting "${payload.title}" is now open`;
+    if (action === 'VOTING_RESULT_SEALED') return `Results for "${payload.votingId}" are now immutable`;
+    return 'Action recorded in audit chain';
   }
 }

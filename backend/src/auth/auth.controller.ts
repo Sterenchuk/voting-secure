@@ -115,13 +115,10 @@ export class AuthController {
   })
   async create(
     @Body() registerDto: RegisterDto,
-    @Res({ passthrough: true }) res: Response,
     @Req() req: any,
   ) {
     const result = await this.authService.register(registerDto, Role.USER);
-    // Registration always sets refresh token for now
-    this.setAuthCookies(res, result.accessToken, result.refreshToken, true);
-
+    
     // Attach user for the AuditInterceptor
     req.user = { sub: result.user.id };
 
@@ -152,8 +149,16 @@ export class AuthController {
     action: SecurityAction.EMAIL_VERIFY_COMPLETED,
     extractPayload: () => ({}),
   })
-  verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
-    return this.authService.verifyEmail(verifyEmailDto.token);
+  async verifyEmail(
+    @Body() verifyEmailDto: VerifyEmailDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.verifyEmail(verifyEmailDto.token);
+    this.setAuthCookies(res, result.accessToken, result.refreshToken, true);
+
+    return {
+      user: result.user,
+    };
   }
 
   @HttpCode(HttpStatus.OK)

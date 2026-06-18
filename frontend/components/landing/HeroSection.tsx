@@ -4,10 +4,12 @@ import React from "react";
 import Link from "next/link";
 import { useI18n } from "@/lib/i18n/context";
 import { Button } from "@/components/common/Button";
+import { useAuth } from "@/hooks/api/useAuth";
 import styles from "./HeroSection.module.css";
 
 export function HeroSection() {
   const { t } = useI18n();
+  const { isAuthenticated } = useAuth();
 
   return (
     <section className={styles.hero}>
@@ -32,9 +34,15 @@ export function HeroSection() {
           <p className={styles.subtitle}>{t.landing.hero.subtitle}</p>
 
           <div className={styles.actions}>
-            <Button as="link" href="/signup" size="lg">
-              {t.landing.hero.ctaStart}
-            </Button>
+            {isAuthenticated ? (
+              <Button as="link" href="/dashboard" size="lg">
+                {t.landing.hero.ctaDashboard}
+              </Button>
+            ) : (
+              <Button as="link" href="/signup" size="lg">
+                {t.landing.hero.ctaStart}
+              </Button>
+            )}
             <Button as="link" href="/audit" variant="outline" size="lg">
               {t.landing.hero.ctaAudit}
             </Button>

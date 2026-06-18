@@ -19,7 +19,12 @@ interface QuestionDraft {
   text: string;
   isRequired: boolean;
   options: string[];
-  choiceConfig: { allowMultiple: boolean; allowOther: boolean };
+  choiceConfig: {
+    allowMultiple: boolean;
+    allowOther: boolean;
+    minChoices?: number;
+    maxChoices?: number;
+  };
   scaleConfig: { scaleMin: number; scaleMax: number; step: number };
 }
 
@@ -28,7 +33,12 @@ const defaultQuestion = (): QuestionDraft => ({
   text: "",
   isRequired: true,
   options: ["", ""],
-  choiceConfig: { allowMultiple: false, allowOther: false },
+  choiceConfig: {
+    allowMultiple: false,
+    allowOther: false,
+    minChoices: 1,
+    maxChoices: 1,
+  },
   scaleConfig: { scaleMin: 1, scaleMax: 5, step: 1 },
 });
 
@@ -147,6 +157,8 @@ export default function CreateSurveyForm() {
             ? {
                 allowMultiple: q.choiceConfig.allowMultiple,
                 allowOther: q.choiceConfig.allowOther,
+                minChoices: q.choiceConfig.minChoices,
+                maxChoices: q.choiceConfig.maxChoices,
               }
             : undefined,
         scaleConfig:

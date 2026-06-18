@@ -141,4 +141,11 @@ export class VoteGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const event: IVotingResultsEvent = { votingId, results };
     this.server.to(votingRoom(votingId)).emit(WS_EVENTS.VOTING_RESULTS, event);
   }
+
+  /**
+   * Broadcast global stats to all connected clients.
+   */
+  emitGlobalStats(stats: any) {
+    this.server.emit('global:stats', stats);
+  }
 }

@@ -83,17 +83,6 @@ export function VotingCard({ voting }: VotingCardProps) {
             )}
             {/* Stats column */}
           </div>
-
-          <div className={styles.cardStats}>
-            <div className={styles.stat}>
-              <span className={styles.statValue}>{voting.participantsCount}</span>
-              <span className={styles.statLabel}>{t.votings.votes}</span>
-            </div>
-            <div className={styles.stat}>
-              <span className={styles.statValue}>{voting.options.length}</span>
-              <span className={styles.statLabel}>{t.votings.eligible}</span>
-            </div>
-          </div>
         </div>
 
         <div className={styles.cardFooter}>

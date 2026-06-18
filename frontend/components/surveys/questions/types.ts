@@ -7,7 +7,7 @@ export interface QuestionProps {
     type: SurveyQuestionType;
     text: string;
     isRequired: boolean;
-    options: { id: string; text: string; order: number }[];
+    options: { id: string; text: string; order: number; isDynamic: boolean }[];
     choiceConfig?: { allowOther: boolean; allowMultiple: boolean } | null;
     scaleConfig?: { scaleMin: number; scaleMax: number; step: number } | null;
   };

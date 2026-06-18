@@ -5,69 +5,96 @@ import { Radio } from "@/components/common/Radio";
 import styles from "./SurveyQuestion.module.css";
 
 export function SingleChoice({ question, answer, onChange }: QuestionProps) {
-  const [otherText, setOtherText] = useState("");
-  const isOther = answer?.text !== undefined && answer?.text !== null;
+  const [otherText, setOtherText] = useState(answer?.text ?? "");
+  const isOther = answer?.text !== undefined;
+  const selectedId = answer?.optionIds?.[0];
+
+  const handleSelect = (optId: string) => {
+    onChange({
+      questionId: question.id,
+      type: question.type,
+      optionIds: [optId],
+      text: undefined,
+    });
+  };
+
+  const handleSelectOther = () => {
+    onChange({
+      questionId: question.id,
+      type: question.type,
+      optionIds: [],
+      text: otherText,
+    });
+  };
 
   return (
     <div className={styles.questionBody}>
-      {question.options
-        .slice()
-        .sort((a, b) => a.order - b.order)
-        .map((opt) => {
-          const isSelected = answer?.optionIds?.[0] === opt.id && !isOther;
-          return (
+      <ul className={styles.optionList}>
+        {question.options
+          .filter(opt => !opt.isDynamic)
+          .slice()
+          .sort((a, b) => a.order - b.order)
+          .map((opt) => {
+            const isSelected = selectedId === opt.id && !isOther;
+            return (
+              <li
+                key={opt.id}
+                className={cn(
+                  styles.optionItem,
+                  styles.optionClickable,
+                  isSelected && styles.optionSelected
+                )}
+              >
+                <Radio
+                  key={opt.id}
+                  name={question.id}
+                  checked={isSelected}
+                  onChange={() => handleSelect(opt.id)}
+                  label={<span className={styles.optionText}>{opt.text}</span>}
+                  className={styles.fullWidthControl}
+                />
+              </li>
+            );
+          })}
+        {question.choiceConfig?.allowOther && (
+          <li
+            className={cn(
+              styles.optionItem,
+              styles.optionClickable,
+              isOther && styles.optionSelected
+            )}
+          >
             <Radio
-              key={opt.id}
               name={question.id}
-              checked={isSelected}
-              onChange={() =>
-                onChange({
-                  questionId: question.id,
-                  type: question.type,
-                  optionIds: [opt.id],
-                  text: undefined,
-                })
+              checked={isOther}
+              onChange={handleSelectOther}
+              label={
+                <div className={styles.otherLabelContent}>
+                  <span className={styles.optionText}>Other:</span>
+                  <input
+                    className={styles.otherInput}
+                    value={otherText}
+                    placeholder="___________________"
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      setOtherText(e.target.value);
+                      if (isOther) {
+                        onChange({
+                          questionId: question.id,
+                          type: question.type,
+                          optionIds: [],
+                          text: e.target.value,
+                        });
+                      }
+                    }}
+                  />
+                </div>
               }
-              label={opt.text}
-              className={cn(styles.choiceLabel, isSelected && styles.choiceLabelSelected)}
+              className={styles.fullWidthControl}
             />
-          );
-        })}
-      {question.choiceConfig?.allowOther && (
-        <Radio
-          name={question.id}
-          checked={isOther}
-          onChange={() =>
-            onChange({
-              questionId: question.id,
-              type: question.type,
-              optionIds: [],
-              text: otherText,
-            })
-          }
-          label={
-            <div className={styles.otherLabelContent}>
-              Other:{" "}
-              <input
-                className={styles.otherInput}
-                value={otherText}
-                placeholder="Specify…"
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => {
-                  setOtherText(e.target.value);
-                  onChange({
-                    questionId: question.id,
-                    type: question.type,
-                    optionIds: [],
-                    text: e.target.value,
-                  });
-                }}
-              />
-            </div>
-          }
-          className={cn(styles.choiceLabel, isOther && styles.choiceLabelSelected)}
-        />
-      )}
+          </li>
+        )}
+      </ul>
     </div>
   );
 }

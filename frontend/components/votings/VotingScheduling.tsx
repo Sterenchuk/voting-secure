@@ -3,7 +3,7 @@
 import React from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { Card } from "@/components/common/Card";
-import { Input } from "@/components/common/Input";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 import styles from "./CreateVotingComponents.module.css";
 
 interface VotingSchedulingProps {
@@ -24,20 +24,20 @@ export function VotingScheduling({
       <h2 className={styles.sectionTitle}>{t.votings.scheduling}</h2>
 
       <div className={styles.field}>
-        <label className={styles.label}>{t.votings.startDate}</label>
-        <Input
-          type="datetime-local"
-          value={startAt}
-          onChange={(e) => onChange("startAt", e.target.value)}
+        <DateTimePicker
+          label={t.votings.startDate}
+          date={startAt}
+          setDate={(val) => onChange("startAt", val)}
+          placeholder={t.votings.startDate}
         />
       </div>
 
       <div className={styles.field}>
-        <label className={styles.label}>{t.votings.endDate}</label>
-        <Input
-          type="datetime-local"
-          value={endAt}
-          onChange={(e) => onChange("endAt", e.target.value)}
+        <DateTimePicker
+          label={t.votings.endDate}
+          date={endAt}
+          setDate={(val) => onChange("endAt", val)}
+          placeholder={t.votings.endDate}
         />
       </div>
     </Card>

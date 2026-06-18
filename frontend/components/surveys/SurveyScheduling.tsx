@@ -1,8 +1,8 @@
 "use client";
 
 import React from "react";
-import { Input } from "@/components/common/Input";
 import { Card } from "@/components/common/Card";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 import styles from "./Survey-form.module.css";
 
 interface SurveySchedulingProps {
@@ -21,20 +21,20 @@ export function SurveyScheduling({
       <h3 className={styles.sidebarTitle}>Scheduling</h3>
 
       <div className={styles.field}>
-        <label className={styles.label}>Start Date</label>
-        <Input
-          type="datetime-local"
-          value={startAt}
-          onChange={(e) => onChange("startAt", e.target.value)}
+        <DateTimePicker
+          label="Start Date"
+          date={startAt}
+          setDate={(val) => onChange("startAt", val)}
+          placeholder="Start Date"
         />
       </div>
 
       <div className={styles.field}>
-        <label className={styles.label}>End Date</label>
-        <Input
-          type="datetime-local"
-          value={endAt}
-          onChange={(e) => onChange("endAt", e.target.value)}
+        <DateTimePicker
+          label="End Date"
+          date={endAt}
+          setDate={(val) => onChange("endAt", val)}
+          placeholder="End Date"
         />
       </div>
     </Card>

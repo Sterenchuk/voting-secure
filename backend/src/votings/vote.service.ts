@@ -22,6 +22,8 @@ import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
 import { AuditService } from '../audit/audit.service';
 import { ChainAction } from '../audit/types/audit.types';
+import { BroadcastService } from '../broadcast/broadcast.service';
+import { SocketEmitterService } from '../broadcast/socket-emitter.service';
 
 @Injectable()
 export class VoteService {
@@ -35,6 +37,8 @@ export class VoteService {
     private readonly auditService: AuditService,
     @Inject(forwardRef(() => VoteGateway))
     private readonly gateway: VoteGateway,
+    private readonly broadcastService: BroadcastService,
+    private readonly socketEmitter: SocketEmitterService,
   ) {}
 
   // ─── Token ────────────────────────────────────────────────────────────────────
@@ -49,9 +53,6 @@ export class VoteService {
       isPractice?: boolean;
     },
   ) {
-    this.logger.debug(
-      `Requesting voting token for user ${user.id} ${user.language} ${user.theme} on voting ${votingId} (practice: ${selections.isPractice})`,
-    );
     const voting = await this.repo.findVotingById(votingId);
     if (!voting) throw new NotFoundException('Voting not found');
 
@@ -80,21 +81,23 @@ export class VoteService {
       };
     }
 
-    try {
-      await this.mailService.sendVotingToken(
+    // Fire-and-forget: do not block token response on email delivery
+    this.mailService
+      .sendVotingToken(
         user.email,
         token,
         voting.title,
         votingId,
         user.language,
         user.theme,
-      );
-    } catch (err) {
-      this.logger.error('Failed to send voting token', err);
-    }
+      )
+      .catch((err) => {
+        this.logger.error('Failed to send voting token', err);
+      });
 
-    try {
-      await this.auditService.appendChain({
+    // Fire-and-forget: do not block token response on audit write
+    this.auditService
+      .appendChain({
         action: ChainAction.VOTING_TOKEN_ISSUED,
         payload: {
           votingId,
@@ -104,10 +107,10 @@ export class VoteService {
         userId: user.id,
         votingId,
         groupId: voting.groupId,
+      })
+      .catch((err) => {
+        this.logger.error('Failed to write audit log for token request', err);
       });
-    } catch (err) {
-      this.logger.error('Failed to write audit log for token request', err);
-    }
 
     return {
       status: 'Success',
@@ -160,8 +163,6 @@ export class VoteService {
       }
       const { optionIds, otherText, isAbstention, isPractice } = selections;
 
-      // get user email for receipt
-
       const user = await this.usersService.findOne(userId);
       this.logger.debug(
         `Confirming vote for user ${userId} ${user.language} ${user.theme} on voting ${votingId} (practice: ${isPractice})`,
@@ -191,7 +192,6 @@ export class VoteService {
         language: user.language,
       };
     } catch (err: any) {
-      this.logger.error(`Confirm vote failed: ${err.message}`, err.stack);
       return {
         success: false,
         message: err?.message ?? 'Something went wrong.',
@@ -402,8 +402,9 @@ export class VoteService {
       }
 
       if (!actualIsPractice) {
-        try {
-          await this.auditService.appendChain({
+        // Fire-and-forget: audit write must not block vote response
+        this.auditService
+          .appendChain({
             action: ChainAction.BALLOT_CAST,
             payload: {
               ballotHashes: receipts,
@@ -414,37 +415,63 @@ export class VoteService {
             },
             votingId,
             groupId,
+          })
+          .catch((err) => {
+            this.logger.error(
+              `Audit chain write failed for BALLOT_CAST voting ${votingId}: ${err}`,
+            );
           });
-        } catch (err) {
-          this.logger.error(
-            `Audit chain write failed for BALLOT_CAST voting ${votingId}: ${err}`,
-          );
-        }
       }
 
       if (!actualIsPractice) {
-        try {
-          this.logger.debug(
-            `Sending receipt email to user ${user.language} ${user.theme} for voting ${votingId}`,
-          );
-
-          await this.mailService.sendVoteReceipt(
+        // Fire-and-forget: receipt email must not block vote response
+        this.mailService
+          .sendVoteReceipt(
             user.email,
             votingTitle,
             votingId,
             receipts,
             user.language,
             user.theme,
-          );
-        } catch (err) {
-          this.logger.error(`Receipt email failed for user ${user.id}: ${err}`);
-        }
+          )
+          .catch((err) => {
+            this.logger.error(
+              `Receipt email failed for user ${user.id}: ${err}`,
+            );
+          });
       }
 
-      // ── Broadcast live results ────────────────────────────────────────────
+      // ── Broadcast live results — fire-and-forget ──────────────────────────
       if (!actualIsPractice) {
-        const results = await this.getResults(votingId);
-        this.broadcastResults(votingId, results);
+        // Build result delta from data already in memory — zero extra DB/Redis calls
+        try {
+          const redisResults = await this.redis.getResults(votingId);
+          const votingOptions = voting.options.map((o) => ({
+            id: o.id,
+            text: o.text,
+            voteCount: redisResults
+              ? parseInt(redisResults[o.id] ?? '0')
+              : o._count?.ballots ?? 0,
+          }));
+
+          const abstentionsCount = redisResults
+            ? parseInt(redisResults['ABSTENTION_COUNT'] ?? '0')
+            : 0;
+
+          const totalBallots =
+            votingOptions.reduce((s, o) => s + o.voteCount, 0) + abstentionsCount;
+
+          this.socketEmitter.emitVotingResultsDirect(votingId, {
+            options: votingOptions,
+            totalBallots,
+            abstentionsCount,
+          });
+        } catch (err) {
+          this.logger.error(`Direct socket emit failed for ${votingId}: ${err}`);
+        }
+
+        // Global stats still goes through queue (debounced, not latency-sensitive)
+        this.broadcastGlobalStats();
       }
 
       return {
@@ -465,14 +492,12 @@ export class VoteService {
 
   async getParticipationStats(votingId: string) {
     const data = await this.repo.getParticipationStats(votingId);
-    // Group by 5-minute intervals for the chart
+    // Group by 1-minute intervals for the chart
     const stats: Record<string, number> = {};
     data.forEach((p) => {
       const date = new Date(p.createdAt);
       date.setSeconds(0);
       date.setMilliseconds(0);
-      const minutes = date.getMinutes();
-      date.setMinutes(minutes - (minutes % 5));
       const key = date.toISOString();
       stats[key] = (stats[key] || 0) + 1;
     });
@@ -483,6 +508,7 @@ export class VoteService {
   async getResults(
     votingId: string,
     includeRawOther = false,
+    forceFresh = false,
   ): Promise<IVotingResults & { isClosed: boolean }> {
     const voting = await this.repo.findVotingById(votingId);
     if (!voting) throw new NotFoundException('Voting not found');
@@ -498,7 +524,7 @@ export class VoteService {
           const options = voting.options.map((o) => ({
             id: o.id,
             text: o.text,
-            isDynamic: false, // simplified for sealed
+            isDynamic: false,
             voteCount: tally.options[o.id] || 0,
           }));
           return {
@@ -516,7 +542,7 @@ export class VoteService {
 
     const cacheKey = `results:snapshot:${votingId}`;
 
-    if (!isClosed) {
+    if (!isClosed && !forceFresh) {
       const broadcastIntervalMs = (voting.broadcastInterval ?? 1) * 3600 * 1000;
       const lastBroadcast = voting.lastBroadcastAt
         ? new Date(voting.lastBroadcastAt)
@@ -586,7 +612,9 @@ export class VoteService {
     };
 
     // Cache snapshot
-    await this.redis.setSnapshot(cacheKey, results, 7200);
+    if (!isClosed) {
+      await this.redis.setSnapshot(cacheKey, results, 7200);
+    }
 
     return results;
   }
@@ -595,14 +623,17 @@ export class VoteService {
     const result = await this.repo.findVotingResult(votingId);
     if (!result)
       throw new NotFoundException('This voting has not been finalized yet');
-    
+
     // Decrypt tally if encrypted
     if (result.tally && (result.tally as any).encrypted) {
       const decrypted = CryptoUtils.decrypt((result.tally as any).encrypted);
       try {
         result.tally = JSON.parse(decrypted);
       } catch (err) {
-        this.logger.error(`Failed to parse decrypted tally for voting ${votingId}`, err);
+        this.logger.error(
+          `Failed to parse decrypted tally for voting ${votingId}`,
+          err,
+        );
       }
     }
 
@@ -622,7 +653,10 @@ export class VoteService {
     }
 
     // Secure gate: Check audit status
-    const auditStatus = await this.auditService.getAuditStatus('voting', votingId);
+    const auditStatus = await this.auditService.getAuditStatus(
+      'voting',
+      votingId,
+    );
     if (!auditStatus.isSecure) {
       throw new ForbiddenException(
         `Cannot finalize voting: Audit chain is not secure. ${auditStatus.reason || ''}`,
@@ -644,17 +678,23 @@ export class VoteService {
     };
 
     const result = await this.repo.$transaction((tx) =>
-      this.repo.finalizeVoting(tx, votingId, encryptedTally, totalBallots, tallyHash),
+      this.repo.finalizeVoting(
+        tx,
+        votingId,
+        encryptedTally,
+        totalBallots,
+        tallyHash,
+      ),
     );
 
-    // seal the audit chain with verification result
+    // seal the audit chain — this one stays awaited, finalize is not hot path
     try {
       await this.auditService.appendChain({
         action: ChainAction.VOTING_RESULT_SEALED,
         payload: {
           tallyHash,
           totalBallots,
-          chainVerified: true, // Known true because of secure gate
+          chainVerified: true,
           chainBlocksChecked: auditStatus.lastVerifiedSequence,
         },
         votingId,
@@ -687,12 +727,17 @@ export class VoteService {
     this.gateway.emitVotingResults(votingId, results);
   }
 
+  async broadcastGlobalStats() {
+    await this.broadcastService.broadcastGlobalStats();
+  }
+
+  async broadcastLiveResults(votingId: string) {
+    await this.broadcastService.broadcastVotingResults(votingId);
+  }
+
   // ─── Private guards ───────────────────────────────────────────────────────────
 
-  private assertTiming(voting: {
-    startAt: Date | null;
-    endAt: Date | null;
-  }) {
+  private assertTiming(voting: { startAt: Date | null; endAt: Date | null }) {
     const now = new Date();
     if (voting.startAt && now < voting.startAt)
       throw new ForbiddenException('Voting has not started yet');
@@ -728,7 +773,11 @@ export class VoteService {
         'This voting does not allow multiple selections',
       );
 
-    if (optionIds.length > 0 && optionIds.length < voting.minChoices && !hasOther)
+    if (
+      optionIds.length > 0 &&
+      optionIds.length < voting.minChoices &&
+      !hasOther
+    )
       throw new BadRequestException(
         `You must select at least ${voting.minChoices} option(s)`,
       );
@@ -739,7 +788,7 @@ export class VoteService {
       );
   }
 
-  // ─── Receipt verification ────────────────────────────────────────────────────────
+  // ─── Receipt verification ─────────────────────────────────────────────────────
   async verifyReceipt(votingId: string, hash: string | string[]) {
     const voting = await this.repo.findVotingAllowOther(votingId);
     if (!voting) throw new NotFoundException('Voting not found');

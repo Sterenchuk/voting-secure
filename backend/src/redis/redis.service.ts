@@ -113,8 +113,8 @@ export class RedisVotingService {
     pipeline.incr('global:vote_count');
 
     // Track trends (votes per hour)
-    const hourKey = new Date().toISOString().substring(0, 13);
-    pipeline.hincrby('global:trends', hourKey, 1);
+    const minuteKey = new Date().toISOString().substring(0, 16);
+    pipeline.hincrby('global:trends', minuteKey, 1);
 
     await pipeline.exec();
   }
@@ -134,13 +134,15 @@ export class RedisVotingService {
   // ─── GLOBAL DASHBOARD METHODS ──────────────────────────────────────────────
 
   async getGlobalStats() {
-    const [totalVotes, activeVotings] = await Promise.all([
+    const [totalVotes, activeVotings, uniqueVotersCount] = await Promise.all([
       this.redis.get('global:vote_count'),
       this.redis.get('global:active_votings'),
+      this.redis.scard('global:unique_voters'),
     ]);
     return {
       totalVotes: parseInt(totalVotes || '0', 10),
       activeVotings: parseInt(activeVotings || '0', 10),
+      uniqueVotersCount: uniqueVotersCount || 0,
     };
   }
 
@@ -267,7 +269,7 @@ export class RedisVotingService {
   async setSurveySelections(
     userId: string,
     surveyId: string,
-    data: { ballots: any[]; isPractice?: boolean },
+    data: { ballots: any[]; isPractice?: boolean; isAbstention?: boolean },
     ttlSeconds: number,
   ): Promise<void> {
     await this.redis.set(
@@ -281,7 +283,11 @@ export class RedisVotingService {
   async getSurveySelections(
     userId: string,
     surveyId: string,
-  ): Promise<{ ballots: any[]; isPractice?: boolean } | null> {
+  ): Promise<{
+    ballots: any[];
+    isPractice?: boolean;
+    isAbstention?: boolean;
+  } | null> {
     const raw = await this.redis.get(
       this.surveySelectionsKey(userId, surveyId),
     );

@@ -31,45 +31,67 @@ export class AuditInterceptor implements NestInterceptor {
 
     const req = context.switchToHttp().getRequest<Request>();
 
-    return next
-      .handle()
-      .pipe(
-        switchMap((response) =>
-          from(this.writeAudit(meta, response, req)).pipe(map(() => response)),
-        ),
-      );
+    return next.handle().pipe(
+      map((response) => {
+        // Capture necessary data before the request object potentially goes out of scope
+        const action = meta.action;
+        const extractPayload = meta.extractPayload;
+        const currentUserId = (req as any).user?.sub ?? null;
+        const ip = req.ip;
+        const userAgent = req.headers['user-agent'];
+        const params = { ...req.params };
+        const body = { ...req.body };
+
+        // Fire and forget audit write
+        this.writeAuditAsync(
+          action,
+          extractPayload,
+          response,
+          currentUserId,
+          ip,
+          userAgent,
+          params,
+          body,
+        ).catch((err) => {});
+
+        return response;
+      }),
+    );
   }
 
-  private async writeAudit(
-    meta: AuditMeta,
+  private async writeAuditAsync(
+    action: string,
+    extractPayload: any,
     response: unknown,
-    req: any,
+    currentUserId: string | null,
+    ip: string | undefined,
+    userAgent: string | undefined,
+    params: any,
+    body: any,
   ): Promise<void> {
-    const { action, extractPayload } = meta;
-    const payload = extractPayload ? extractPayload(response, req) : {};
-    const currentUserId = req.user?.sub ?? null;
+    const payload = extractPayload
+      ? extractPayload(response, { params, body })
+      : {};
 
     if (Object.values(SecurityAction).includes(action as any)) {
       await this.auditService.appendSecurity({
         action: action as SecurityAction,
         payload,
         userId: currentUserId,
-        ip: req.ip,
-        userAgent: req.headers['user-agent'],
+        ip,
+        userAgent,
       } as any);
       return;
     }
 
-    const res = (response ?? {}) as Record<string, any>;
-    const params = req.params ?? {};
-    const body = req.body ?? {};
-
     // ANONYMITY POLICY: userId MUST be null for ballot casting actions
-    const isAnonymous = 
-      action === ChainAction.BALLOT_CAST || 
+    const isAnonymous =
+      action === ChainAction.BALLOT_CAST ||
       action === ChainAction.SURVEY_BALLOT_CAST;
-    
+
     const auditUserId = isAnonymous ? null : currentUserId;
+
+    const res = (response ?? {}) as Record<string, any>;
 
     await this.auditService.appendChain({
       action: action as any,

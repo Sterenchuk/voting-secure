@@ -39,6 +39,8 @@ export const translations = {
       other: "Other",
       abstain: "Abstain",
       abstentions: "Abstentions",
+      notStarted: "Not started yet",
+      checkBackLater: "Please check back later.",
     },
 
     // Navigation
@@ -64,6 +66,7 @@ export const translations = {
         subtitle:
           "Enterprise-grade security for your elections and surveys. Anonymous, encrypted, and fully auditable.",
         ctaStart: "Get Started",
+        ctaDashboard: "Go to Dashboard",
         ctaAudit: "View Public Audits",
         ctaLearn: "Learn More",
       },
@@ -112,6 +115,7 @@ export const translations = {
         subtitle:
           "Join thousands of organizations trusting SVS for their elections",
         button: "Create Free Account",
+        dashboardButton: "Go to Dashboard",
       },
     },
 
@@ -139,6 +143,17 @@ export const translations = {
         submit: "Create Account",
         hasAccount: "Already have an account?",
         signIn: "Sign in",
+        successTitle: "Account Created",
+        successSubtitle: "Please check your email to verify your account before signing in.",
+      },
+      verifyEmail: {
+        title: "Verifying Email",
+        subtitle: "Please wait while we verify your email address...",
+        success: "Email Verified!",
+        successSubtitle: "Your email has been successfully verified. Redirecting to dashboard...",
+        error: "Verification Failed",
+        errorSubtitle: "The verification link is invalid or has expired.",
+        backToSignIn: "Back to Sign In",
       },
       errors: {
         invalidEmail: "Please enter a valid email address",
@@ -280,6 +295,14 @@ export const translations = {
       participationConfirmed: "Response Confirmed",
       responseSecurelyRecorded: "Your response has been securely recorded.",
       verifySurveyChain: "Verify Survey Chain",
+      exportCsv: "Export CSV Report",
+      exportEml: "Export EML (XML) Report",
+      surveyEnded: "This survey has ended",
+      alreadySubmitted: "You have already submitted a response",
+      notOpenYet: "This survey is not open yet",
+      checkBackActive: "Check back when the survey becomes active.",
+      closedOn: "Closed on",
+      yourReceipt: "Your receipt",
     },
 
     // Groups
@@ -476,6 +499,8 @@ export const translations = {
       other: "Інше",
       abstain: "Утриматись",
       abstentions: "Голосів 'Утримався'",
+      notStarted: "Ще не розпочато",
+      checkBackLater: "Будь ласка, поверніться пізніше.",
     },
 
     // Navigation
@@ -501,6 +526,7 @@ export const translations = {
         subtitle:
           "Безпека корпоративного рівня для ваших виборів та опитувань. Анонімно, зашифровано та повністю перевіряємо.",
         ctaStart: "Почати",
+        ctaDashboard: "Перейти до Панелі",
         ctaAudit: "Переглянути Аудити",
         ctaLearn: "Дізнатись Більше",
       },
@@ -548,6 +574,7 @@ export const translations = {
         title: "Готові Почати?",
         subtitle: "Приєднуйтесь до тисяч організацій що довіряють SVS",
         button: "Створити Безкоштовний Акаунт",
+        dashboardButton: "Перейти до Панелі",
       },
     },
 
@@ -576,6 +603,17 @@ export const translations = {
         submit: "Створити Акаунт",
         hasAccount: "Вже маєте акаунт?",
         signIn: "Увійти",
+        successTitle: "Акаунт Створено",
+        successSubtitle: "Будь ласка, перевірте свою електронну пошту, щоб підтвердити акаунт перед входом.",
+      },
+      verifyEmail: {
+        title: "Підтвердження Пошти",
+        subtitle: "Будь ласка, зачекайте, поки ми підтвердимо вашу електронну адресу...",
+        success: "Пошту Підтверджено!",
+        successSubtitle: "Вашу електронну пошту успішно підтверджено. Перенаправлення на панель...",
+        error: "Помилка Підтвердження",
+        errorSubtitle: "Посилання для підтвердження недійсне або термін його дії закінчився.",
+        backToSignIn: "Повернутися до входу",
       },
       errors: {
         invalidEmail: "Введіть дійсну електронну адресу",
@@ -678,10 +716,13 @@ export const translations = {
       minChoices: "Мін. виборів",
       maxChoices: "Макс. виборів",
       noLimit: "Без обмежень",
-      openImmediately: "Публічний доступ",
-      openImmediatelyHint:
+      isPublic: "Публічний доступ",
+      isPublicHint:
         "Дозволити користувачам поза групою брати участь та голосувати",
+      allowOther: "Дозволити інше",
       allowOtherHint: "Виборці зможуть вписати власну відповідь",
+      allowAbstain: "Дозволити утриматись",
+      allowAbstainHint: "Виборці зможуть вибрати варіант 'Утриматись'",
       optionPlaceholder: "Варіант",
       titleRequired: "Назва обов'язкова",
       groupRequired: "Група обов'язкова",
@@ -717,6 +758,15 @@ export const translations = {
       participationConfirmed: "Участь Підтверджено",
       responseSecurelyRecorded: "Вашу відповідь надійно зафіксовано.",
       verifySurveyChain: "Перевірити Ланцюг Опитування",
+      exportCsv: "Експорт Звіту CSV",
+      exportEml: "Експорт Звіту EML (XML)",
+      surveyEnded: "Це опитування завершено",
+      alreadySubmitted: "Ви вже надіслали відповідь",
+      notOpenYet: "Це опитування ще не відкрите",
+      checkBackActive:
+        "Будь ласка, поверніться, коли опитування стане активним.",
+      closedOn: "Закрито",
+      yourReceipt: "Ваш чек",
     },
 
     // Groups

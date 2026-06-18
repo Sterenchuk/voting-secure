@@ -14,7 +14,12 @@ interface QuestionDraft {
   text: string;
   isRequired: boolean;
   options: string[];
-  choiceConfig: { allowMultiple: boolean; allowOther: boolean };
+  choiceConfig: {
+    allowMultiple: boolean;
+    allowOther: boolean;
+    minChoices?: number;
+    maxChoices?: number;
+  };
   scaleConfig: { scaleMin: number; scaleMax: number; step: number };
 }
 
@@ -48,7 +53,7 @@ export function SurveyQuestionsEditor({
     <div className={styles.questionsSection}>
       <div className={styles.questionsList}>
         {questions.map((q, qIdx) => (
-          <Card key={qIdx} className={styles.questionCard}>
+          <Card key={qIdx} className={`${styles.questionCard} animate-fade-in-down`}>
             {/* ── Card header ── */}
             <div className={styles.questionCardHeader}>
               <div className={styles.dragHandle}>
@@ -161,6 +166,41 @@ export function SurveyQuestionsEditor({
                         })
                       }
                     />
+
+                    {q.type === SurveyQuestionType.MULTIPLE_CHOICE && (
+                      <div className="flex gap-4 mt-2">
+                        <div className="flex-1">
+                          <label className="text-[10px] uppercase font-bold text-muted-foreground mb-1 block">Min Choices</label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={q.options.length}
+                            value={q.choiceConfig.minChoices ?? 1}
+                            onChange={(e) => onUpdateQuestion(qIdx, {
+                              choiceConfig: {
+                                ...q.choiceConfig,
+                                minChoices: parseInt(e.target.value) || 1
+                              }
+                            })}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[10px] uppercase font-bold text-muted-foreground mb-1 block">Max Choices</label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={q.options.length}
+                            value={q.choiceConfig.maxChoices ?? q.options.length}
+                            onChange={(e) => onUpdateQuestion(qIdx, {
+                              choiceConfig: {
+                                ...q.choiceConfig,
+                                maxChoices: parseInt(e.target.value) || q.options.length
+                              }
+                            })}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

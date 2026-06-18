@@ -167,7 +167,7 @@ export class AuthService {
     };
   }
 
-  async verifyEmail(token: string) {
+  async verifyEmail(token: string): Promise<ResponseDto> {
     const tokenHash = CryptoUtils.hashToken(token);
 
     const verificationToken =
@@ -183,7 +183,7 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired verification token');
     }
 
-    await this.databaseService.$transaction([
+    const [user] = await this.databaseService.$transaction([
       this.databaseService.user.update({
         where: { id: verificationToken.userId },
         data: { isEmailVerified: true },
@@ -194,7 +194,27 @@ export class AuthService {
       }),
     ]);
 
-    return { message: 'Email verified successfully' };
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      language: user.language,
+      theme: user.theme,
+    };
+    const accessToken = this.jwtService.sign(payload);
+
+    return {
+      accessToken,
+      refreshToken: await this.generateRefreshToken(user.id),
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name ? user.name : undefined,
+        role: user.role,
+        isEmailVerified: user.isEmailVerified,
+      },
+    };
   }
 
   async forgotPassword(email: string) {

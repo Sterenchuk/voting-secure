@@ -25,14 +25,23 @@ export class AuditCheckpoint {
   createdAt: Date;
 }
 
-export const AuditCheckpointSchema = SchemaFactory.createForClass(AuditCheckpoint);
+export const AuditCheckpointSchema =
+  SchemaFactory.createForClass(AuditCheckpoint);
 
-// Ensure unique checkpoint per scope/id/sequence combination
-AuditCheckpointSchema.index({ scope: 1, scopeId: 1, sequence: 1 }, { unique: true });
+AuditCheckpointSchema.index(
+  { scope: 1, scopeId: 1, sequence: 1 },
+  { unique: true },
+);
 
-// Prevent modifications
 AuditCheckpointSchema.pre(
-  ['updateOne', 'updateMany', 'findOneAndUpdate', 'findOneAndDelete', 'deleteOne', 'deleteMany'],
+  [
+    'updateOne',
+    'updateMany',
+    'findOneAndUpdate',
+    'findOneAndDelete',
+    'deleteOne',
+    'deleteMany',
+  ],
   function () {
     throw new Error('audit_checkpoints are immutable.');
   },

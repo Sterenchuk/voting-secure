@@ -23,6 +23,7 @@ export interface SurveyOption {
   id: string;
   text: string;
   order: number;
+  isDynamic: boolean;
 }
 
 export interface SurveyQuestion {
@@ -142,6 +143,7 @@ const mapSurvey = (s: any): Survey => {
           id: o.id,
           text: o.text,
           order: o.order ?? 0,
+          isDynamic: o.isDynamic ?? false,
         }),
       ),
     }),
@@ -195,11 +197,13 @@ const buildBallots = (
         break;
 
       case SurveyQuestionType.SCALE: {
-        const scaleValue = String(answer.scale ?? 0);
-        ballots.push({
-          questionId: answer.questionId,
-          optionIds: [scaleValue],
-        });
+        if (answer.scale !== undefined) {
+          const scaleValue = String(answer.scale);
+          ballots.push({
+            questionId: answer.questionId,
+            optionIds: [scaleValue],
+          });
+        }
         break;
       }
 
@@ -275,8 +279,10 @@ export function useSurveys() {
     return response;
   }, []);
 
-  const fetchResults = useCallback(async (id: string) => {
-    const response = await api.get<SurveyResults>(`/surveys/${id}/results`);
+  const fetchResults = useCallback(async (id: string, includeRaw = false) => {
+    const response = await api.get<SurveyResults>(
+      `/surveys/${id}/results${includeRaw ? "?includeRaw=true" : ""}`,
+    );
     if (response.data) {
       setState((prev) => ({ ...prev, results: response.data! }));
     }
@@ -285,7 +291,19 @@ export function useSurveys() {
 
   const syncResults = useCallback((data: SurveyResults) => {
     if (data?.results) {
-      setState((prev) => ({ ...prev, results: data }));
+      setState((prev) => ({
+        ...prev,
+        results: data,
+        currentSurvey:
+          prev.currentSurvey?.id === data.surveyId
+            ? { ...prev.currentSurvey, responsesCount: data.totalResponses }
+            : prev.currentSurvey,
+        surveys: prev.surveys.map((s) =>
+          s.id === data.surveyId
+            ? { ...s, responsesCount: data.totalResponses }
+            : s,
+        ),
+      }));
     }
   }, []);
 

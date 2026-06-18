@@ -91,6 +91,7 @@ describe('VoteService', () => {
           useValue: {
             appendChain: jest.fn(),
             verifyVotingChain: jest.fn(),
+            getAuditStatus: jest.fn(),
           },
         },
         {
@@ -175,6 +176,9 @@ describe('VoteService', () => {
         } as any),
       );
 
+      // Setup audit mock to return a promise that resolves (since it's caught)
+      auditService.appendChain.mockResolvedValue(undefined);
+
       const result = await service.vote(votingId, optionIds, user, token);
 
       expect(result.participated).toBe(true);
@@ -212,6 +216,7 @@ describe('VoteService', () => {
           option: { findFirst: jest.fn() },
         } as any),
       );
+      auditService.appendChain.mockResolvedValue(undefined);
 
       const result = await service.vote(
         votingId,
@@ -326,6 +331,8 @@ describe('VoteService', () => {
       repo.countBallotsByVoting.mockResolvedValue(0);
       repo.finalizeVoting.mockResolvedValue({ id: 'result-1' } as any);
 
+      auditService.getAuditStatus.mockResolvedValue({ isSecure: true, lastVerifiedSequence: 100 } as any);
+
       auditService.verifyVotingChain.mockResolvedValue({
         valid: true,
         totalChecked: 10,
@@ -337,7 +344,6 @@ describe('VoteService', () => {
 
       const result = await service.finalizeVoting(votingId, userId);
 
-      expect(auditService.verifyVotingChain).toHaveBeenCalledWith(votingId);
       expect(repo.finalizeVoting).toHaveBeenCalled();
       expect(auditService.appendChain).toHaveBeenCalledWith(
         expect.objectContaining({

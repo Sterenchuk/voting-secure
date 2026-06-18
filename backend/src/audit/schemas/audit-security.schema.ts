@@ -16,7 +16,7 @@ export class AuditSecurity {
   @Prop({ required: true, type: Object })
   payload: Record<string, unknown>;
 
-  @Prop({ type: String, default: null, index: true })
+  @Prop({ type: String, index: true })
   userId: string | null;
 
   @Prop({ required: true })

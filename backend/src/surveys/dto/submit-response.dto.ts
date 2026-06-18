@@ -14,7 +14,7 @@ export class SurveyBallotInputDto {
 
   @IsOptional()
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsString({ each: true })
   optionIds?: string[];
 
   @IsOptional()

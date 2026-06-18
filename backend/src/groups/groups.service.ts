@@ -181,10 +181,19 @@ export class GroupsService {
     return this.processMemberEmails(group as any, userId, platformRole);
   }
 
-  async findAll(userId: string, name?: string): Promise<GroupResponseDto[]> {
+  async findAll(
+    userId: string,
+    role: Role,
+    name?: string,
+  ): Promise<GroupResponseDto[]> {
+    const isAdminOrAuditor = role === Role.ADMIN || role === Role.AUDITOR;
+
     const groupsResult = await this.databaseService.group.findMany({
       where: {
         ...(name && { name: { contains: name, mode: 'insensitive' } }),
+        ...(!isAdminOrAuditor && {
+          users: { some: { userId } },
+        }),
       },
       select: {
         ...SELECT_GROUP_FIELDS,

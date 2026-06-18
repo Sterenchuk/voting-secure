@@ -1,21 +1,26 @@
 import { Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { JwtModule } from '@nestjs/jwt';
+import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
-import { config } from 'dotenv';
 import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './auth.jwt.stratedy';
 import { DatabaseModule } from '../database/database.module';
-config();
-const env = process.env;
+import { ConfigModule, ConfigService } from '@nestjs/config';
+
 @Module({
   imports: [
     UsersModule,
     DatabaseModule,
-    JwtModule.register({
+    JwtModule.registerAsync({
       global: true,
-      secret: env.JWT_SECRET,
-      signOptions: { expiresIn: env.JWT_EXPIRES_IN as '1h' },
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): JwtModuleOptions => ({
+        secret: config.get<string>('JWT_SECRET'),
+        signOptions: {
+          expiresIn: config.get<number | string>('JWT_EXPIRES_IN', '1h') as any,
+        },
+      }),
     }),
   ],
   providers: [AuthService, JwtStrategy],

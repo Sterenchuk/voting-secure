@@ -3,7 +3,10 @@ import { Document } from 'mongoose';
 
 @Schema({ collection: 'audit_verification_jobs', timestamps: true })
 export class AuditVerificationJob extends Document {
-  @Prop({ required: true, enum: ['pending', 'processing', 'completed', 'failed'] })
+  @Prop({
+    required: true,
+    enum: ['pending', 'processing', 'completed', 'failed'],
+  })
   status: string;
 
   @Prop({ default: 0 })
@@ -22,4 +25,5 @@ export class AuditVerificationJob extends Document {
   error?: string;
 }
 
-export const AuditVerificationJobSchema = SchemaFactory.createForClass(AuditVerificationJob);
+export const AuditVerificationJobSchema =
+  SchemaFactory.createForClass(AuditVerificationJob);

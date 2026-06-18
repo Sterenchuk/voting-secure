@@ -1,5 +1,16 @@
 #!/bin/bash
-mongosh admin --eval "
+set -e
+
+echo "[mongo-init] Creating app user, collections, indexes, and roles..."
+
+mongosh --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin admin --eval "
+// Create app user
+db.getSiblingDB('audit').createUser({
+  user: process.env.MONGO_APP_USER || 'audit_app',
+  pwd: process.env.MONGO_APP_PASSWORD,
+  roles: [{ role: 'readWrite', db: 'audit' }]
+});
+
 db.getSiblingDB('audit').createCollection('audit_chain');
 db.getSiblingDB('audit').createCollection('audit_security');
 db.getSiblingDB('audit').audit_chain.createIndex({ sequence: 1 }, { unique: true });
@@ -18,6 +29,7 @@ db.getSiblingDB('audit').audit_chain.createIndex({ action: 1 });
 db.getSiblingDB('audit').audit_security.createIndex({ createdAt: 1 }, { expireAfterSeconds: 7776000 });
 db.getSiblingDB('audit').audit_security.createIndex({ userId: 1 });
 db.getSiblingDB('audit').audit_security.createIndex({ action: 1 });
+
 db.getSiblingDB('audit').createRole({
   role: 'auditWriter',
   privileges: [
@@ -25,13 +37,10 @@ db.getSiblingDB('audit').createRole({
     { resource: { db: 'audit', collection: 'audit_security' }, actions: ['insert', 'find'] },
     { resource: { db: 'audit', collection: 'audit_checkpoints' }, actions: ['insert', 'find'] },
     { resource: { db: 'audit', collection: 'audit_verification' }, actions: ['insert', 'find', 'update'] },
+    { resource: { db: 'audit', collection: 'audit_verification_jobs' }, actions: ['insert', 'find', 'update'] },
   ],
   roles: [],
 });
-db.getSiblingDB('audit').createUser({
-  user: '$MONGO_APP_USER',
-  pwd: '$MONGO_APP_PASSWORD',
-  roles: [{ role: 'auditWriter', db: 'audit' }],
-});
-print('[mongo-init] Done. User $MONGO_APP_USER created.');
+
+print('[mongo-init] Done.');
 "

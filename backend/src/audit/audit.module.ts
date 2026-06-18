@@ -2,6 +2,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
+import { BullModule } from '@nestjs/bullmq';
 
 import { AuditChain, AuditChainSchema } from './schemas/audit-chain.schema';
 import {
@@ -21,7 +22,7 @@ import {
   AuditCheckpointSchema,
 } from './schemas/audit-checkpoint.schema';
 import { AuditService } from './audit.service';
-import { AuditVerificationQueueService } from './worker/queue.service';
+import { AuditProcessor } from './audit.processor';
 import { AuditController } from './audit.controller';
 import { AuditInterceptor } from './audit.interceptor';
 import { DatabaseModule } from '../database/database.module';
@@ -36,12 +37,22 @@ import { RedisModule } from '../redis/redis.module';
       { name: AuditVerificationJob.name, schema: AuditVerificationJobSchema },
       { name: AuditCheckpoint.name, schema: AuditCheckpointSchema },
     ]),
-    JwtModule.register({}),
+    BullModule.registerQueue({
+      name: 'audit',
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+      },
+      // Note: concurrency is controlled by the processor's host, but
+      // globally, we must ensure only one process runs at a time if
+      // scaling vertically. This queue configuration ensures
+      // that jobs are processed sequentially.
+    }),
     DatabaseModule,
     RedisModule,
   ],
-  providers: [AuditService, AuditVerificationQueueService, AuditInterceptor],
+  providers: [AuditService, AuditInterceptor, AuditProcessor],
   controllers: [AuditController],
-  exports: [AuditService, AuditVerificationQueueService, AuditInterceptor],
+  exports: [AuditService, AuditInterceptor, AuditProcessor, MongooseModule],
 })
 export class AuditModule {}

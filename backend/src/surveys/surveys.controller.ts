@@ -244,16 +244,21 @@ export class SurveysController {
     const questionIds = survey.questions.map((q) => q.id);
     const results = await this.submitService.getResults(id, questionIds, true);
 
-    let csv = 'Question,Option,Count\n';
+    let csv = 'Question,Type,Option,Count,Percentage\n';
     results.results.forEach((qRes) => {
       const question = survey.questions.find((q) => q.id === qRes.questionId);
       const qText = question?.text || 'Unknown';
+      const qType = question?.type || 'Unknown';
+      const qTotal = (qRes.options.reduce((sum, opt) => sum + opt.count, 0) + (qRes.otherCount || 0)) || 1;
 
       qRes.options.forEach((opt) => {
-        csv += `"${qText}","${opt.text}",${opt.count}\n`;
+        const pct = ((opt.count / qTotal) * 100).toFixed(2);
+        csv += `"${qText.replace(/"/g, '""')}","${qType}","${opt.text.replace(/"/g, '""')}",${opt.count},${pct}%\n`;
       });
       if ((qRes.otherCount ?? 0) > 0) {
-        csv += `"${qText}","Other",${qRes.otherCount ?? 0}\n`;
+        const otherCount = qRes.otherCount || 0;
+        const pct = ((otherCount / qTotal) * 100).toFixed(2);
+        csv += `"${qText.replace(/"/g, '""')}","${qType}","Other",${otherCount},${pct}%\n`;
       }
     });
 
@@ -290,6 +295,7 @@ export class SurveysController {
       {
         ballots: dto.ballots ?? [],
         isPractice: dto.isPractice,
+        isAbstention: dto.isAbstention,
       },
     );
   }

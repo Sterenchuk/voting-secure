@@ -1,25 +1,30 @@
-import { Injectable, Logger, OnModuleInit, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as crypto from 'crypto';
 
-import {
-  AuditChain,
-  AuditChainDocumentHydrated,
-} from './schemas/audit-chain.schema';
+import { AuditChain } from './schemas/audit-chain.schema';
 import { AuditSecurity } from './schemas/audit-security.schema';
 import { AuditVerification } from './schemas/audit-verification.schema';
 import { AuditCheckpoint } from './schemas/audit-checkpoint.schema';
 import {
   AuditChainContext,
   AuditSecurityContext,
-  AuditChainDocument,
-  VerifyResult,
   ScopedVerifyResult,
   ChainAction,
 } from './types/audit.types';
 import { RedisVotingService } from '../redis/redis.service';
 import { AuditVerificationJob } from './schemas/audit-verification-job.schema';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -105,6 +110,7 @@ export class AuditService implements OnModuleInit {
     private readonly checkpointModel: Model<AuditCheckpoint>,
 
     private readonly redis: RedisVotingService,
+    @InjectQueue('audit') private readonly auditQueue: Queue,
   ) {}
 
   // ─── Persistence: Verification Marker ───────────────────────────────────────
@@ -144,7 +150,7 @@ export class AuditService implements OnModuleInit {
     scopeId: string | null,
   ) {
     const doc = await this.verificationModel.findOne({ scope, scopeId }).lean();
-    
+
     // Get the current max sequence for this scope
     const filter: any = {};
     let seqField = 'sequence';
@@ -163,12 +169,14 @@ export class AuditService implements OnModuleInit {
     const maxSequence = lastBlock ? (lastBlock as any)[seqField] : 0;
     const lastVerified = doc ? doc.lastVerifiedSequence : 0;
     const lastFullVerify = doc ? (doc as any).lastFullVerificationAt : null;
-    
+
     // Secure logic:
     // 1. Full verification was done within the last 24 hours.
     // 2. All blocks up to the current max sequence have been verified.
     const now = new Date();
-    const isWithin24h = lastFullVerify && (now.getTime() - new Date(lastFullVerify).getTime()) < 24 * 3600 * 1000;
+    const isWithin24h =
+      lastFullVerify &&
+      now.getTime() - new Date(lastFullVerify).getTime() < 24 * 3600 * 1000;
     const isUpToDate = lastVerified >= maxSequence;
 
     return {
@@ -179,7 +187,11 @@ export class AuditService implements OnModuleInit {
       lastFullVerificationAt: lastFullVerify,
       updatedAt: doc ? (doc as any).updatedAt : null,
       isSecure: !!(isWithin24h && isUpToDate),
-      reason: !isWithin24h ? 'Full verification required (over 24h since last scan)' : (!isUpToDate ? 'Incremental verification required (new blocks found)' : null),
+      reason: !isWithin24h
+        ? 'Full verification required (over 24h since last scan)'
+        : !isUpToDate
+          ? 'Incremental verification required (new blocks found)'
+          : null,
     };
   }
 
@@ -382,11 +394,14 @@ export class AuditService implements OnModuleInit {
       result = (await this.verifySurveyChain(scopeId, true)) as any;
     }
 
-    console.log(`[AuditService] Compromised blocks check for ${scope}:${scopeId}:`, {
-      valid: result.valid,
-      errorType: result.errorType,
-      brokenAt: result.brokenAt,
-    });
+    console.log(
+      `[AuditService] Compromised blocks check for ${scope}:${scopeId}:`,
+      {
+        valid: result.valid,
+        errorType: result.errorType,
+        brokenAt: result.brokenAt,
+      },
+    );
 
     if (result.valid || result.brokenAt == null) {
       return { records: [] };
@@ -516,24 +531,47 @@ export class AuditService implements OnModuleInit {
     return { records: tagged };
   }
 
+  async startVerification(scope: string, scopeId?: string, forceFull = false) {
+    const jobRecord = await this.verificationJobModel.create({
+      status: 'pending',
+      progress: 0,
+      scope,
+      scopeId,
+    });
+
+    await this.auditQueue.add('verify-chain', {
+      jobId: jobRecord._id,
+      scope,
+      scopeId,
+      forceFull,
+    });
+
+    return jobRecord._id;
+  }
+
   async appendChain(ctx: AuditChainContext): Promise<void> {
-    const lockKey = 'lock:audit:append';
-    let lockToken: string | null = null;
+    try {
+      await this.auditQueue.add('append-chain', ctx);
+    } catch (err) {
+      this.logger.error('Failed to enqueue audit chain entry', err);
+    }
+  }
+
+  /**
+   * Internal method called by the background worker to process enqueued audit entries.
+   * Uses Redis locking to ensure sequential chain writes even with multiple workers.
+   */
+  async processAppendInternal(ctx: AuditChainContext): Promise<void> {
+    const session = await this.chainModel.db.startSession();
+    let sequencesAllocated = false;
+    let globalSeq = 0,
+      groupSeq: number | null = null,
+      votingSeq: number | null = null,
+      surveySeq: number | null = null;
 
     try {
-      for (let i = 0; i < 5; i++) {
-        lockToken = await this.redis.acquireLock(lockKey, 5);
-        if (lockToken) break;
-        await new Promise((resolve) => setTimeout(resolve, 50 * (i + 1)));
-      }
-
-      if (!lockToken) {
-        this.logger.error(
-          'Failed to acquire audit lock - potential integrity risk or high load',
-        );
-      }
-
-      const [globalSeq, groupSeq, votingSeq, surveySeq] = await Promise.all([
+      // Step 1: Allocate sequences from Redis (outside MongoDB transaction)
+      [globalSeq, groupSeq, votingSeq, surveySeq] = await Promise.all([
         this.redis.nextGlobalSequence(),
         ctx.groupId
           ? this.redis.nextGroupSequence(ctx.groupId)
@@ -545,62 +583,114 @@ export class AuditService implements OnModuleInit {
           ? this.redis.nextSurveySequence(ctx.surveyId)
           : Promise.resolve(null),
       ]);
+      sequencesAllocated = true;
 
-      const [globalPrev, groupPrev, votingPrev, surveyPrev] = await Promise.all(
-        [
-          this.getPrevHash('global', null),
-          ctx.groupId
-            ? this.getPrevHash('group', ctx.groupId)
-            : Promise.resolve(null),
-          ctx.votingId
-            ? this.getPrevHash('voting', ctx.votingId)
-            : Promise.resolve(null),
-          ctx.surveyId
-            ? this.getPrevHash('survey', ctx.surveyId)
-            : Promise.resolve(null),
-        ],
+      await session.withTransaction(
+        async () => {
+          // Helper to get prevHash with appropriate read concern
+          const getPrev = async (
+            scope: 'global' | 'group' | 'voting' | 'survey',
+            scopeId: string | null,
+          ): Promise<string> => {
+            const filter: Record<string, any> = {};
+            let sortField = 'sequence';
+
+            if (scope !== 'global' && scopeId) {
+              filter[`${scope}Id`] = scopeId;
+              filter[`${scope}Sequence`] = { $ne: null };
+              sortField = `${scope}Sequence`;
+            }
+
+            const last = await this.chainModel
+              .findOne(filter)
+              .sort({ [sortField]: -1 })
+              .select({ hash: 1 })
+              .session(session)
+              .read('majority')
+              .lean();
+
+            if (!last) {
+              const seedData = scopeId
+                ? `${GENESIS_SEED}:${scope}:${scopeId}`
+                : GENESIS_SEED;
+              return crypto
+                .createHash('sha256')
+                .update(seedData, 'utf8')
+                .digest('hex');
+            }
+            return (last as any).hash;
+          };
+
+          // Step 2: Get the latest hashes from the DB within the transaction
+          const [globalPrev, groupPrev, votingPrev, surveyPrev] =
+            await Promise.all([
+              getPrev('global', null),
+              ctx.groupId ? getPrev('group', ctx.groupId) : Promise.resolve(null),
+              ctx.votingId
+                ? getPrev('voting', ctx.votingId)
+                : Promise.resolve(null),
+              ctx.surveyId
+                ? getPrev('survey', ctx.surveyId)
+                : Promise.resolve(null),
+            ]);
+
+          const createdAt = new Date();
+
+          const hash = computeHash({
+            prevHash: globalPrev,
+            sequence: globalSeq,
+            groupSequence: groupSeq,
+            votingSequence: votingSeq,
+            surveySequence: surveySeq,
+            groupPrevHash: groupPrev,
+            votingPrevHash: votingPrev,
+            surveyPrevHash: surveyPrev,
+            action: ctx.action,
+            payload: ctx.payload,
+            createdAt,
+          });
+
+          await this.chainModel.create(
+            [
+              {
+                sequence: globalSeq,
+                groupSequence: groupSeq ?? undefined,
+                votingSequence: votingSeq ?? undefined,
+                surveySequence: surveySeq ?? undefined,
+                action: ctx.action,
+                payload: ctx.payload,
+                userId: ctx.userId ?? undefined,
+                groupId: ctx.groupId ?? undefined,
+                votingId: ctx.votingId ?? undefined,
+                surveyId: ctx.surveyId ?? undefined,
+                createdAt,
+                prevHash: globalPrev,
+                groupPrevHash: groupPrev ?? undefined,
+                votingPrevHash: votingPrev ?? undefined,
+                surveyPrevHash: surveyPrev ?? undefined,
+                hash,
+              },
+            ],
+            { session },
+          );
+        },
+        {
+          readConcern: { level: 'majority' },
+          writeConcern: { w: 'majority' },
+        },
       );
-
-      const createdAt = new Date();
-
-      const hash = computeHash({
-        prevHash: globalPrev,
-        sequence: globalSeq,
-        groupSequence: groupSeq,
-        votingSequence: votingSeq,
-        surveySequence: surveySeq,
-        groupPrevHash: groupPrev,
-        votingPrevHash: votingPrev,
-        surveyPrevHash: surveyPrev,
-        action: ctx.action,
-        payload: ctx.payload,
-        createdAt,
-      });
-
-      await this.chainModel.create({
-        sequence: globalSeq,
-        groupSequence: groupSeq ?? undefined,
-        votingSequence: votingSeq ?? undefined,
-        surveySequence: surveySeq ?? undefined,
-        action: ctx.action,
-        payload: ctx.payload,
-        userId: ctx.userId ?? undefined,
-        groupId: ctx.groupId ?? undefined,
-        votingId: ctx.votingId ?? undefined,
-        surveyId: ctx.surveyId ?? undefined,
-        createdAt,
-        prevHash: globalPrev,
-        groupPrevHash: groupPrev ?? undefined,
-        votingPrevHash: votingPrev ?? undefined,
-        surveyPrevHash: surveyPrev ?? undefined,
-        hash,
-      });
-    } catch (err) {
-      this.logger.error('Failed to append audit chain entry', err);
-    } finally {
-      if (lockToken) {
-        await this.redis.releaseLock(lockKey, lockToken);
+    } catch (err: any) {
+      if (sequencesAllocated) {
+        this.logger.error(
+          `Sequence leak detected due to transaction failure. ` +
+            `Allocated: global=${globalSeq}, group=${groupSeq}, voting=${votingSeq}, survey=${surveySeq}. ` +
+            `Error: ${err.message}`,
+        );
       }
+      this.logger.error('Failed to append audit chain entry atomically', err);
+      throw err;
+    } finally {
+      await session.endSession();
     }
   }
 
@@ -845,9 +935,12 @@ export class AuditService implements OnModuleInit {
     let headSequence = 0;
 
     if (!lastVerified) {
+      const seedData = groupId
+        ? `${GENESIS_SEED}:group:${groupId}`
+        : GENESIS_SEED;
       expectedPrevHash = crypto
         .createHash('sha256')
-        .update(GENESIS_SEED, 'utf8')
+        .update(seedData, 'utf8')
         .digest('hex');
     } else {
       headSequence = lastVerified;
@@ -963,7 +1056,12 @@ export class AuditService implements OnModuleInit {
     }
 
     if (headSequence > (lastVerified || 0)) {
-      await this.setLastVerifiedSequence(scope, scopeId, headSequence, forceFull);
+      await this.setLastVerifiedSequence(
+        scope,
+        scopeId,
+        headSequence,
+        forceFull,
+      );
     }
 
     return {
@@ -1168,7 +1266,12 @@ export class AuditService implements OnModuleInit {
     }
 
     if (headSequence > (lastVerified || 0)) {
-      await this.setLastVerifiedSequence(scope, votingId, headSequence, forceFull);
+      await this.setLastVerifiedSequence(
+        scope,
+        votingId,
+        headSequence,
+        forceFull,
+      );
     }
 
     return {
@@ -1365,7 +1468,12 @@ export class AuditService implements OnModuleInit {
     }
 
     if (headSequence > (lastVerified || 0)) {
-      await this.setLastVerifiedSequence(scope, groupId, headSequence, forceFull);
+      await this.setLastVerifiedSequence(
+        scope,
+        groupId,
+        headSequence,
+        forceFull,
+      );
     }
 
     return {
@@ -1570,7 +1678,12 @@ export class AuditService implements OnModuleInit {
     }
 
     if (headSequence > (lastVerified || 0)) {
-      await this.setLastVerifiedSequence(scope, surveyId, headSequence, forceFull);
+      await this.setLastVerifiedSequence(
+        scope,
+        surveyId,
+        headSequence,
+        forceFull,
+      );
     }
 
     return {

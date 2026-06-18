@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import {
   Card,
@@ -8,6 +8,7 @@ import {
   CardTitle,
   CardContent,
 } from "@/components/common/Card";
+import { useVotings } from "@/hooks/api/useVotings";
 import styles from "./RecentActivity.module.css";
 
 interface ActivityItem {
@@ -17,44 +18,6 @@ interface ActivityItem {
   description: string;
   timestamp: string;
 }
-
-const mockActivities: ActivityItem[] = [
-  {
-    id: "1",
-    type: "vote",
-    title: "New vote cast",
-    description: 'You voted in "Board Election 2024"',
-    timestamp: "2 minutes ago",
-  },
-  {
-    id: "2",
-    type: "survey",
-    title: "Survey completed",
-    description: '"Q4 Employee Feedback" received 45 responses',
-    timestamp: "15 minutes ago",
-  },
-  {
-    id: "3",
-    type: "group",
-    title: "New member joined",
-    description: 'Sarah K. joined "Engineering Team"',
-    timestamp: "1 hour ago",
-  },
-  {
-    id: "4",
-    type: "audit",
-    title: "Audit verified",
-    description: '"Annual Meeting Vote" audit completed',
-    timestamp: "3 hours ago",
-  },
-  {
-    id: "5",
-    type: "vote",
-    title: "Voting started",
-    description: '"Budget Proposal" is now accepting votes',
-    timestamp: "5 hours ago",
-  },
-];
 
 const getActivityIcon = (type: ActivityItem["type"]) => {
   switch (type) {
@@ -114,6 +77,32 @@ const getActivityIcon = (type: ActivityItem["type"]) => {
 
 export function RecentActivity() {
   const { t } = useI18n();
+  const { fetchRecentActivity } = useVotings();
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchRecentActivity(5).then((res) => {
+      if (res.data) {
+        setActivities(res.data);
+      }
+      setLoading(false);
+    });
+  }, [fetchRecentActivity]);
+
+  const formatTimestamp = (ts: string) => {
+    const date = new Date(ts);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${diffDays}d ago`;
+  };
 
   return (
     <Card padding="lg">
@@ -122,18 +111,28 @@ export function RecentActivity() {
       </CardHeader>
       <CardContent>
         <div className={styles.list}>
-          {mockActivities.map((activity) => (
-            <div key={activity.id} className={styles.item}>
-              <div className={`${styles.icon} ${styles[activity.type]}`}>
-                {getActivityIcon(activity.type)}
-              </div>
-              <div className={styles.content}>
-                <p className={styles.title}>{activity.title}</p>
-                <p className={styles.description}>{activity.description}</p>
-              </div>
-              <span className={styles.timestamp}>{activity.timestamp}</span>
+          {loading ? (
+            <div className={styles.loading}>
+              <div className={styles.spinner}></div>
             </div>
-          ))}
+          ) : activities.length === 0 ? (
+            <p className={styles.empty}>No recent activity found</p>
+          ) : (
+            activities.map((activity) => (
+              <div key={activity.id} className={styles.item}>
+                <div className={`${styles.icon} ${styles[activity.type]}`}>
+                  {getActivityIcon(activity.type)}
+                </div>
+                <div className={styles.content}>
+                  <p className={styles.title}>{activity.title}</p>
+                  <p className={styles.description}>{activity.description}</p>
+                </div>
+                <span className={styles.timestamp}>
+                  {formatTimestamp(activity.timestamp)}
+                </span>
+              </div>
+            ))
+          )}
         </div>
       </CardContent>
     </Card>

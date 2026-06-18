@@ -107,7 +107,6 @@
 
     // ── Tokens ────────────────────────────────────────────────────────────────
     refreshTokens           RefreshToken[]
-    surveyTokens            SurveyToken[]
     emailVerificationTokens EmailVerificationToken[]
     passwordResetTokens     PasswordResetToken[]
   }
@@ -201,26 +200,6 @@
     @@index([votingId])
   }
 
-  // MOVED TO REDIS FOR PERFORMANCE AND SCALABILITY
-  // Rec(2004)11 §47 – Single-use token that decouples authentication from ballot casting.
-  // model VotingToken {
-  //   id        String   @id @default(uuid())
-  //   votingId  String
-  //   userId    String
-  //   tokenHash String   @unique
-  //   used      Boolean  @default(false)
-  //   // Rec(2004)11 §50 – tokens must expire
-  //   expiresAt DateTime
-  //   createdAt DateTime @default(now())
-
-  //   voting Voting @relation(fields: [votingId], references: [id])
-  //   user   User   @relation(fields: [userId], references: [id])
-  //   ballots Ballot[]
-
-  //   @@unique([userId, votingId])
-  // }
-
-  // Rec(2004)11 §26 – "The What" for votings. Permanently anonymous.
   model Ballot {
     id          String  @id @default(uuid())
     votingId    String
@@ -269,7 +248,6 @@
 
     questions      SurveyQuestion[]
     participations SurveyParticipation[]
-    surveyTokens   SurveyToken[]
     // auditLogs      AuditLog[]            @relation("SurveyLogs")
     result         SurveyResult?
   }
@@ -338,21 +316,6 @@
     @@unique([userId, surveyId])
   }
 
-  // Rec(2004)11 §47 – Single-use token that decouples authentication from ballot casting.
-  model SurveyToken {
-    id        String   @id @default(uuid())
-    surveyId  String
-    userId    String
-    tokenHash String   @unique
-    used      Boolean  @default(false)
-    expiresAt DateTime
-    createdAt DateTime @default(now())
-
-    survey Survey @relation(fields: [surveyId], references: [id])
-    user   User   @relation(fields: [userId], references: [id])
-
-    @@unique([userId, surveyId])
-  }
 
   // ANONYMITY INVARIANTS:
   //   1. No userId field.
@@ -364,7 +327,8 @@
     optionId   String?
     isAbstention Boolean @default(false)
     ballotHash String  @unique
-
+    tokenHashed String?
+    
     question SurveyQuestion @relation(fields: [questionId], references: [id])
     option   SurveyOption?   @relation(fields: [optionId], references: [id])
 
@@ -382,27 +346,7 @@
     survey Survey @relation(fields: [surveyId], references: [id])
   }
 
-  // ─── SYSTEM UTILITIES ─────────────────────────────────────────────────────────
 
-  //MOVED TO MONGO 
-  // model AuditLog {
-  //   id        String      @id @default(uuid())
-  //   action    AuditAction
-  //   payload   Json
-  //   userId    String?
-  //   createdAt DateTime    @default(now())
-
-  //   votingId String?
-  //   voting   Voting? @relation("VotingLogs", fields: [votingId], references: [id])
-
-  //   surveyId String?
-  //   survey   Survey? @relation("SurveyLogs", fields: [surveyId], references: [id])
-
-  //   @@index([action])
-  //   @@index([userId])
-  //   @@index([votingId])
-  //   @@index([surveyId])
-  // }
 
   model RefreshToken {
     id        String    @id @default(uuid())

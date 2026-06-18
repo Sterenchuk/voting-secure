@@ -17,7 +17,48 @@
 .questionBody {
   display: flex;
   flex-direction: column;
+}
+
+.optionList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-sm);
+}
+
+.optionItem {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  background: var(--color-bg-primary);
+  overflow: hidden;
+}
+
+.optionClickable {
+  cursor: pointer;
+}
+
+.optionClickable:hover {
+  background: var(--muted);
+  border-color: var(--color-primary);
+}
+
+.optionSelected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+}
+
+.fullWidthControl {
+  width: 100%;
+  display: block;
+}
+
+.fullWidthControl label {
+  padding: var(--space-md) !important;
+  width: 100%;
+  cursor: pointer;
 }
 
 /* ── Choice options ── */
@@ -25,33 +66,22 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px;
-  border: 0.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
   user-select: none;
   font-size: 14px;
   color: var(--color-text-primary);
 }
 
-.choiceLabel:hover {
-  border-color: var(--color-accent-secondary);
-  background: rgba(64, 138, 113, 0.05);
-}
-
-.choiceLabelSelected {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
-}
-
 .otherLabelContent {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   flex: 1;
+}
+
+.optionText {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--color-text-primary);
 }
 
 .choiceLabel input[type="radio"],

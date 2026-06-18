@@ -32,9 +32,10 @@ import { FindAllGroupsDto } from './dto/group.query.dto';
 import { GroupsService } from './groups.service';
 import { Audit, ChainAction } from '../audit/audit.decorator';
 import { ResolveEmailsPipe } from '../common/pipes/resolve-emails.pipe';
+import { GroupRoleGuard } from '../common/guards/group-role.guard';
 
 @Controller('groups')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, GroupRoleGuard)
 @Roles(Role.USER)
 export class GroupsController {
   constructor(private readonly groupsService: GroupsService) {}
@@ -55,9 +56,10 @@ export class GroupsController {
   @Get()
   findAll(
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
+    @CurrentUser('role') role: Role,
     @Query('name') name?: FindAllGroupsDto['name'],
   ): Promise<GroupResponseDto[]> {
-    return this.groupsService.findAll(userId, name);
+    return this.groupsService.findAll(userId, role, name);
   }
 
   @Get(':id/members')

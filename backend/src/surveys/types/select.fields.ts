@@ -2,6 +2,7 @@ export const SELECT_QUESTION_OPTIONS = {
   id: true,
   text: true,
   order: true,
+  isDynamic: true,
 } as const;
 
 export const SELECT_CHOICE_CONFIG = {
@@ -65,16 +66,6 @@ export const SELECT_SURVEY_WITH_QUESTIONS = {
   },
 } as const;
 
-export const SELECT_SURVEY_TOKEN = {
-  id: true,
-  surveyId: true,
-  userId: true,
-  tokenHash: true,
-  used: true,
-  expiresAt: true,
-  createdAt: true,
-} as const;
-
 export const SELECT_SURVEY_BALLOT = {
   id: true,
   questionId: true,
@@ -107,6 +98,7 @@ export const SELECT_SURVEY_FOR_SUBMISSION = {
         select: {
           id: true,
           text: true,
+          isDynamic: true,
         },
       },
     },

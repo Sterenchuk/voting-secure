@@ -6,6 +6,7 @@ import {
   forwardRef,
   ConflictException,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { SurveysRepository } from './surveys.repository';
 import { GroupsService } from '../groups/groups.service';
@@ -22,6 +23,7 @@ import {
   SurveyQuestionType,
 } from './types/survey.types';
 import { UsersService } from '../users/users.service';
+import { BroadcastService } from '../broadcast/broadcast.service';
 
 @Injectable()
 export class SubmitService {
@@ -36,6 +38,7 @@ export class SubmitService {
     @Inject(forwardRef(() => SubmitGateway))
     private readonly gateway: SubmitGateway,
     private readonly usersService: UsersService,
+    private readonly broadcastService: BroadcastService,
   ) {}
 
   async requestToken(
@@ -44,6 +47,7 @@ export class SubmitService {
     selections: {
       ballots: ISurveyBallotInput[];
       isPractice?: boolean;
+      isAbstention?: boolean;
     },
   ) {
     const survey = await this.repo.findSurveyById(surveyId);
@@ -71,7 +75,11 @@ export class SubmitService {
     await this.redis.setSurveySelections(
       user.id,
       surveyId,
-      { ballots: selections.ballots, isPractice: selections.isPractice },
+      {
+        ballots: selections.ballots,
+        isPractice: selections.isPractice,
+        isAbstention: selections.isAbstention,
+      },
       3600,
     );
 
@@ -82,6 +90,7 @@ export class SubmitService {
           surveyId,
           expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
           isPractice: selections.isPractice,
+          isAbstention: selections.isAbstention,
         },
         userId: user.id,
         surveyId,
@@ -138,7 +147,7 @@ export class SubmitService {
         user.id,
         selections.ballots,
         token,
-        false,
+        selections.isAbstention ?? false,
         selections.isPractice,
       );
 
@@ -172,7 +181,9 @@ export class SubmitService {
       throw new ForbiddenException('Survey has ended');
     }
 
-    await this.groupService.checkMembership(userId, survey.groupId);
+    if (!survey.isPublic) {
+      await this.groupService.checkMembership(userId, survey.groupId);
+    }
 
     if (!isPractice) {
       const alreadySubmitted = await this.redis.hasUserSubmittedSurvey(
@@ -181,6 +192,42 @@ export class SubmitService {
       );
       if (alreadySubmitted) {
         throw new ForbiddenException('You have already submitted this survey');
+      }
+    }
+
+    // ── Validation: Required questions and choice limits ───────────────────────
+    if (!isAbstention) {
+      for (const question of survey.questions) {
+        const ballot = ballots.find((b) => b.questionId === question.id);
+        const hasResponse =
+          (ballot?.optionIds && ballot.optionIds.length > 0) ||
+          (ballot?.text && ballot.text.trim().length > 0);
+
+        if (question.isRequired && !hasResponse) {
+          throw new BadRequestException(
+            `Question "${question.text}" is required.`,
+          );
+        }
+
+        if (
+          hasResponse &&
+          question.type === SurveyQuestionType.MULTIPLE_CHOICE &&
+          question.choiceConfig
+        ) {
+          const selectedCount = ballot?.optionIds?.length || 0;
+          const { minChoices, maxChoices } = question.choiceConfig;
+
+          if (minChoices !== undefined && minChoices !== null && selectedCount < minChoices) {
+            throw new BadRequestException(
+              `Question "${question.text}" requires at least ${minChoices} choices.`,
+            );
+          }
+          if (maxChoices !== undefined && maxChoices !== null && selectedCount > maxChoices) {
+            throw new BadRequestException(
+              `Question "${question.text}" allows at most ${maxChoices} choices.`,
+            );
+          }
+        }
       }
     }
 
@@ -203,9 +250,23 @@ export class SubmitService {
       questionId: string;
       optionId: string;
       ballotHash: string;
+      tokenHashed?: string;
     }[] = [];
 
+    const redisAnswersMap = new Map<
+      string,
+      { optionIds: string[]; hasOther: boolean }
+    >();
+
     for (const b of ballots) {
+      const question = survey.questions.find((q) => q.id === b.questionId);
+      if (!question) continue;
+
+      if (!redisAnswersMap.has(b.questionId)) {
+        redisAnswersMap.set(b.questionId, { optionIds: [], hasOther: false });
+      }
+      const qEntry = redisAnswersMap.get(b.questionId)!;
+
       if (b.optionIds && b.optionIds.length > 0) {
         for (const optId of b.optionIds) {
           const isUuid =
@@ -220,6 +281,14 @@ export class SubmitService {
               b.questionId,
               optId,
             );
+          } else {
+            // Validate UUID belongs to this question
+            const option = question.options.find((o) => o.id === optId);
+            if (!option) {
+              throw new BadRequestException(
+                `Invalid option "${optId}" for question "${question.text}"`,
+              );
+            }
           }
 
           const receipt = CryptoUtils.generateBallotReceipt(
@@ -232,9 +301,13 @@ export class SubmitService {
             questionId: b.questionId,
             optionId: finalOptionId,
             ballotHash: receipt,
+            tokenHashed,
           });
+          qEntry.optionIds.push(finalOptionId);
         }
-      } else if (b.text) {
+      }
+
+      if (b.text) {
         // Freeform or 'Other' text
         const finalOptionId = await this.repo.getOrCreateDynamicOption(
           b.questionId,
@@ -250,7 +323,15 @@ export class SubmitService {
           questionId: b.questionId,
           optionId: finalOptionId,
           ballotHash: receipt,
+          tokenHashed,
         });
+
+        if (question.type === SurveyQuestionType.FREEFORM) {
+          qEntry.optionIds.push(finalOptionId);
+        } else {
+          // It's an 'Other' response for a choice question
+          qEntry.hasOther = true;
+        }
       }
     }
 
@@ -279,11 +360,13 @@ export class SubmitService {
       });
     }
 
-    const redisAnswers = ballots.map((b) => ({
-      questionId: b.questionId,
-      optionIds: b.optionIds || [],
-      hasOther: !!b.text && (!b.optionIds || b.optionIds.length === 0),
-    }));
+    const redisAnswers = Array.from(redisAnswersMap.entries()).map(
+      ([questionId, data]) => ({
+        questionId,
+        optionIds: data.optionIds,
+        hasOther: data.hasOther,
+      }),
+    );
 
     await this.redis.performSurveySubmission(
       surveyId,
@@ -309,6 +392,7 @@ export class SubmitService {
           action: ChainAction.SURVEY_BALLOT_CAST,
           payload: {
             ballotHashes: receipts,
+            tokenHashed,
             questionCount: ballots.length,
             isAbstention,
           },
@@ -334,14 +418,21 @@ export class SubmitService {
         );
       }
 
-      const results = await this.getResults(
+      await this.broadcastLiveResults(
         surveyId,
         survey.questions.map((q) => q.id),
       );
-      this.gateway.emitSurveyResults(surveyId, results);
     }
 
     return { success: true, receipts, isPractice: actualIsPractice };
+  }
+
+  broadcastResults(surveyId: string, results: ISurveyResults) {
+    this.gateway.emitSurveyResults(surveyId, results);
+  }
+
+  async broadcastLiveResults(surveyId: string, questionIds: string[]) {
+    await this.broadcastService.broadcastSurveyResults(surveyId, questionIds);
   }
 
   async getParticipationStats(surveyId: string) {
@@ -352,8 +443,6 @@ export class SubmitService {
       const date = new Date(p.createdAt);
       date.setSeconds(0);
       date.setMilliseconds(0);
-      const minutes = date.getMinutes();
-      date.setMinutes(minutes - (minutes % 5));
       const key = date.toISOString();
       stats[key] = (stats[key] || 0) + 1;
     });

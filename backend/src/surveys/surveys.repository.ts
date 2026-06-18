@@ -375,6 +375,7 @@ export class SurveysRepository {
       questionId: string;
       optionId: string;
       ballotHash: string;
+      tokenHashed?: string;
     }[],
   ) {
     return Promise.all(
@@ -384,6 +385,7 @@ export class SurveysRepository {
             questionId: b.questionId,
             optionId: b.optionId,
             ballotHash: b.ballotHash,
+            tokenHashed: b.tokenHashed,
           },
           select: SELECT_SURVEY_BALLOT,
         }),
@@ -397,7 +399,7 @@ export class SurveysRepository {
     tx: PrismaTx = this.db,
   ): Promise<string> {
     const existing = await tx.surveyOption.findFirst({
-      where: { questionId, text, isDynamic: true },
+      where: { questionId, text },
     });
 
     if (existing) return existing.id;
@@ -450,44 +452,6 @@ export class SurveysRepository {
   async countTotalResponsesBySurvey(surveyId: string) {
     return this.db.surveyBallot.count({
       where: { question: { surveyId } },
-    });
-  }
-
-  // _______________SURVEY_TOKENS________________
-
-  async findSurveyToken(tx: PrismaTx, userId: string, surveyId: string) {
-    const connection = tx || this.db;
-    return connection.surveyToken.findUnique({
-      where: { userId_surveyId: { userId, surveyId } },
-      select: { id: true, tokenHash: true, used: true, expiresAt: true },
-    });
-  }
-
-  async consumeSurveyToken(tx: PrismaTx, tokenId: string) {
-    return tx.surveyToken.update({
-      where: { id: tokenId },
-      data: { used: true },
-      select: { id: true },
-    });
-  }
-
-  async createSurveyToken(data: {
-    userId: string;
-    surveyId: string;
-    tokenHash: string;
-    expiresAt: Date;
-  }) {
-    return this.db.surveyToken.upsert({
-      where: {
-        userId_surveyId: { userId: data.userId, surveyId: data.surveyId },
-      },
-      create: data,
-      update: {
-        tokenHash: data.tokenHash,
-        expiresAt: data.expiresAt,
-        used: false,
-      },
-      select: { id: true, expiresAt: true },
     });
   }
 
