@@ -120,7 +120,11 @@ export default function SurveyDetailPage() {
 
   useSurveyUpdates(surveyId, (data) => {
     if (data.results) {
-      syncResults(data.results);
+      syncResults({
+        surveyId: data.surveyId ?? surveyId,
+        totalResponses: data.totalResponses ?? 0,
+        results: data.results,
+      });
     }
     if (surveyId) {
       fetchParticipationStats(surveyId).then((res) => {
