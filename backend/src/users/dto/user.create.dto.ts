@@ -28,4 +28,12 @@ export class UserCreateDto {
   @IsEnum(Role)
   @IsOptional()
   role?: Role;
+
+  @IsString()
+  @IsOptional()
+  language?: string;
+
+  @IsString()
+  @IsOptional()
+  theme?: string;
 }

@@ -9,6 +9,7 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  Res,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -21,10 +22,13 @@ import { UsersService } from './users.service';
 import { UserCreateDto } from './dto/user.create.dto';
 import { UserUpdateDto } from './dto/user.update.dto';
 import { UserResponseDto } from './dto/user.response.dto';
-import { UuidDto } from 'src/common/utils/uuid.dto';
-import { UserPayloadDto } from 'src/auth/dto/payload.dto';
+import { UuidDto } from '../common/utils/uuid.dto';
+import { UserPayloadDto } from '../auth/dto/payload.dto';
 
 import { JwtService } from '@nestjs/jwt';
+import { Audit, ChainAction, SecurityAction } from '../audit/audit.decorator';
+import { ConfigService } from '@nestjs/config';
+import type { Response } from 'express';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -32,6 +36,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -44,9 +49,14 @@ export class UsersController {
 
   @Patch('me')
   @Roles(Role.USER)
+  @Audit({
+    action: SecurityAction.TOKEN_REFRESH, // closest to profile update in current enum, or maybe use a custom one if needed
+    extractPayload: () => ({ action: 'PROFILE_UPDATE' }),
+  })
   async update(
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
     @Body() userUpdateDto: UserUpdateDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<{ user: UserResponseDto; access_token: string }> {
     const updatedUser = await this.usersService.update(userId, userUpdateDto);
 
@@ -55,14 +65,31 @@ export class UsersController {
       email: updatedUser.email,
       name: updatedUser.name,
       role: updatedUser.role,
+      language: updatedUser.language,
+      theme: updatedUser.theme,
     };
 
     const access_token = this.jwtService.sign(payload);
+
+    res.cookie('access_token', access_token, {
+      httpOnly: true,
+      secure: this.configService.get<string>('NODE_ENV') === 'production',
+      sameSite: 'strict',
+      maxAge: 15 * 60 * 1000,
+      path: '/',
+      signed: true,
+    });
+
     return { user: updatedUser, access_token };
   }
+
   @Delete('me')
   @Roles(Role.USER)
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Audit({
+    action: SecurityAction.USER_LOGOUT, // closest to self-deletion in current enum
+    extractPayload: () => ({ action: 'SELF_DELETION' }),
+  })
   async delete(
     @CurrentUser('sub') userId: UserPayloadDto['sub'],
   ): Promise<void> {
@@ -84,6 +111,13 @@ export class UsersController {
 
   @Patch(':id')
   @Roles(Role.ADMIN)
+  @Audit({
+    action: ChainAction.USER_ROLE_CHANGED,
+    extractPayload: (_res, req: any) => ({
+      targetUserId: req.params.id,
+      action: 'ADMIN_UPDATE',
+    }),
+  })
   async adminUpdate(
     @Param('id') userId: UuidDto['id'],
     @Body() userUpdateDto: UserUpdateDto,
@@ -94,12 +128,26 @@ export class UsersController {
   @Delete(':id')
   @Roles(Role.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Audit({
+    action: ChainAction.USER_ROLE_CHANGED, // reuse as admin-action
+    extractPayload: (_res, req: any) => ({
+      targetUserId: req.params.id,
+      action: 'ADMIN_DELETE',
+    }),
+  })
   async adminDelete(@Param('id') id: UuidDto['id']): Promise<void> {
     await this.usersService.delete(id);
   }
 
   @Post('register-admin')
   @Roles(Role.ADMIN)
+  @Audit({
+    action: ChainAction.USER_ROLE_CHANGED,
+    extractPayload: (res: any) => ({
+      targetUserId: res.id,
+      newRole: Role.ADMIN,
+    }),
+  })
   async registerAdmin(
     @Body('id') userCreateDto: UserCreateDto,
   ): Promise<UserResponseDto> {
@@ -108,6 +156,13 @@ export class UsersController {
 
   @Patch('promote/:id')
   @Roles(Role.ADMIN)
+  @Audit({
+    action: ChainAction.USER_ROLE_CHANGED,
+    extractPayload: (res: any) => ({
+      targetUserId: res.id,
+      newRole: Role.ADMIN,
+    }),
+  })
   async promoteToAdmin(
     @Param('id') id: UuidDto['id'],
   ): Promise<UserResponseDto> {

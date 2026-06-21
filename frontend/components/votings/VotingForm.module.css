@@ -1,0 +1,141 @@
+.formSection {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border);
+}
+
+.hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-md);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.optionList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.optionItem {
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  background: var(--color-bg-primary);
+}
+
+.optionClickable {
+  cursor: pointer;
+}
+
+.optionClickable:hover {
+  background: var(--muted);
+  border-color: var(--color-primary);
+}
+
+.optionSelected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+}
+
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.fullWidthControl {
+  width: 100%;
+  padding: 0 !important;
+}
+
+.optionText {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.otherInputInline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex: 1;
+}
+
+.inlineInput {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  padding: 2px 4px;
+  font-family: inherit;
+  font-size: var(--text-base);
+  flex: 1;
+  outline: none;
+}
+
+.inlineInput:focus {
+  border-color: var(--color-primary);
+}
+
+.errorMsg {
+  margin-top: var(--space-md);
+  color: oklch(0.6 0.2 25);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.submitRow {
+  margin-top: var(--space-xl);
+  display: flex;
+  justify-content: center;
+}
+
+.emailCheck {
+  background: var(--muted);
+  padding: var(--space-lg);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  max-width: 400px;
+}
+
+.emailCheckHeader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  margin-bottom: var(--space-sm);
+}
+
+.emailCheckText {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-lg);
+}
+
+.emailCheckActions {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: center;
+}
+
+.spinnerSmall {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-primary);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

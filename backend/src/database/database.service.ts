@@ -2,6 +2,17 @@ import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
+export type PrismaTx = Omit<
+  DatabaseService,
+  | '$connect'
+  | '$disconnect'
+  | '$on'
+  | '$use'
+  | '$extends'
+  | 'onModuleInit'
+  | 'onModuleDestroy'
+>;
+
 @Injectable()
 export class DatabaseService
   extends PrismaClient

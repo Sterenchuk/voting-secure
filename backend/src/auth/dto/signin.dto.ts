@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsStrongPassword } from 'class-validator';
+import { IsString, IsEmail, IsStrongPassword, IsOptional, IsBoolean } from 'class-validator';
 
 export class SignInDto {
   @IsEmail({}, { message: 'A valid email address is required.' })
@@ -13,4 +13,8 @@ export class SignInDto {
     },
   )
   password: string;
+
+  @IsOptional()
+  @IsBoolean()
+  rememberMe?: boolean;
 }

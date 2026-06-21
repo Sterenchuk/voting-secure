@@ -1,0 +1,156 @@
+.auditContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-bottom: var(--space-xl);
+}
+
+.participationCard {
+  padding: var(--space-md);
+  background-color: rgba(16, 185, 129, 0.05);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.adminCard {
+  padding: var(--space-md);
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.cardInfo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.iconSuccess {
+  width: 24px;
+  height: 24px;
+  color: var(--color-success);
+}
+
+.iconAdmin {
+  width: 24px;
+  height: 24px;
+  color: var(--color-text-secondary);
+}
+
+.cardTitle {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.cardText {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.adminActions {
+  display: flex;
+  gap: var(--space-sm);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.actionBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.btnIcon {
+  width: 14px;
+  height: 14px;
+}
+
+.metaGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  background-color: var(--color-bg-primary);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-border);
+}
+
+.metaItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metaLabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+
+.metaValue {
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 800;
+  width: fit-content;
+}
+
+.statusSecure {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: var(--color-success);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.statusWarning {
+  background-color: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.secureHint {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  margin-top: var(--space-xs);
+}
+
+@media (max-width: 768px) {
+  .participationCard, .cardHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .adminActions {
+    flex-wrap: wrap;
+  }
+}

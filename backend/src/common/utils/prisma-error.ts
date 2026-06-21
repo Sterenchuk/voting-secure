@@ -1,52 +1,20 @@
 import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  InternalServerErrorException,
-  NotFoundException,
+  HttpException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 
+/**
+ * @deprecated Use global ExceptionsFilter instead. 
+ * This function is kept for backward compatibility as requested by the user.
+ * It attaches context to the error and rethrows it, letting the global filter handle it.
+ */
 export function handlePrismaError(error: unknown, context: string): never {
-  if (error instanceof NotFoundException) {
-    throw error;
-  }
-  if (error instanceof ConflictException) {
-    throw error;
-  }
-  if (error instanceof BadRequestException) {
-    throw error;
-  }
-  if (error instanceof ForbiddenException) {
+  if (error instanceof HttpException) {
     throw error;
   }
 
-  if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    // Unique constraint violation (P2002)
-    if (error.code === 'P2002') {
-      const targets = Array.isArray(error.meta?.target)
-        ? error.meta.target
-        : error.meta?.target
-          ? [error.meta.target]
-          : [];
-
-      const fields = targets.length > 0 ? targets.join(', ') : 'unknown field';
-
-      if (targets.includes('email')) {
-        throw new ConflictException(`Email in ${context} is already taken.`);
-      }
-
-      throw new ConflictException(
-        `Unique constraint violated in ${context}: ${fields}`,
-      );
-    }
-
-    // Other known Prisma errors
-    console.error(`Prisma error (${error.code}) in ${context}:`, error);
-    throw new InternalServerErrorException(`Could not complete ${context}`);
+  if (error instanceof Error) {
+    (error as any).context = context;
   }
 
-  // Non-Prisma or unknown errors
-  console.error(`Unexpected error in ${context}:`, error);
-  throw new InternalServerErrorException(`Could not complete ${context}`);
+  throw error;
 }

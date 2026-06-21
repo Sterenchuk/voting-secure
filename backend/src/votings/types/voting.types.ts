@@ -1,0 +1,156 @@
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+export enum VotingType {
+  SINGLE_CHOICE = 'SINGLE_CHOICE',
+  MULTIPLE_CHOICE = 'MULTIPLE_CHOICE',
+}
+
+// ─── Voting ───────────────────────────────────────────────────────────────────
+
+export interface IVoting {
+  id: string;
+  creatorId: string;
+  groupId: string;
+  title: string;
+  description: string | null;
+  type: VotingType;
+  isPublic: boolean;
+  isFinalized: boolean;
+  allowOther: boolean;
+  allowAbstain: boolean;
+  minChoices: number;
+  maxChoices: number | null;
+  startAt: Date | null;
+  endAt: Date | null;
+  finalizedAt: Date | null;
+  createdAt: Date;
+  userGroupRole?: string;
+}
+
+export interface IVotingWithOptions extends IVoting {
+  options: IOption[];
+}
+
+export interface IVotingDetail extends IVoting {
+  options: IOptionWithVoteCount[];
+}
+
+export interface ICreateVotingData {
+  groupId: string;
+  title: string;
+  description?: string;
+  type: VotingType;
+  isPublic: boolean;
+  allowOther: boolean;
+  allowAbstain: boolean;
+  minChoices: number;
+  maxChoices?: number;
+  startAt?: Date;
+  endAt?: Date;
+  options: string[];
+  broadcastInterval?: number;
+}
+
+export interface IUpdateVotingData {
+  title?: string;
+  description?: string;
+  isFinalized?: boolean;
+  finalizedAt?: Date;
+  isPublic?: boolean;
+  allowOther?: boolean;
+  allowAbstain?: boolean;
+  minChoices?: number;
+  maxChoices?: number;
+  startAt?: Date;
+  endAt?: Date;
+  broadcastInterval?: number;
+  lastBroadcastAt?: Date;
+}
+
+export interface IVotingWhereInput {
+  groupId?: string;
+  title?: { contains: string; mode: 'insensitive' };
+  startAt?: { gte: Date };
+  endAt?: { lte: Date };
+  isPublic?: boolean;
+  isFinalized?: boolean;
+  deletedAt?: null;
+}
+
+// ─── Option ───────────────────────────────────────────────────────────────────
+
+export interface IOption {
+  id: string;
+  text: string;
+  votingId: string;
+}
+
+export interface IOptionWithVoteCount extends IOption {
+  voteCount: number;
+}
+
+// ─── Ballot ───────────────────────────────────────────────────────────────────
+
+// Rec(2004)11 §26 — ballot carries no userId, only a client-generated hash
+export interface IBallot {
+  id: string;
+  votingId: string;
+  optionId: string;
+  ballotHash: string;
+}
+
+export interface IBallotInput {
+  optionId: string;
+}
+
+// ─── Participation ────────────────────────────────────────────────────────────
+
+export interface IVoteParticipation {
+  id: string;
+  userId: string;
+  votingId: string;
+  createdAt: Date;
+}
+
+// ─── Results ──────────────────────────────────────────────────────────────────
+
+export interface IOptionResult {
+  id: string;
+  text: string;
+  isDynamic: boolean;
+  voteCount: number;
+}
+
+export interface IVotingResults {
+  options: IOptionResult[];
+  totalBallots: number;
+  abstentionsCount?: number;
+  otherTotal?: number;
+  dynamicOptions?: IOptionResult[];
+}
+
+// ─── Sealed result ────────────────────────────────────────────────────────────
+
+export interface IVotingResult {
+  id: string;
+  votingId: string;
+  tally: Record<string, number>;
+  totalBallots: number;
+  tallyHash: string;
+  sealedAt: Date;
+}
+
+// ─── User vote status ─────────────────────────────────────────────────────────
+
+// Rec(2004)11: only participation status is returned, never the choice made
+export interface IUserVoteStatus {
+  participated: boolean;
+  receipts?: string[];
+}
+
+// ─── WebSocket events ─────────────────────────────────────────────────────────
+
+export interface IVotingResultsEvent {
+  votingId: string;
+  results: IVotingResults;
+}

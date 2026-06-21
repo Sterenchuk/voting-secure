@@ -3,7 +3,9 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { ExceptionsFilter } from './common/filters/exceptions.filter';
 
 class RedisIoAdapter extends IoAdapter {
   private adapterConstructor: ReturnType<typeof createAdapter>;
@@ -12,10 +14,11 @@ class RedisIoAdapter extends IoAdapter {
     const pubClient = new Redis({
       host: process.env.REDIS_HOST || 'redis',
       port: parseInt(process.env.REDIS_PORT || '6379'),
+      lazyConnect: true,
     });
     const subClient = pubClient.duplicate();
 
-    await Promise.all([pubClient.connect, subClient.connect]);
+    await Promise.all([pubClient.connect(), subClient.connect()]);
     this.adapterConstructor = createAdapter(pubClient, subClient);
   }
 
@@ -29,6 +32,8 @@ class RedisIoAdapter extends IoAdapter {
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
+
+  app.use(cookieParser(process.env.JWT_SECRET));
 
   app.enableCors({
     origin: [
@@ -48,6 +53,8 @@ async function bootstrap() {
     }),
   );
 
+  app.useGlobalFilters(new ExceptionsFilter());
+
   try {
     const redisIoAdapter = new RedisIoAdapter(app);
     await redisIoAdapter.connectToRedis();
@@ -57,7 +64,7 @@ async function bootstrap() {
     logger.error('Failed to connect to Redis Adapter:', error);
   }
 
-  const port = process.env.BACKEND_HOST_PORT || 3000;
+  const port = process.env.PORT || 3001;
   await app.listen(port);
 
   logger.log(`🚀 Node.js Backend is running on port ${port}`);

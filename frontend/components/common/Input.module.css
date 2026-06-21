@@ -1,0 +1,143 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.label {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.required {
+  color: var(--color-error);
+  margin-left: var(--space-xs);
+}
+
+.inputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input {
+  width: 100%;
+  background-color: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  transition: all var(--transition-fast);
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.input:hover {
+  border-color: var(--color-border-light);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 0 3px rgba(64, 138, 113, 0.15);
+}
+
+.input.error {
+  border-color: var(--color-error);
+}
+
+.input.error:focus {
+  box-shadow: 0 0 0 3px rgba(244, 67, 54, 0.15);
+}
+
+/* Sizes */
+.sm {
+  padding: var(--space-xs) var(--space-sm);
+  font-size: var(--text-sm);
+}
+
+.md {
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--text-base);
+}
+
+.lg {
+  padding: var(--space-md) var(--space-lg);
+  font-size: var(--text-lg);
+}
+
+/* Icons */
+.leftIcon,
+.rightIcon {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.leftIcon {
+  left: var(--space-sm);
+}
+
+.rightIcon {
+  right: var(--space-sm);
+}
+
+.leftIcon svg,
+.rightIcon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.hasLeftIcon {
+  padding-left: calc(var(--space-sm) + 28px);
+}
+
+.hasRightIcon {
+  padding-right: calc(var(--space-sm) + 28px);
+}
+
+/* Password Toggle */
+.passwordToggle {
+  position: absolute;
+  right: var(--space-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.passwordToggle:hover {
+  color: var(--color-text-primary);
+}
+
+.passwordToggle svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Error & Hint Text */
+.errorText {
+  color: var(--color-error);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.hintText {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  margin: 0;
+}

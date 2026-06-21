@@ -1,0 +1,502 @@
+.surveyPage {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  padding: 2rem;
+}
+
+/* HEADER */
+.surveyPageHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.pageTitle {
+  font-size: 1.875rem;
+  font-weight: 700;
+  line-height: 2.25rem;
+  letter-spacing: -0.025em;
+}
+
+.pageSubtitle {
+  color: hsl(var(--muted-foreground));
+}
+
+@media (min-width: 768px) {
+  .surveyPageHeader {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+/* ACTION BUTTONS */
+.actionButton {
+  min-width: 140px;
+  height: 2.25rem;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  letter-spacing: 0.01em;
+}
+
+/* PROGRESS CARD */
+.progressCard {
+  margin-bottom: 1.5rem;
+  border-color: hsl(217.2 91.2% 59.8% / 0.5);
+  background-color: hsl(217.2 91.2% 59.8% / 0.05);
+  position: sticky;
+  top: 1rem;
+  z-index: 10;
+  box-shadow: var(--shadow-xl);
+  backdrop-filter: blur(4px);
+}
+
+.progressHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.progressInfo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.progressIcon {
+  height: 1rem;
+  width: 1rem;
+  animation: spin 1s linear infinite;
+  color: hsl(217.2 91.2% 59.8%);
+}
+
+.progressLabel {
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(217.2 91.2% 59.8%);
+}
+
+.progressPercent {
+  font-size: 0.875rem;
+  font-weight: 900;
+  color: hsl(217.2 91.2% 59.8%);
+}
+
+.progressBar {
+  height: 0.75rem;
+  background-color: hsl(217.2 91.2% 59.8% / 0.2);
+}
+
+.progressDescription {
+  font-size: 10px;
+  color: hsl(217.2 91.2% 59.8% / 0.7);
+  margin-top: 0.5rem;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ALERT */
+.integrityAlert {
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-md);
+}
+
+.alertTitleWrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.alertIconSecure {
+  height: 1.25rem;
+  width: 1.25rem;
+  color: hsl(142.1 76.2% 36.3%);
+}
+
+.alertIconCompromised {
+  height: 1.25rem;
+  width: 1.25rem;
+}
+
+.alertTitleText {
+  text-transform: uppercase;
+  font-weight: 900;
+  font-size: 1.125rem;
+}
+
+.alertContent {
+  margin-top: 0.25rem;
+}
+
+.verifiedAt {
+  font-size: 10px;
+  opacity: 0.7;
+  margin-top: 0.25rem;
+  font-style: italic;
+}
+
+.alertActions {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+
+.focusCheckboxWrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: hsl(0 84.2% 60.2% / 0.1);
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid hsl(0 84.2% 60.2% / 0.2);
+}
+
+.focusCheckbox {
+  border-color: hsl(0 84.2% 60.2%);
+}
+
+.focusLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: hsl(0 72.2% 35.1%);
+}
+
+.jumpButton {
+  height: 2rem;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+/* STATS */
+.statsGrid {
+  display: grid;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .statsGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.cardHeaderSmall {
+  padding-bottom: 0.5rem;
+}
+
+.cardTitleStats {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  letter-spacing: 0.1em;
+}
+
+.searchInputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.filterInput {
+  font-size: 0.75rem;
+  height: 2.25rem;
+  background-color: hsl(var(--muted) / 0.5);
+}
+
+.searchSubmitBtn {
+  height: 2.25rem;
+  font-weight: 700;
+}
+
+.integrityFilterList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.integrityFilterToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  background-color: hsl(var(--muted) / 0.3);
+  border: 1px solid hsl(var(--muted-foreground) / 0.1);
+}
+
+.integrityFilterLabel {
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.quickFilterRow {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.quickFilterBtn {
+  flex: 1;
+  font-size: 10px;
+  height: 2rem;
+  font-weight: 700;
+}
+
+.statsContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.statsValuePrimary {
+  font-size: 1.875rem;
+  font-weight: 900;
+  color: hsl(var(--primary));
+}
+
+.statsValueSecondary {
+  font-size: 1.25rem;
+  font-weight: 900;
+}
+
+.statsValueGap {
+  color: hsl(38 92.2% 50.2%);
+}
+
+.statsValueNoGap {
+  color: hsl(142.1 76.2% 36.3%);
+}
+
+.statsLabel {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.ledgerCard {
+  box-shadow: var(--shadow-lg);
+  border-color: hsl(var(--muted-foreground) / 0.1);
+}
+
+.ledgerHeader {
+  border-bottom: 1px solid hsl(var(--border));
+  background-color: hsl(var(--muted) / 0.1);
+}
+
+.ledgerTitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.tableHeader {
+  background-color: hsl(var(--muted) / 0.5);
+}
+
+.tableHeadText {
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.seqCellWrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.surveySeqText {
+  font-weight: 900;
+  color: hsl(var(--primary));
+}
+
+.globalSeqBadge {
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+.actionBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 0.125rem 0.5rem;
+  background-color: hsl(var(--primary) / 0.05);
+  color: hsl(var(--primary));
+  border: 1px solid hsl(var(--primary) / 0.1);
+}
+
+.timestampText {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
+}
+
+.detailButton {
+  height: 2rem;
+  width: 2rem;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+.detailButton:hover {
+  background-color: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
+}
+
+.emptyStateText {
+  text-align: center;
+  padding: 2rem 0;
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
+.tableWrapper {
+  border: 1px solid hsl(var(--border));
+  border-radius: 1rem;
+  overflow: hidden;
+  background: hsl(var(--card));
+}
+
+.tableRow {
+  transition: background-color 0.15s ease;
+}
+.tableRow:hover {
+  background-color: hsl(var(--muted) / 0.4);
+}
+
+.tamperedRow {
+  background-color: hsl(0 84% 60% / 0.1);
+  border-left: 3px solid hsl(0 84% 55% / 0.85);
+}
+
+.victimRow {
+  background-color: hsl(38 92% 50% / 0.08);
+  border-left: 3px solid hsl(38 92% 45% / 0.75);
+}
+
+.gapRow {
+  border-left: 3px solid hsl(38 92% 45% / 0.7);
+  background-color: hsl(38 92% 50% / 0.05);
+}
+
+.labelTampered {
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(0 72% 40%);
+  line-height: 1;
+  margin-top: 4px;
+}
+
+.labelVictim {
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: hsl(38 85% 35%);
+  line-height: 1;
+  margin-top: 4px;
+}
+
+.labelGap {
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: hsl(38 85% 35%);
+  line-height: 1;
+  margin-top: 4px;
+}
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.refreshIcon {
+  margin-right: 0.5rem;
+  height: 1rem;
+  width: 1rem;
+}
+
+.verifyIcon {
+  margin-right: 0.5rem;
+  height: 1rem;
+  width: 1rem;
+}
+
+.alertDescriptionContent {
+  margin-top: 0.25rem;
+}
+
+.searchIconBtn {
+  height: 0.75rem;
+  width: 0.75rem;
+  margin-right: 0.5rem;
+}
+
+.tableCellRight {
+  text-align: right;
+}
+
+.eyeIcon {
+  height: 1rem;
+  width: 1rem;
+}
+
+.loadingIconSmall {
+  height: 0.75rem;
+  width: 0.75rem;
+  animation: spin 1s linear infinite;
+}
+
+.cardContentPt6 {
+  padding-top: 1.5rem;
+}
+
+.cardContentGrid2 {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.cardContentP0 {
+  padding: 0;
+}
+
+.verifyButton {
+  border-color: hsl(var(--primary) / 0.5);
+}
+
+.animateSpin {
+  animation: spin 1s linear infinite;
+}
+
+.seqCell {
+  font-family: monospace;
+  font-weight: 700;
+  color: hsl(160 84% 34%);
+}
+
+.globalSeqCell {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+}

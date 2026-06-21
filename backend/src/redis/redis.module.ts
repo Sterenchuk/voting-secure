@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Module, OnModuleDestroy, Inject } from '@nestjs/common';
 import Redis from 'ioredis';
 import { RedisVotingService } from './redis.service';
 
@@ -10,7 +10,7 @@ import { RedisVotingService } from './redis.service';
       provide: 'REDIS_CLIENT',
       useFactory: () => {
         return new Redis({
-          host: process.env.REDIS_HOST || 'localhost',
+          host: process.env.REDIS_HOST || 'redis',
           port: parseInt(process.env.REDIS_PORT || '6379'),
         });
       },
@@ -18,4 +18,10 @@ import { RedisVotingService } from './redis.service';
   ],
   exports: ['REDIS_CLIENT', RedisVotingService],
 })
-export class RedisModule {}
+export class RedisModule implements OnModuleDestroy {
+  constructor(@Inject('REDIS_CLIENT') private readonly redisClient: Redis) {}
+
+  async onModuleDestroy() {
+    await this.redisClient.quit();
+  }
+}
