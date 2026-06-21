@@ -113,6 +113,13 @@ export class AuditService implements OnModuleInit {
     @InjectQueue('audit') private readonly auditQueue: Queue,
   ) {}
 
+  private genesisHash(scope: string, scopeId: string | null): string {
+    const seedData = scopeId
+      ? `${GENESIS_SEED}:${scope}:${scopeId}`
+      : GENESIS_SEED;
+    return crypto.createHash('sha256').update(seedData, 'utf8').digest('hex');
+  }
+
   // ─── Persistence: Verification Marker ───────────────────────────────────────
 
   async setLastVerifiedSequence(
@@ -562,89 +569,89 @@ export class AuditService implements OnModuleInit {
    * Uses Redis locking to ensure sequential chain writes even with multiple workers.
    */
   async processAppendInternal(ctx: AuditChainContext): Promise<void> {
+    const [globalSeq, groupSeq, votingSeq, surveySeq] = await Promise.all([
+      this.redis.nextGlobalSequence(),
+      ctx.groupId
+        ? this.redis.nextGroupSequence(ctx.groupId)
+        : Promise.resolve(null),
+      ctx.votingId
+        ? this.redis.nextVotingSequence(ctx.votingId)
+        : Promise.resolve(null),
+      ctx.surveyId
+        ? this.redis.nextSurveySequence(ctx.surveyId)
+        : Promise.resolve(null),
+    ]);
+
     const session = await this.chainModel.db.startSession();
-    let sequencesAllocated = false;
-    let globalSeq = 0,
-      groupSeq: number | null = null,
-      votingSeq: number | null = null,
-      surveySeq: number | null = null;
 
     try {
-      // Step 1: Allocate sequences from Redis (outside MongoDB transaction)
-      [globalSeq, groupSeq, votingSeq, surveySeq] = await Promise.all([
-        this.redis.nextGlobalSequence(),
-        ctx.groupId
-          ? this.redis.nextGroupSequence(ctx.groupId)
-          : Promise.resolve(null),
-        ctx.votingId
-          ? this.redis.nextVotingSequence(ctx.votingId)
-          : Promise.resolve(null),
-        ctx.surveyId
-          ? this.redis.nextSurveySequence(ctx.surveyId)
-          : Promise.resolve(null),
-      ]);
-      sequencesAllocated = true;
-
       await session.withTransaction(
         async () => {
-          // Helper to get prevHash with appropriate read concern
-          const getPrev = async (
-            scope: 'global' | 'group' | 'voting' | 'survey',
-            scopeId: string | null,
-          ): Promise<string> => {
-            const filter: Record<string, any> = {};
-            let sortField = 'sequence';
-
-            if (scope !== 'global' && scopeId) {
-              filter[`${scope}Id`] = scopeId;
-              filter[`${scope}Sequence`] = { $ne: null };
-              sortField = `${scope}Sequence`;
-            }
-
-            const last = await this.chainModel
-              .findOne(filter)
-              .sort({ [sortField]: -1 })
-              .select({ hash: 1 })
-              .session(session)
-              .read('majority')
-              .lean();
-
-            if (!last) {
-              const seedData = scopeId
-                ? `${GENESIS_SEED}:${scope}:${scopeId}`
-                : GENESIS_SEED;
-              return crypto
-                .createHash('sha256')
-                .update(seedData, 'utf8')
-                .digest('hex');
-            }
-            return (last as any).hash;
-          };
-
-          // Step 2: Get the latest hashes from the DB within the transaction
+          // Everything here CAN safely retry — prevHash reads + insert
+          // use the SAME globalSeq/votingSeq/etc from the closure,
+          // no Redis calls inside this scope anymore.
           const [globalPrev, groupPrev, votingPrev, surveyPrev] =
             await Promise.all([
-              getPrev('global', null),
-              ctx.groupId ? getPrev('group', ctx.groupId) : Promise.resolve(null),
+              this.chainModel
+                .findOne({}, { hash: 1 })
+                .sort({ sequence: -1 })
+                .session(session)
+                .lean(),
+              ctx.groupId
+                ? this.chainModel
+                    .findOne(
+                      { groupId: ctx.groupId, groupSequence: { $ne: null } },
+                      { hash: 1 },
+                    )
+                    .sort({ groupSequence: -1 })
+                    .session(session)
+                    .lean()
+                : null,
               ctx.votingId
-                ? getPrev('voting', ctx.votingId)
-                : Promise.resolve(null),
+                ? this.chainModel
+                    .findOne(
+                      { votingId: ctx.votingId, votingSequence: { $ne: null } },
+                      { hash: 1 },
+                    )
+                    .sort({ votingSequence: -1 })
+                    .session(session)
+                    .lean()
+                : null,
               ctx.surveyId
-                ? getPrev('survey', ctx.surveyId)
-                : Promise.resolve(null),
+                ? this.chainModel
+                    .findOne(
+                      { surveyId: ctx.surveyId, surveySequence: { $ne: null } },
+                      { hash: 1 },
+                    )
+                    .sort({ surveySequence: -1 })
+                    .session(session)
+                    .lean()
+                : null,
             ]);
+
+          const globalPrevHash =
+            globalPrev?.hash ?? this.genesisHash('global', null);
+          const groupPrevHash = ctx.groupId
+            ? (groupPrev?.hash ?? this.genesisHash('group', ctx.groupId))
+            : null;
+          const votingPrevHash = ctx.votingId
+            ? (votingPrev?.hash ?? this.genesisHash('voting', ctx.votingId))
+            : null;
+          const surveyPrevHash = ctx.surveyId
+            ? (surveyPrev?.hash ?? this.genesisHash('survey', ctx.surveyId))
+            : null;
 
           const createdAt = new Date();
 
           const hash = computeHash({
-            prevHash: globalPrev,
+            prevHash: globalPrevHash,
             sequence: globalSeq,
             groupSequence: groupSeq,
             votingSequence: votingSeq,
             surveySequence: surveySeq,
-            groupPrevHash: groupPrev,
-            votingPrevHash: votingPrev,
-            surveyPrevHash: surveyPrev,
+            groupPrevHash,
+            votingPrevHash,
+            surveyPrevHash,
             action: ctx.action,
             payload: ctx.payload,
             createdAt,
@@ -664,10 +671,10 @@ export class AuditService implements OnModuleInit {
                 votingId: ctx.votingId ?? undefined,
                 surveyId: ctx.surveyId ?? undefined,
                 createdAt,
-                prevHash: globalPrev,
-                groupPrevHash: groupPrev ?? undefined,
-                votingPrevHash: votingPrev ?? undefined,
-                surveyPrevHash: surveyPrev ?? undefined,
+                prevHash: globalPrevHash,
+                groupPrevHash: groupPrevHash ?? undefined,
+                votingPrevHash: votingPrevHash ?? undefined,
+                surveyPrevHash: surveyPrevHash ?? undefined,
                 hash,
               },
             ],
@@ -679,21 +686,15 @@ export class AuditService implements OnModuleInit {
           writeConcern: { w: 'majority' },
         },
       );
-    } catch (err: any) {
-      if (sequencesAllocated) {
-        this.logger.error(
-          `Sequence leak detected due to transaction failure. ` +
-            `Allocated: global=${globalSeq}, group=${groupSeq}, voting=${votingSeq}, survey=${surveySeq}. ` +
-            `Error: ${err.message}`,
-        );
-      }
-      this.logger.error('Failed to append audit chain entry atomically', err);
+    } catch (err) {
+      this.logger.error(
+        `Sequence leak risk: global=${globalSeq}, group=${groupSeq}, voting=${votingSeq}, survey=${surveySeq}. Error: ${(err as Error).message}`,
+      );
       throw err;
     } finally {
       await session.endSession();
     }
   }
-
   async appendSecurity(ctx: AuditSecurityContext): Promise<void> {
     try {
       await this.securityModel.create({

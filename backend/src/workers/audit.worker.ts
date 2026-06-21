@@ -26,16 +26,18 @@ import { Logger } from '@nestjs/common';
       }),
     }),
     AuditModule,
+    BullModule.registerQueue({ name: 'audit' }),
   ],
+  providers: [AuditProcessor],
 })
 class AuditWorkerModule {}
 
 async function bootstrap() {
   const logger = new Logger('AuditWorker');
   const app = await NestFactory.createApplicationContext(AuditWorkerModule);
-  
+
   logger.log('🚀 Audit Worker is running and listening for jobs...');
-  
+
   process.on('SIGTERM', async () => {
     logger.log('Shutting down Audit Worker...');
     await app.close();

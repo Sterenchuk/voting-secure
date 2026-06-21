@@ -1,7 +1,5 @@
-// src/audit/audit.module.ts
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { JwtModule } from '@nestjs/jwt';
 import { BullModule } from '@nestjs/bullmq';
 
 import { AuditChain, AuditChainSchema } from './schemas/audit-chain.schema';
@@ -22,7 +20,6 @@ import {
   AuditCheckpointSchema,
 } from './schemas/audit-checkpoint.schema';
 import { AuditService } from './audit.service';
-import { AuditProcessor } from './audit.processor';
 import { AuditController } from './audit.controller';
 import { AuditInterceptor } from './audit.interceptor';
 import { DatabaseModule } from '../database/database.module';
@@ -43,16 +40,12 @@ import { RedisModule } from '../redis/redis.module';
         attempts: 3,
         backoff: { type: 'exponential', delay: 1000 },
       },
-      // Note: concurrency is controlled by the processor's host, but
-      // globally, we must ensure only one process runs at a time if
-      // scaling vertically. This queue configuration ensures
-      // that jobs are processed sequentially.
     }),
     DatabaseModule,
     RedisModule,
   ],
-  providers: [AuditService, AuditInterceptor, AuditProcessor],
+  providers: [AuditService, AuditInterceptor], // NO AuditProcessor
   controllers: [AuditController],
-  exports: [AuditService, AuditInterceptor, AuditProcessor, MongooseModule],
+  exports: [AuditService, AuditInterceptor, MongooseModule], // NO AuditProcessor
 })
 export class AuditModule {}

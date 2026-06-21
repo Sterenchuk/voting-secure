@@ -45,32 +45,34 @@ export class GroupRoleGuard implements CanActivate {
       return true;
     }
 
-    // Try to find groupId in params
-    let groupId = request.params.groupId || request.params.id;
+    // Try to find groupId in params (only trust an explicit groupId param)
+    let groupId = request.params.groupId;
 
-    // If it's a voting route, we might need to find the groupId from the voting
-    if (!groupId && (request.params.votingId || request.params.id) && request.url.includes('votings')) {
-       const vId = request.params.votingId || request.params.id;
-       const voting = await this.db.voting.findUnique({
-         where: { id: vId },
-         select: { groupId: true }
-       });
-       if (voting) groupId = voting.groupId;
+    // If it's a voting route, resolve groupId from the voting itself
+    if (!groupId && request.url.includes('votings')) {
+      const vId = request.params.votingId || request.params.id;
+      const voting = await this.db.voting.findUnique({
+        where: { id: vId },
+        select: { groupId: true },
+      });
+      if (voting) groupId = voting.groupId;
     }
 
-    // If it's a survey route, we might need to find the groupId from the survey
-    if (!groupId && (request.params.surveyId || request.params.id) && request.url.includes('surveys')) {
+    // If it's a survey route, resolve groupId from the survey itself
+    if (!groupId && request.url.includes('surveys')) {
       const sId = request.params.surveyId || request.params.id;
       const survey = await this.db.survey.findUnique({
         where: { id: sId },
-        select: { groupId: true }
+        select: { groupId: true },
       });
       if (survey) groupId = survey.groupId;
     }
 
     if (!groupId) {
       if (requiredRoles && requiredRoles.length > 0) {
-        throw new ForbiddenException('Group context required for this operation');
+        throw new ForbiddenException(
+          'Group context required for this operation',
+        );
       }
       return true;
     }
@@ -89,7 +91,7 @@ export class GroupRoleGuard implements CanActivate {
     if (!membership) {
       // If user is Platform Admin, they might not be a member but should still see if NOT strict
       if (user.role === Role.ADMIN && !isStrict) {
-         return true;
+        return true;
       }
       throw new NotFoundException('Group or resource not found');
     }

@@ -9,6 +9,7 @@ import { MailService } from '../mail/mail.service';
 import { UsersService } from '../users/users.service';
 import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { SurveyQuestionType } from './types/survey.types';
+import { BroadcastService } from '../broadcast/broadcast.service';
 
 describe('SubmitService', () => {
   let service: SubmitService;
@@ -17,6 +18,7 @@ describe('SubmitService', () => {
   let redis: jest.Mocked<RedisVotingService>;
   let gateway: jest.Mocked<SubmitGateway>;
   let usersService: jest.Mocked<UsersService>;
+  let broadcastService: jest.Mocked<BroadcastService>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -89,6 +91,12 @@ describe('SubmitService', () => {
             emitSurveyResults: jest.fn(),
           },
         },
+        {
+          provide: BroadcastService,
+          useValue: {
+            broadcastSurveyResults: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -98,6 +106,7 @@ describe('SubmitService', () => {
     redis = module.get(RedisVotingService);
     gateway = module.get(SubmitGateway);
     usersService = module.get(UsersService);
+    broadcastService = module.get(BroadcastService);
   });
 
   it('should be defined', () => {
@@ -262,7 +271,7 @@ describe('SubmitService', () => {
       expect(result.success).toBe(true);
       expect(repo.addParticipation).toHaveBeenCalled();
       expect(redis.performSurveySubmission).toHaveBeenCalled();
-      expect(gateway.emitSurveyResults).toHaveBeenCalled();
+      expect(broadcastService.broadcastSurveyResults).toHaveBeenCalled();
     });
 
     it('should successfully submit a response with multiple optionIds', async () => {

@@ -13,6 +13,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { VotingType } from './types/voting.types';
+import { BroadcastService } from '../broadcast/broadcast.service';
+import { SocketEmitterService } from '../broadcast/socket-emitter.service';
 
 describe('VoteService', () => {
   let service: VoteService;
@@ -22,6 +24,8 @@ describe('VoteService', () => {
   let mailService: jest.Mocked<MailService>;
   let auditService: jest.Mocked<AuditService>;
   let gateway: jest.Mocked<VoteGateway>;
+  let broadcastService: jest.Mocked<BroadcastService>;
+  let socketEmitter: jest.Mocked<SocketEmitterService>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -59,9 +63,9 @@ describe('VoteService', () => {
             releaseLock: jest.fn(),
             hasUserVoted: jest.fn(),
             performVote: jest.fn(),
-            getResults: jest.fn(),
             verifyToken: jest.fn(),
             consumeToken: jest.fn(),
+            del: jest.fn(),
             setTemporaryReceipts: jest.fn(),
             getSnapshot: jest.fn(),
             setSnapshot: jest.fn(),
@@ -82,14 +86,14 @@ describe('VoteService', () => {
         {
           provide: MailService,
           useValue: {
-            sendVoteReceipt: jest.fn(),
-            sendVotingToken: jest.fn(),
+            sendVoteReceipt: jest.fn().mockResolvedValue(undefined),
+            sendVotingToken: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
           provide: AuditService,
           useValue: {
-            appendChain: jest.fn(),
+            appendChain: jest.fn().mockResolvedValue(undefined),
             verifyVotingChain: jest.fn(),
             getAuditStatus: jest.fn(),
           },
@@ -98,6 +102,19 @@ describe('VoteService', () => {
           provide: VoteGateway,
           useValue: {
             emitVotingResults: jest.fn(),
+          },
+        },
+        {
+          provide: BroadcastService,
+          useValue: {
+            broadcastVotingResults: jest.fn(),
+            broadcastGlobalStats: jest.fn(),
+          },
+        },
+        {
+          provide: SocketEmitterService,
+          useValue: {
+            emitVotingResultsDirect: jest.fn(),
           },
         },
       ],
@@ -110,6 +127,8 @@ describe('VoteService', () => {
     mailService = module.get(MailService);
     auditService = module.get(AuditService);
     gateway = module.get(VoteGateway);
+    broadcastService = module.get(BroadcastService);
+    socketEmitter = module.get(SocketEmitterService);
   });
 
   it('should be defined', () => {

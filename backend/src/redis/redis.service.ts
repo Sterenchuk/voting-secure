@@ -101,13 +101,6 @@ export class RedisVotingService {
       `voting:${votingId}:voters`,
       this.voterHash(userId, votingId),
     );
-    if (isAbstention) {
-      pipeline.hincrby(`voting:${votingId}:results`, 'ABSTENTION_COUNT', 1);
-    } else {
-      optionIds.forEach((id) =>
-        pipeline.hincrby(`voting:${votingId}:results`, id, 1),
-      );
-    }
 
     // Track global stats for dashboard
     pipeline.incr('global:vote_count');
@@ -117,10 +110,6 @@ export class RedisVotingService {
     pipeline.hincrby('global:trends', minuteKey, 1);
 
     await pipeline.exec();
-  }
-
-  async getResults(votingId: string): Promise<Record<string, string>> {
-    return this.redis.hgetall(`voting:${votingId}:results`);
   }
 
   async clearVotingData(votingId: string): Promise<void> {

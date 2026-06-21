@@ -402,7 +402,6 @@ export class VoteService {
       }
 
       if (!actualIsPractice) {
-        // Fire-and-forget: audit write must not block vote response
         this.auditService
           .appendChain({
             action: ChainAction.BALLOT_CAST,
@@ -424,7 +423,6 @@ export class VoteService {
       }
 
       if (!actualIsPractice) {
-        // Fire-and-forget: receipt email must not block vote response
         this.mailService
           .sendVoteReceipt(
             user.email,
@@ -443,34 +441,42 @@ export class VoteService {
 
       // ── Broadcast live results — fire-and-forget ──────────────────────────
       if (!actualIsPractice) {
-        // Build result delta from data already in memory — zero extra DB/Redis calls
+        // Invalidate results snapshot cache
+        await this.redis.del(`results:snapshot:${votingId}`);
+
         try {
-          const redisResults = await this.redis.getResults(votingId);
-          const votingOptions = voting.options.map((o) => ({
+          const [dbOptions, dbAbstentions] = await Promise.all([
+            this.repo.findOptionsWithBallotCounts(votingId),
+            this.repo.countAbstentions(votingId),
+          ]);
+
+          const allOptions = dbOptions.map((o) => ({
             id: o.id,
             text: o.text,
-            voteCount: redisResults
-              ? parseInt(redisResults[o.id] ?? '0')
-              : o._count?.ballots ?? 0,
+            isDynamic: o.isDynamic,
+            voteCount: o._count.ballots,
           }));
 
-          const abstentionsCount = redisResults
-            ? parseInt(redisResults['ABSTENTION_COUNT'] ?? '0')
-            : 0;
+          const staticOptions = allOptions.filter((o) => !o.isDynamic);
+          const dynamicOptions = allOptions.filter((o) => o.isDynamic);
 
-          const totalBallots =
-            votingOptions.reduce((s, o) => s + o.voteCount, 0) + abstentionsCount;
+          const otherTotal = dynamicOptions.reduce((sum, o) => sum + o.voteCount, 0);
+          const staticTotal = staticOptions.reduce((sum, o) => sum + o.voteCount, 0);
+          const totalBallots = staticTotal + otherTotal + dbAbstentions;
 
           this.socketEmitter.emitVotingResultsDirect(votingId, {
-            options: votingOptions,
+            options: staticOptions,
             totalBallots,
-            abstentionsCount,
+            abstentionsCount: dbAbstentions,
+            otherTotal: voting?.allowOther ? otherTotal : undefined,
+            dynamicOptions: voting?.allowOther ? dynamicOptions : undefined,
           });
         } catch (err) {
-          this.logger.error(`Direct socket emit failed for ${votingId}: ${err}`);
+          this.logger.error(
+            `Direct socket emit failed for ${votingId}: ${err}`,
+          );
         }
 
-        // Global stats still goes through queue (debounced, not latency-sensitive)
         this.broadcastGlobalStats();
       }
 
@@ -521,15 +527,33 @@ export class VoteService {
         const sealed = await this.getSealedResult(votingId);
         if (sealed && sealed.tally) {
           const tally = sealed.tally as any;
-          const options = voting.options.map((o) => ({
-            id: o.id,
-            text: o.text,
-            isDynamic: false,
-            voteCount: tally.options[o.id] || 0,
-          }));
+          const dbOptions = await this.repo.findOptionsWithBallotCounts(votingId);
+          const staticOptions = dbOptions
+            .filter((o) => !o.isDynamic)
+            .map((o) => ({
+              id: o.id,
+              text: o.text,
+              isDynamic: false,
+              voteCount: tally.options?.[o.id] || 0,
+            }));
+          const dynamicOptions = dbOptions
+            .filter((o) => o.isDynamic)
+            .map((o) => ({
+              id: o.id,
+              text: o.text,
+              isDynamic: true,
+              voteCount: tally.options?.[o.id] || 0,
+            }));
+
+          const otherTotal = dynamicOptions.reduce((sum, o) => sum + o.voteCount, 0);
+          const abstentionsCount = tally.abstentionsCount || 0;
+
           return {
-            options,
+            options: staticOptions,
             totalBallots: sealed.totalBallots,
+            abstentionsCount,
+            otherTotal: voting?.allowOther ? otherTotal : undefined,
+            dynamicOptions: voting?.allowOther ? dynamicOptions : undefined,
             isClosed,
           };
         }
@@ -564,36 +588,18 @@ export class VoteService {
       }
     }
 
-    const [cached, rawWithCounts] = await Promise.all([
-      this.redis.getResults(votingId),
+    const [dbOptions, dbAbstentions] = await Promise.all([
       this.repo.findOptionsWithBallotCounts(votingId),
+      this.repo.countAbstentions(votingId),
     ]);
 
-    const options = rawWithCounts ?? [];
-    let allOptions: IOptionResult[];
-    let abstentionsCount = 0;
-
-    if (cached && Object.keys(cached).length > 0) {
-      allOptions = options.map((o) => ({
-        id: o.id,
-        text: o.text,
-        isDynamic: o.isDynamic,
-        voteCount: parseInt(cached[o.id] ?? '0'),
-      }));
-      abstentionsCount = parseInt(cached['ABSTENTION_COUNT'] ?? '0');
-    } else {
-      const [dbOptions, dbAbstentions] = await Promise.all([
-        this.repo.findOptionsWithBallotCounts(votingId),
-        this.repo.countAbstentions(votingId),
-      ]);
-      allOptions = dbOptions.map((o) => ({
-        id: o.id,
-        text: o.text,
-        isDynamic: o.isDynamic,
-        voteCount: o._count.ballots,
-      }));
-      abstentionsCount = dbAbstentions;
-    }
+    const allOptions = dbOptions.map((o) => ({
+      id: o.id,
+      text: o.text,
+      isDynamic: o.isDynamic,
+      voteCount: o._count.ballots,
+    }));
+    const abstentionsCount = dbAbstentions;
 
     const staticOptions = allOptions.filter((o) => !o.isDynamic);
     const dynamicOptions = allOptions.filter((o) => o.isDynamic);
@@ -664,9 +670,11 @@ export class VoteService {
     }
 
     const options = await this.repo.findOptionsWithBallotCounts(votingId);
+    const abstentionsCount = await this.repo.countAbstentions(votingId);
 
     const tally = {
       options: Object.fromEntries(options.map((o) => [o.id, o._count.ballots])),
+      abstentionsCount,
     };
 
     const totalBallots = await this.repo.countBallotsByVoting(votingId);
