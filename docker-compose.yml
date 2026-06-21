@@ -1,35 +1,52 @@
 version: "3.8"
 
+networks:
+  traefik_proxy:
+    name: traefik_proxy
+    external: true
+  backend_net:
+    internal: true
+
 services:
   postgres:
     image: postgres:17
     container_name: voting-db
     restart: always
-    env_file: .env
-    ports:
-      - "5433:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   redis:
     image: redis:7-alpine
     container_name: voting-redis
     restart: always
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: >
+      redis-server
+        --appendonly yes
+        --maxmemory 512mb
+        --maxmemory-policy allkeys-lru
+        --tcp-backlog 511
+        --timeout 0
+        --tcp-keepalive 300
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - backend_net
 
   mongo:
     image: mongo:7
@@ -46,8 +63,6 @@ services:
       MONGO_INITDB_DATABASE: audit
       MONGO_APP_USER: ${MONGO_APP_USER:-audit_app}
       MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
-    ports:
-      - "27017:27017"
     volumes:
       - mongo_data:/data/db
       - ./mongo-init:/docker-entrypoint-initdb.d:ro
@@ -58,23 +73,50 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    networks:
+      - backend_net
 
-  backend:
+  init:
     build:
       context: ./backend
-      args:
-        - DATABASE_URL=postgresql://postgres:1234@postgres:5432/voting_db?schema=public
-    restart: always
+      dockerfile: Dockerfile
+    profiles:
+      - init
+    restart: "no"
     env_file: .env
     environment:
-      - DATABASE_URL=postgresql://postgres:1234@postgres:5432/voting_db?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@voting-db:5432/${POSTGRES_DB}?schema=public&connection_limit=5&pool_timeout=30
+      GENESIS_SEED: ${GENESIS_SEED}
+      NODE_ENV: production
     depends_on:
-      redis:
-        condition: service_healthy
       postgres:
         condition: service_healthy
       mongo:
         condition: service_healthy
+    command: sh -c "npx prisma migrate deploy && node dist/prisma/seed.js"
+    networks:
+      - backend_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: voting-backend
+    restart: on-failure
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@voting-db:5432/${POSTGRES_DB}?schema=public&connection_limit=20&pool_timeout=30
+      GENESIS_SEED: ${GENESIS_SEED}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
     expose:
       - "3001"
     ulimits:
@@ -82,57 +124,162 @@ services:
         soft: 65535
         hard: 65535
     deploy:
+      replicas: 3
       restart_policy:
         condition: always
+    networks:
+      - backend_net
+
+  audit-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: voting-audit-worker
+    restart: always
+    working_dir: /app
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@voting-db:5432/${POSTGRES_DB}?schema=public&connection_limit=5&pool_timeout=30
+      REDIS_HOST: redis
+      GENESIS_SEED: ${GENESIS_SEED}
+      NODE_ENV: production
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    command: npm run start:audit-worker
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    networks:
+      - backend_net
+
+  mail-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: voting-mail-worker
+    restart: always
+    working_dir: /app
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+      NODE_ENV: production
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: npm run start:mail-worker
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    networks:
+      - backend_net
+
+  broadcast-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: voting-broadcast-worker
+    restart: always
+    working_dir: /app
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@voting-db:5432/${POSTGRES_DB}?schema=public&connection_limit=5&pool_timeout=30
+      REDIS_HOST: redis
+      NODE_ENV: production
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    command: npm run start:broadcast-worker
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    networks:
+      - backend_net
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: voting-mailpit
+    restart: unless-stopped
+    environment:
+      MP_SMTP_BIND_ADDR: 0.0.0.0:1025
+      MP_UI_BIND_ADDR: 0.0.0.0:8025
+    expose:
+      - "8025"
+    networks:
+      - backend_net
+      - traefik_proxy
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://vote.sansesdevelopment.uk/api
+        NEXT_PUBLIC_SOCKET_URL: https://vote.sansesdevelopment.uk
+    container_name: voting-frontend
     restart: always
     environment:
-      - NEXT_PUBLIC_API_URL=/api
-      - NEXT_PUBLIC_SOCKET_URL=/socket.io
+      - PORT=3002
     depends_on:
       - backend
     expose:
-      - "3000"
+      - "3002"
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: always
+    networks:
+      - backend_net
 
   nginx:
     image: nginx:latest
     container_name: voting-load-balancer
     restart: always
-    ports:
-      - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - backend
       - frontend
+      - mailpit
+    expose:
+      - "80"
+    networks:
+      - traefik_proxy
+      - backend_net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.vote.rule=Host(`vote.sansesdevelopment.uk`)"
+      - "traefik.http.routers.vote.entrypoints=web"
+      - "traefik.http.services.vote.loadbalancer.server.port=80"
 
-  migrate:
-    build:
-      context: ./backend
-      args:
-        - DATABASE_URL=postgresql://postgres:1234@postgres:5432/voting_db?schema=public
+  k6:
+    image: grafana/k6:latest
+    container_name: voting-k6
+    profiles:
+      - stress-test
     env_file: .env
     environment:
-      - DATABASE_URL=postgresql://postgres:1234@postgres:5432/voting_db?schema=public
+      API_URL: http://nginx/api
+      MAILPIT_URL: http://mailpit:8025
+    volumes:
+      - ./test-scripts:/scripts
+    entrypoint: k6
+    command: run /scripts/stress-test.js
     depends_on:
-      postgres:
-        condition: service_healthy
-    command: npx prisma db push
-    profiles:
-      - migrate
-
-  mailpit:
-    image: axllent/mailpit:latest
-    container_name: mailpit
-    restart: unless-stopped
-    ports:
-      - "1025:1025" # SMTP
-      - "8025:8025" # Web UI
-    environment:
-      MP_SMTP_BIND_ADDR: 0.0.0.0:1025
-      MP_UI_BIND_ADDR: 0.0.0.0:8025
+      nginx:
+        condition: service_started
+      mailpit:
+        condition: service_started
+    networks:
+      - backend_net
+      - traefik_proxy
 
 volumes:
   postgres_data:
