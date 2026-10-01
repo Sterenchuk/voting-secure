@@ -24,6 +24,7 @@ import {
 } from './types/survey.types';
 import { UsersService } from '../users/users.service';
 import { BroadcastService } from '../broadcast/broadcast.service';
+import { SigningKeysService } from '../signing-keys/signing-keys.service';
 
 @Injectable()
 export class SubmitService {
@@ -35,62 +36,80 @@ export class SubmitService {
     private readonly redis: RedisVotingService,
     private readonly auditService: AuditService,
     private readonly mailService: MailService,
+    private readonly signingKeys: SigningKeysService,
     @Inject(forwardRef(() => SubmitGateway))
     private readonly gateway: SubmitGateway,
     private readonly usersService: UsersService,
     private readonly broadcastService: BroadcastService,
   ) {}
 
-  async requestToken(
+  // ─── Blind-signature token issuance ─────────────────────────────────────────
+
+  async signBlindedToken(
     surveyId: string,
     user: { id: string; email: string; language?: string; theme?: string },
-    selections: {
+    dto: {
+      token: string;
+      blinded: string;
       ballots: ISurveyBallotInput[];
-      isPractice?: boolean;
       isAbstention?: boolean;
+      isPractice?: boolean;
     },
   ) {
     const survey = await this.repo.findSurveyById(surveyId);
     if (!survey) throw new NotFoundException('Survey not found');
 
-    if (!selections.isPractice) {
-      const hasSubmitted = await this.redis.hasUserSubmittedSurvey(
-        surveyId,
-        user.id,
-      );
-      if (hasSubmitted)
+    if (!dto.isPractice) {
+      const used = await this.repo.checkParticipation(user.id, surveyId);
+      if (used)
         throw new ConflictException('Already participated in this survey');
     }
 
-    const token = await this.redis.issueToken(
-      'survey',
-      user.id,
-      surveyId,
-      3600,
-      selections.isPractice,
-    );
+    const tokenHash = CryptoUtils.hashToken(dto.token);
+    const key = await this.signingKeys.ensureSurveyKey(surveyId);
+    const blindSig = CryptoUtils.signBlinded(dto.blinded, key.privateKey);
 
-    // Store full ballot payload for the email-confirmation flow via a single,
-    // typed Redis method — no duplicate writes, no raw redis access.
-    await this.redis.setSurveySelections(
-      user.id,
+    // Відкладений бюлетень у Postgres: ідентичність тут, відповіді — пізніше, анонімно
+    const expiresAt = new Date(Date.now() + 3600 * 1000);
+    await this.repo.createPendingBallot({
+      tokenHash,
+      userId: user.id,
       surveyId,
-      {
-        ballots: selections.ballots,
-        isPractice: selections.isPractice,
-        isAbstention: selections.isAbstention,
-      },
-      3600,
-    );
+      isPractice: dto.isPractice,
+      blindSig,
+      expiresAt,
+    });
+
+    // Фіксуємо видачу підпису — один підпис на учасника
+    if (!dto.isPractice) {
+      await this.repo.createParticipation(user.id, surveyId);
+    }
+
+    // Нотифікація «поверніться на сторінку, щоб підтвердити відповідь» (без токена)
+    if (!dto.isPractice) {
+      this.mailService
+        .sendSurveyConfirmNotification(
+          user.email,
+          survey.title,
+          surveyId,
+          user.language,
+          user.theme,
+        )
+        .catch((err) => {
+          this.logger.error(
+            `Confirm notification email failed for user ${user.id}: ${err}`,
+          );
+        });
+    }
 
     try {
       await this.auditService.appendChain({
-        action: ChainAction.SURVEY_TOKEN_ISSUED,
+        action: ChainAction.BLIND_SIGNATURE_ISSUED,
         payload: {
           surveyId,
-          expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
-          isPractice: selections.isPractice,
-          isAbstention: selections.isAbstention,
+          tokenHash,
+          expiresAt: expiresAt.toISOString(),
+          isPractice: dto.isPractice,
         },
         userId: user.id,
         surveyId,
@@ -98,74 +117,25 @@ export class SubmitService {
       });
     } catch (err) {
       this.logger.error(
-        'Failed to write audit log for survey token request',
+        'Failed to write audit log for survey blind-signature issuance',
         err,
       );
     }
 
-    if (selections.isPractice) {
-      // For practice mode return the token directly so the caller can submit
-      // without going through the email-confirmation flow.
-      return { status: 'Success', token };
-    }
-
-    await this.mailService.sendSurveyToken(
-      user.email,
-      token,
-      survey.title,
-      surveyId,
-      user.language ?? 'en',
-      user.theme ?? 'light',
-    );
-
-    return { status: 'Success' };
-  }
-
-  async confirmSurveyFromEmail(surveyId: string, token: string) {
-    const hash = CryptoUtils.hashToken(token);
-    const meta = await this.redis.lookupTokenByHash(hash);
-
-    if (!meta || meta.entityId !== surveyId || meta.type !== 'survey') {
-      return { success: false, message: 'Invalid or expired token.' };
-    }
-
-    // Use the typed Redis method — no raw redis access needed.
-    const selections = await this.redis.getSurveySelections(
-      meta.userId,
-      surveyId,
-    );
-    if (!selections) {
-      return { success: false, message: 'Submission data not found.' };
-    }
-
-    const user = await this.usersService.findOne(meta.userId);
-    if (!user) return { success: false, message: 'User not found.' };
-
-    try {
-      const result = await this.submitResponse(
-        surveyId,
-        user.id,
-        selections.ballots,
-        token,
-        selections.isAbstention ?? false,
-        selections.isPractice,
-      );
-
-      // Clean up stored selections now that the submission has been processed.
-      await this.redis.deleteSurveySelections(user.id, surveyId);
-
-      return { success: true, receipts: result.receipts };
-    } catch (err) {
-      this.logger.error(`Email confirmation for survey failed: ${err}`);
-      return { success: false, message: err };
-    }
+    return {
+      blindSig,
+      modulus: key.modulusHex,
+      exponent: key.exponentHex,
+      keySize: key.keySize,
+    };
   }
 
   async submitResponse(
     surveyId: string,
     userId: string,
     ballots: ISurveyBallotInput[],
-    token?: string,
+    token?: string, // T — секретний токен
+    signature?: string, // sig = T^d (mod n) — сліпий підпис сервера
     isAbstention = false,
     isPractice = false,
   ) {
@@ -185,14 +155,34 @@ export class SubmitService {
       await this.groupService.checkMembership(userId, survey.groupId);
     }
 
-    if (!isPractice) {
-      const alreadySubmitted = await this.redis.hasUserSubmittedSurvey(
-        surveyId,
-        userId,
-      );
-      if (alreadySubmitted) {
-        throw new ForbiddenException('You have already submitted this survey');
+    // ── Blind-signature verification ─────────────────────────────────────────
+    let tokenHash: string | undefined;
+    let actualIsPractice = isPractice;
+
+    if (token && signature) {
+      tokenHash = CryptoUtils.hashToken(token);
+
+      const pending = await this.repo.findPendingBallot(tokenHash);
+      if (!pending || (pending.surveyId && pending.surveyId !== surveyId)) {
+        throw new ForbiddenException('Invalid or expired survey token');
       }
+      if (pending.expiresAt < new Date()) {
+        throw new ForbiddenException('Survey token has expired');
+      }
+
+      actualIsPractice = pending.isPractice || isPractice;
+
+      const key = await this.signingKeys.getSurveyKey(surveyId);
+      const validSignature = CryptoUtils.verifyBlindSignature(
+        token,
+        signature,
+        key.publicKey,
+      );
+      if (!validSignature) {
+        throw new ForbiddenException('Invalid blind signature');
+      }
+    } else if (!isPractice) {
+      throw new ForbiddenException('A valid token and signature are required');
     }
 
     // ── Validation: Required questions and choice limits ───────────────────────
@@ -231,26 +221,12 @@ export class SubmitService {
       }
     }
 
-    let tokenHashed: string | undefined;
-    let actualIsPractice = isPractice;
-
-    if (token) {
-      const tokenMeta = await this.redis.verifyToken(
-        'survey',
-        userId,
-        surveyId,
-        token,
-      );
-      tokenHashed = CryptoUtils.hashToken(token);
-      actualIsPractice = tokenMeta.isPractice || isPractice;
-    }
-
     const receipts: string[] = [];
     const dbBallots: {
       questionId: string;
       optionId: string;
       ballotHash: string;
-      tokenHashed?: string;
+      blindSignature: string;
     }[] = [];
 
     const redisAnswersMap = new Map<
@@ -294,14 +270,14 @@ export class SubmitService {
           const receipt = CryptoUtils.generateBallotReceipt(
             surveyId,
             finalOptionId,
-            tokenHashed || userId,
+            signature || userId,
           );
           receipts.push(receipt);
           dbBallots.push({
             questionId: b.questionId,
             optionId: finalOptionId,
             ballotHash: receipt,
-            tokenHashed,
+            blindSignature: signature!,
           });
           qEntry.optionIds.push(finalOptionId);
         }
@@ -316,14 +292,14 @@ export class SubmitService {
         const receipt = CryptoUtils.generateBallotReceipt(
           surveyId,
           finalOptionId,
-          tokenHashed || userId,
+          signature || userId,
         );
         receipts.push(receipt);
         dbBallots.push({
           questionId: b.questionId,
           optionId: finalOptionId,
           ballotHash: receipt,
-          tokenHashed,
+          blindSignature: signature!,
         });
 
         if (question.type === SurveyQuestionType.FREEFORM) {
@@ -339,23 +315,18 @@ export class SubmitService {
       const receipt = CryptoUtils.generateBallotReceipt(
         surveyId,
         'abstention',
-        tokenHashed || userId,
+        signature || userId,
       );
       receipts.push(receipt);
     }
 
     if (!actualIsPractice) {
       await this.repo.$transaction(async (tx) => {
-        const existing = await this.repo.checkParticipation(userId, surveyId);
-        if (existing) {
-          throw new ForbiddenException(
-            'You have already submitted this survey',
-          );
-        }
-
-        await this.repo.addParticipation(tx, userId, surveyId);
         if (!isAbstention) {
           await this.repo.createBallotsTx(tx, surveyId, dbBallots);
+        }
+        if (tokenHash) {
+          await this.repo.deletePendingBallot(tokenHash, tx);
         }
       });
     }
@@ -376,10 +347,6 @@ export class SubmitService {
       actualIsPractice,
     );
 
-    if (token) {
-      await this.redis.consumeToken('survey', userId, surveyId);
-    }
-
     if (!actualIsPractice) {
       try {
         await this.redis.setTemporaryReceipts(surveyId, userId, receipts, 300);
@@ -392,7 +359,7 @@ export class SubmitService {
           action: ChainAction.SURVEY_BALLOT_CAST,
           payload: {
             ballotHashes: receipts,
-            tokenHashed,
+            blindSignature: signature,
             questionCount: ballots.length,
             isAbstention,
           },
@@ -429,6 +396,10 @@ export class SubmitService {
 
   broadcastResults(surveyId: string, results: ISurveyResults) {
     this.gateway.emitSurveyResults(surveyId, results);
+  }
+
+  async getSigningKey(surveyId: string) {
+    return this.signingKeys.getSurveyKey(surveyId);
   }
 
   async broadcastLiveResults(surveyId: string, questionIds: string[]) {

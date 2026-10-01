@@ -13,7 +13,11 @@ import { Transform } from 'class-transformer';
 export class CastVoteDto {
   @IsNotEmpty()
   @IsString()
-  token: string;
+  token: string; // T (сирий секретний токен — один раз)
+
+  @IsNotEmpty()
+  @IsString()
+  signature: string; // sig = T^d (mod n)
 
   @IsArray()
   @IsUUID('4', { each: true })

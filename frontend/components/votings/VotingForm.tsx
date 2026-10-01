@@ -16,13 +16,11 @@ interface VotingFormProps {
   isAbstention: boolean;
   otherText: string;
   showOtherInput: boolean;
-  tokenRequested: boolean;
   submitting: boolean;
   error: string | null;
   onToggle: (optionId: string | "OTHER" | "ABSTAIN") => void;
   onOtherTextChange: (text: string) => void;
   onSubmit: () => void;
-  onCancelToken: () => void;
 }
 
 export function VotingForm({
@@ -31,13 +29,11 @@ export function VotingForm({
   isAbstention,
   otherText,
   showOtherInput,
-  tokenRequested,
   submitting,
   error,
   onToggle,
   onOtherTextChange,
   onSubmit,
-  onCancelToken,
 }: VotingFormProps) {
   const { t } = useI18n();
 
@@ -45,7 +41,7 @@ export function VotingForm({
   const options = voting.options;
   const canVote = voting.isPublic && !voting.isFinalized && !voting.hasVoted;
 
-  if (!canVote && !tokenRequested) return null;
+  if (!canVote) return null;
 
   return (
     <div className={styles.formSection}>
@@ -65,15 +61,14 @@ export function VotingForm({
               key={option.id}
               className={cn(
                 styles.optionItem,
-                !tokenRequested && styles.optionClickable,
+                styles.optionClickable,
                 isSelected && styles.optionSelected,
               )}
-              onClick={() => !tokenRequested && onToggle(option.id)}
+              onClick={() => onToggle(option.id)}
             >
               <Control
                 checked={isSelected}
-                onChange={() => !tokenRequested && onToggle(option.id)}
-                disabled={tokenRequested}
+                onChange={() => onToggle(option.id)}
                 label={<span className={styles.optionText}>{option.text}</span>}
                 className={styles.fullWidthControl}
               />
@@ -85,16 +80,15 @@ export function VotingForm({
           <li
             className={cn(
               styles.optionItem,
-              !tokenRequested && styles.optionClickable,
+              styles.optionClickable,
               showOtherInput && styles.optionSelected,
             )}
-            onClick={() => !tokenRequested && onToggle("OTHER")}
+            onClick={() => onToggle("OTHER")}
           >
             {isMultiple ? (
               <Checkbox
                 checked={showOtherInput}
-                onChange={() => !tokenRequested && onToggle("OTHER")}
-                disabled={tokenRequested}
+                onChange={() => onToggle("OTHER")}
                 label={
                   <div className={styles.otherInputInline}>
                     <span className={styles.optionText}>{t.common.other}:</span>
@@ -103,7 +97,6 @@ export function VotingForm({
                       className={styles.inlineInput}
                       placeholder="___________________"
                       value={otherText}
-                      disabled={tokenRequested}
                       onChange={(e) => onOtherTextChange(e.target.value)}
                       onClick={(e) => e.stopPropagation()}
                     />
@@ -114,8 +107,7 @@ export function VotingForm({
             ) : (
               <Radio
                 checked={showOtherInput}
-                onChange={() => !tokenRequested && onToggle("OTHER")}
-                disabled={tokenRequested}
+                onChange={() => onToggle("OTHER")}
                 label={
                   <div className={styles.otherInputInline}>
                     <span className={styles.optionText}>{t.common.other}:</span>
@@ -124,7 +116,6 @@ export function VotingForm({
                       className={styles.inlineInput}
                       placeholder="___________________"
                       value={otherText}
-                      disabled={tokenRequested}
                       onChange={(e) => onOtherTextChange(e.target.value)}
                       onClick={(e) => e.stopPropagation()}
                     />
@@ -140,15 +131,14 @@ export function VotingForm({
           <li
             className={cn(
               styles.optionItem,
-              !tokenRequested && styles.optionClickable,
+              styles.optionClickable,
               isAbstention && styles.optionSelected,
             )}
-            onClick={() => !tokenRequested && onToggle("ABSTAIN")}
+            onClick={() => onToggle("ABSTAIN")}
           >
             <Radio
               checked={isAbstention}
-              onChange={() => !tokenRequested && onToggle("ABSTAIN")}
-              disabled={tokenRequested}
+              onChange={() => onToggle("ABSTAIN")}
               label={
                 <span className={styles.optionText}>{t.common.abstain}</span>
               }
@@ -161,43 +151,18 @@ export function VotingForm({
       {error && <p className={styles.errorMsg}>{error}</p>}
 
       <div className={styles.submitRow}>
-        {!tokenRequested ? (
-          <Button
-            onClick={onSubmit}
-            disabled={
-              (!isAbstention &&
-                selectedOptions.length === 0 &&
-                (!showOtherInput || !otherText.trim())) ||
-              submitting
-            }
-            loading={submitting}
-          >
-            {t.votings.castVote}
-          </Button>
-        ) : (
-          <div className={styles.emailCheck}>
-            <div className={styles.emailCheckHeader}>
-              <div className={styles.spinnerSmall} />
-              <span>📧 {t.votings.checkEmailToConfirm}</span>
-            </div>
-            <p className={styles.emailCheckText}>
-              {t.votings.emailSentInstructions}
-            </p>
-            <div className={styles.emailCheckActions}>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onSubmit}
-                disabled={submitting}
-              >
-                {t.votings.resendEmail}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={onCancelToken}>
-                {t.votings.changeSelection}
-              </Button>
-            </div>
-          </div>
-        )}
+        <Button
+          onClick={onSubmit}
+          disabled={
+            (!isAbstention &&
+              selectedOptions.length === 0 &&
+              (!showOtherInput || !otherText.trim())) ||
+            submitting
+          }
+          loading={submitting}
+        >
+          {t.votings.castVote}
+        </Button>
       </div>
     </div>
   );

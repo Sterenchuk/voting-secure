@@ -66,6 +66,7 @@ export const SELECT_BALLOT = {
   votingId: true,
   optionId: true,
   ballotHash: true,
+  blindSignature: true,
 } as const;
 
 // ─── Repository ───────────────────────────────────────────────────────────────
@@ -247,12 +248,17 @@ export class VotingsRepository {
   async createBallotsTx(
     tx: PrismaTx,
     votingId: string,
-    ballots: { optionId: string | null; isAbstention: boolean; ballotHash: string; tokenHashed: string }[],
+    ballots: {
+      optionId: string | null;
+      isAbstention: boolean;
+      ballotHash: string;
+      blindSignature: string;
+    }[],
   ) {
     return Promise.all(
-      ballots.map(({ optionId, isAbstention, ballotHash, tokenHashed }) =>
+      ballots.map(({ optionId, isAbstention, ballotHash, blindSignature }) =>
         tx.ballot.create({
-          data: { votingId, optionId, isAbstention, ballotHash, tokenHashed },
+          data: { votingId, optionId, isAbstention, ballotHash, blindSignature },
           select: SELECT_BALLOT,
         }),
       ),
@@ -276,7 +282,7 @@ export class VotingsRepository {
   async findParticipation(userId: string, votingId: string) {
     return this.db.voteParticipation.findUnique({
       where: { userId_votingId: { userId, votingId } },
-      select: { id: true, createdAt: true },
+      select: { id: true, createdAt: true, signatureUsed: true },
     });
   }
 
@@ -290,9 +296,45 @@ export class VotingsRepository {
 
   async createParticipationTx(tx: PrismaTx, userId: string, votingId: string) {
     return tx.voteParticipation.create({
-      data: { userId, votingId },
+      data: { userId, votingId, signatureUsed: true },
       select: { id: true, createdAt: true },
     });
+  }
+
+  async createParticipation(userId: string, votingId: string) {
+    return this.db.voteParticipation.create({
+      data: { userId, votingId, signatureUsed: true },
+      select: { id: true, createdAt: true },
+    });
+  }
+
+  // ─── Pending ballots (blind-signature flow) ───────────────────────────────
+
+  async createPendingBallot(data: {
+    tokenHash: string;
+    userId: string;
+    votingId?: string;
+    surveyId?: string;
+    isPractice?: boolean;
+    blindSig: string;
+    expiresAt: Date;
+  }) {
+    return this.db.pendingBallot.create({ data });
+  }
+
+  async findPendingBallot(tokenHash: string) {
+    return this.db.pendingBallot.findUnique({
+      where: { tokenHash },
+    });
+  }
+
+  async deletePendingBallot(tokenHash: string, tx?: PrismaTx) {
+    const client = tx ?? this.db;
+    return client.pendingBallot.deleteMany({ where: { tokenHash } });
+  }
+
+  async findPendingByUser(userId: string) {
+    return this.db.pendingBallot.findMany({ where: { userId } });
   }
 
   // ─── Finalize ─────────────────────────────────────────────────────────────────

@@ -1,6 +1,5 @@
-import { Injectable, Inject, Logger, ForbiddenException } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
-import { CryptoUtils } from '../common/utils/crypto-utils';
 
 @Injectable()
 export class RedisVotingService {
@@ -9,10 +8,6 @@ export class RedisVotingService {
   constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis) {}
 
   // ─── AUTH METHODS ──────────────────────────────────────────────────────────
-
-  private voterHash(userId: string, votingId: string): string {
-    return CryptoUtils.hash(`${userId}:${votingId}`);
-  }
 
   async setRefreshToken(
     userId: string,
@@ -74,14 +69,6 @@ export class RedisVotingService {
 
   // ─── VOTING RESULT CACHE ───────────────────────────────────────────────────
 
-  async hasUserVoted(votingId: string, userId: string): Promise<boolean> {
-    const result = await this.redis.sismember(
-      `voting:${votingId}:voters`,
-      this.voterHash(userId, votingId),
-    );
-    return result === 1;
-  }
-
   async performVote(
     votingId: string,
     optionIds: string[],
@@ -97,10 +84,8 @@ export class RedisVotingService {
     }
 
     const pipeline = this.redis.pipeline();
-    pipeline.sadd(
-      `voting:${votingId}:voters`,
-      this.voterHash(userId, votingId),
-    );
+    // Лічильник без ідентичності — жодного збереження "хто голосував"
+    pipeline.incr(`voting:${votingId}:total_votes`);
 
     // Track global stats for dashboard
     pipeline.incr('global:vote_count');
@@ -116,7 +101,10 @@ export class RedisVotingService {
     const lockKeys = await this.redis.keys(`vote_lock:${votingId}:*`);
     const pipeline = this.redis.pipeline();
     if (lockKeys.length > 0) pipeline.del(...lockKeys);
-    pipeline.del(`voting:${votingId}:results`, `voting:${votingId}:voters`);
+    pipeline.del(
+      `voting:${votingId}:results`,
+      `voting:${votingId}:total_votes`,
+    );
     await pipeline.exec();
   }
 
@@ -152,23 +140,9 @@ export class RedisVotingService {
 
   // ─── SURVEY RESULT CACHE ───────────────────────────────────────────────────
 
-  async hasUserSubmittedSurvey(
-    surveyId: string,
-    userId: string,
-  ): Promise<boolean> {
-    const result = await this.redis.sismember(
-      `survey:${surveyId}:voters`,
-      userId,
-    );
-    return result === 1;
-  }
-
   async getSurveyVoterCount(surveyId: string): Promise<number> {
-    return this.redis.scard(`survey:${surveyId}:voters`);
-  }
-
-  async markSurveySubmitted(surveyId: string, userId: string): Promise<void> {
-    await this.redis.sadd(`survey:${surveyId}:voters`, userId);
+    const count = await this.redis.get(`survey:${surveyId}:responses`);
+    return parseInt(count || '0', 10);
   }
 
   async performSurveySubmission(
@@ -185,11 +159,8 @@ export class RedisVotingService {
       return;
     }
 
-    const hasSubmitted = await this.hasUserSubmittedSurvey(surveyId, userId);
-    if (hasSubmitted) throw new Error('User has already submitted this survey');
-
     const pipeline = this.redis.pipeline();
-    pipeline.sadd(`survey:${surveyId}:voters`, userId);
+    pipeline.incr(`survey:${surveyId}:responses`);
 
     if (isAbstention) {
       pipeline.hincrby(
@@ -218,7 +189,7 @@ export class RedisVotingService {
   }
 
   async clearSurveyData(surveyId: string): Promise<void> {
-    const votersKey = `survey:${surveyId}:voters`;
+    const responsesKey = `survey:${surveyId}:responses`;
 
     const scan = async (pattern: string): Promise<string[]> => {
       const keys: string[] = [];
@@ -243,212 +214,10 @@ export class RedisVotingService {
     ]);
 
     const pipeline = this.redis.pipeline();
-    pipeline.del(votersKey);
+    pipeline.del(responsesKey);
     if (resultsKeys.length > 0) pipeline.del(...resultsKeys);
     if (lockKeys.length > 0) pipeline.del(...lockKeys);
     await pipeline.exec();
-  }
-
-  // ─── SURVEY SELECTIONS (full ballot payload) ───────────────────────────────
-
-  private surveySelectionsKey(userId: string, surveyId: string): string {
-    return `survey_selections:${userId}:${surveyId}`;
-  }
-
-  async setSurveySelections(
-    userId: string,
-    surveyId: string,
-    data: { ballots: any[]; isPractice?: boolean; isAbstention?: boolean },
-    ttlSeconds: number,
-  ): Promise<void> {
-    await this.redis.set(
-      this.surveySelectionsKey(userId, surveyId),
-      JSON.stringify(data),
-      'EX',
-      ttlSeconds,
-    );
-  }
-
-  async getSurveySelections(
-    userId: string,
-    surveyId: string,
-  ): Promise<{
-    ballots: any[];
-    isPractice?: boolean;
-    isAbstention?: boolean;
-  } | null> {
-    const raw = await this.redis.get(
-      this.surveySelectionsKey(userId, surveyId),
-    );
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      this.logger.error(
-        `Failed to parse survey selections for user ${userId} survey ${surveyId}`,
-      );
-      return null;
-    }
-  }
-
-  async deleteSurveySelections(
-    userId: string,
-    surveyId: string,
-  ): Promise<void> {
-    await this.redis.del(this.surveySelectionsKey(userId, surveyId));
-  }
-
-  // ─── UNIFIED TOKEN METHODS (VOTING + SURVEY) ───────────────────────────────
-
-  private tokenKey(
-    type: 'voting' | 'survey',
-    userId: string,
-    entityId: string,
-  ): string {
-    return `token:${type}:${userId}:${entityId}`;
-  }
-
-  private reverseKey(hash: string): string {
-    return `token_reverse:${hash}`;
-  }
-
-  async issueToken(
-    type: 'voting' | 'survey',
-    userId: string,
-    entityId: string,
-    ttlSeconds = 3600,
-    isPractice = false,
-  ): Promise<string> {
-    this.logger.debug(
-      `Issuing token for ${type} ${entityId} and user ${userId} with TTL ${ttlSeconds}s (practice: ${isPractice})`,
-    );
-    const token = CryptoUtils.generateSecureToken();
-    const hash = CryptoUtils.hashToken(token);
-
-    const pipeline = this.redis.pipeline();
-    pipeline.set(this.tokenKey(type, userId, entityId), hash, 'EX', ttlSeconds);
-    pipeline.set(
-      this.reverseKey(hash),
-      JSON.stringify({ userId, entityId, type, isPractice }),
-      'EX',
-      ttlSeconds,
-    );
-    await pipeline.exec();
-
-    return token;
-  }
-
-  async lookupTokenByHash(hash: string): Promise<{
-    userId: string;
-    entityId: string;
-    type: string;
-    isPractice?: boolean;
-  } | null> {
-    const raw = await this.redis.get(this.reverseKey(hash));
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      this.logger.error(`Failed to parse token_reverse value for hash ${hash}`);
-      return null;
-    }
-  }
-
-  async verifyToken(
-    type: 'voting' | 'survey',
-    userId: string,
-    entityId: string,
-    submittedToken: string,
-  ): Promise<{
-    userId: string;
-    entityId: string;
-    type: string;
-    isPractice?: boolean;
-  }> {
-    const hash = CryptoUtils.hashToken(submittedToken);
-    const storedHash = await this.redis.get(
-      this.tokenKey(type, userId, entityId),
-    );
-    if (!storedHash) throw new ForbiddenException('Invalid or expired token');
-    if (storedHash !== hash) throw new ForbiddenException('Invalid token');
-
-    const meta = await this.lookupTokenByHash(hash);
-    if (!meta) throw new ForbiddenException('Token metadata missing');
-    return meta;
-  }
-
-  async consumeToken(
-    type: 'voting' | 'survey',
-    userId: string,
-    entityId: string,
-  ): Promise<void> {
-    const hash = await this.redis.get(this.tokenKey(type, userId, entityId));
-    const pipeline = this.redis.pipeline();
-    pipeline.del(this.tokenKey(type, userId, entityId));
-    if (hash) pipeline.del(this.reverseKey(hash));
-    await pipeline.exec();
-  }
-
-  async tokenExists(
-    type: 'voting' | 'survey',
-    userId: string,
-    entityId: string,
-  ): Promise<boolean> {
-    return (
-      (await this.redis.exists(this.tokenKey(type, userId, entityId))) === 1
-    );
-  }
-
-  async getStoredHash(
-    type: 'voting' | 'survey',
-    userId: string,
-    entityId: string,
-  ): Promise<string | null> {
-    return this.redis.get(this.tokenKey(type, userId, entityId));
-  }
-
-  // ─── SELECTION METHODS ─────────────────────────────────────────────────────
-
-  async setSelections(
-    userId: string,
-    entityId: string,
-    selections: {
-      optionIds: string[];
-      otherText?: string;
-      isAbstention?: boolean;
-      isPractice?: boolean;
-    },
-    ttlSeconds: number,
-  ): Promise<void> {
-    await this.redis.set(
-      `vote_selections:${userId}:${entityId}`,
-      JSON.stringify(selections),
-      'EX',
-      ttlSeconds,
-    );
-  }
-
-  async getSelections(
-    userId: string,
-    entityId: string,
-  ): Promise<{
-    optionIds: string[];
-    otherText?: string;
-    isAbstention?: boolean;
-    isPractice?: boolean;
-  } | null> {
-    const raw = await this.redis.get(`vote_selections:${userId}:${entityId}`);
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      this.logger.error(`Failed to parse selections for ${userId}:${entityId}`);
-      return null;
-    }
-  }
-
-  async deleteSelections(userId: string, entityId: string): Promise<void> {
-    await this.redis.del(`vote_selections:${userId}:${entityId}`);
   }
 
   // ─── AUDIT SEQUENCE COUNTERS & VERIFICATION MARKERS ───────────────────────

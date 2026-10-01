@@ -11,7 +11,6 @@ import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
 import { VotingType } from "@/types/voting";
-import { api } from "@/hooks/api/useApi";
 import { VotingDetailHeader } from "@/components/votings/VotingDetailHeader";
 import { VotingResults } from "@/components/votings/VotingResults";
 import { VotingForm } from "@/components/votings/VotingForm";
@@ -30,7 +29,7 @@ export default function VotingDetailPage() {
     fetchVoting,
     fetchResults,
     syncResults,
-    requestToken,
+    castVoteWithSignature,
     finalizeVoting,
     fetchParticipationStats,
     loading,
@@ -43,7 +42,6 @@ export default function VotingDetailPage() {
   const [showOtherInput, setShowOtherInput] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [tokenRequested, setTokenRequested] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voteReceipt, setVoteReceipt] = useState<CastVoteResponse | null>(null);
   const [participationStats, setParticipationStats] = useState<
@@ -72,45 +70,6 @@ export default function VotingDetailPage() {
     }
   }, [id, fetchVoting, fetchResults, fetchParticipationStats, getAuditStatus]);
 
-  useEffect(() => {
-    if (!tokenRequested || submitted || !id) return;
-
-    const interval = setInterval(async () => {
-      const res = await api.get<{ participated: boolean; receipts?: string[] }>(
-        `/votings/${id}/my-vote`,
-      );
-      if (res.data?.participated) {
-        setSubmitted(true);
-        setTokenRequested(false);
-        if (res.data.receipts) {
-          setVoteReceipt({
-            participated: true,
-            receipts: res.data.receipts,
-            emailSent: false,
-            proof: {
-              verifyUrl: `/votings/${id}/verify-receipt`,
-              chainUrl: `/audit/votings/audit-chain/${id}`,
-            },
-          });
-        }
-        clearInterval(interval);
-        await fetchVoting(id);
-        await fetchResults(id);
-        const statsRes = await fetchParticipationStats(id);
-        if (statsRes.data) setParticipationStats(statsRes.data);
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [
-    tokenRequested,
-    submitted,
-    id,
-    fetchVoting,
-    fetchResults,
-    fetchParticipationStats,
-  ]);
-
   if (loading || !currentVoting) {
     return (
       <div className={styles.loadingState}>
@@ -131,7 +90,7 @@ export default function VotingDetailPage() {
     !isScheduled;
 
   const handleToggle = (optionId: string | "OTHER" | "ABSTAIN") => {
-    if (!canVote || tokenRequested) return;
+    if (!canVote) return;
 
     if (optionId === "ABSTAIN") {
       setIsAbstention(!isAbstention);
@@ -175,7 +134,7 @@ export default function VotingDetailPage() {
     setError(null);
 
     try {
-      const tokenRes = await requestToken(
+      const res = await castVoteWithSignature(
         id,
         selectedOptions,
         showOtherInput ? otherText.trim() : undefined,
@@ -183,29 +142,16 @@ export default function VotingDetailPage() {
         isPractice,
       );
 
-      if (tokenRes.error || !tokenRes.data) {
-        throw new Error(tokenRes.error?.message || "Failed to request token");
+      if (res.error || !res.data) {
+        throw new Error(res.error?.message || t.common.error);
       }
 
-      if (isPractice && tokenRes.data.token) {
-        // Direct vote for practice mode
-        const res = await api.post<CastVoteResponse>(`/votings/${id}/vote`, {
-          token: tokenRes.data.token,
-          ballots: selectedOptions.map((opt) => ({ optionId: opt })),
-          otherText: showOtherInput ? otherText.trim() : undefined,
-          isAbstention,
-          isPractice: true,
-        });
-
-        if (res.data) {
-          setSubmitted(true);
-          setVoteReceipt(res.data);
-        } else {
-          throw new Error(res.error?.message || "Practice vote failed");
-        }
-      } else {
-        setTokenRequested(true);
-      }
+      setSubmitted(true);
+      setVoteReceipt(res.data);
+      await fetchVoting(id);
+      await fetchResults(id);
+      const statsRes = await fetchParticipationStats(id);
+      if (statsRes.data) setParticipationStats(statsRes.data);
     } catch (e: any) {
       setError(e?.message ?? t.common.error);
     } finally {
@@ -372,7 +318,6 @@ export default function VotingDetailPage() {
           isAbstention={isAbstention}
           otherText={otherText}
           showOtherInput={showOtherInput}
-          tokenRequested={tokenRequested}
           submitting={submitting}
           error={error}
           onToggle={handleToggle}
@@ -385,7 +330,6 @@ export default function VotingDetailPage() {
             }
           }}
           onSubmit={handleSubmit}
-          onCancelToken={() => setTokenRequested(false)}
         />
       </Card>
     </div>

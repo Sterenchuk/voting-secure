@@ -357,13 +357,45 @@ export class SurveysRepository {
       where: {
         userId_surveyId: { userId, surveyId },
       },
+      select: { id: true, signatureUsed: true },
     });
   }
 
   addParticipation(tx: PrismaTx, userId: string, surveyId: string) {
     return tx.surveyParticipation.create({
-      data: { userId, surveyId },
+      data: { userId, surveyId, signatureUsed: true },
     });
+  }
+
+  createParticipation(userId: string, surveyId: string) {
+    return this.db.surveyParticipation.create({
+      data: { userId, surveyId, signatureUsed: true },
+    });
+  }
+
+  // ─── Pending ballots (blind-signature flow) ───────────────────────────────
+
+  async createPendingBallot(data: {
+    tokenHash: string;
+    userId: string;
+    votingId?: string;
+    surveyId?: string;
+    isPractice?: boolean;
+    blindSig: string;
+    expiresAt: Date;
+  }) {
+    return this.db.pendingBallot.create({ data });
+  }
+
+  async findPendingBallot(tokenHash: string) {
+    return this.db.pendingBallot.findUnique({
+      where: { tokenHash },
+    });
+  }
+
+  async deletePendingBallot(tokenHash: string, tx?: PrismaTx) {
+    const client = tx ?? this.db;
+    return client.pendingBallot.deleteMany({ where: { tokenHash } });
   }
 
   // _____________SURVEY BALLOTS________________
@@ -375,7 +407,7 @@ export class SurveysRepository {
       questionId: string;
       optionId: string;
       ballotHash: string;
-      tokenHashed?: string;
+      blindSignature: string;
     }[],
   ) {
     return Promise.all(
@@ -385,7 +417,7 @@ export class SurveysRepository {
             questionId: b.questionId,
             optionId: b.optionId,
             ballotHash: b.ballotHash,
-            tokenHashed: b.tokenHashed,
+            blindSignature: b.blindSignature,
           },
           select: SELECT_SURVEY_BALLOT,
         }),
