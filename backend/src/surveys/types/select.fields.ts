@@ -71,6 +71,7 @@ export const SELECT_SURVEY_BALLOT = {
   questionId: true,
   optionId: true,
   ballotHash: true,
+  blindSignature: true,
 } as const;
 
 export const SELECT_SURVEY_FOR_SUBMISSION = {

@@ -2,39 +2,23 @@ import {
   IsArray,
   IsOptional,
   IsString,
-  IsUUID,
   ValidateNested,
   IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { SurveyBallotInputDto } from './submit-response.dto';
 
-export class SurveyBallotInputDto {
-  @IsUUID()
-  questionId: string;
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  optionIds?: string[];
-
-  @IsOptional()
+export class SignSurveyTokenDto {
   @IsString()
-  text?: string;
-}
+  token: string; // T — сирий секретний токен (сервер обчислює tokenHash = HMAC-SHA256(T))
 
-export class SubmitSurveyResponseDto {
+  @IsString()
+  blinded: string; // T · r^e (mod n)
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => SurveyBallotInputDto)
   ballots: SurveyBallotInputDto[];
-
-  @IsOptional()
-  @IsString()
-  token?: string;
-
-  @IsOptional()
-  @IsString()
-  signature?: string;
 
   @IsOptional()
   @IsBoolean()

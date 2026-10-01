@@ -4,8 +4,7 @@ export class CryptoUtils {
   private static getEncryptionKeys(): string[] {
     const keysStr = process.env.ENCRYPTION_KEYS;
     if (!keysStr) {
-      // Default for demo if not set, but in reality we should throw
-      return ['000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f'];
+      throw new Error('ENCRYPTION_KEYS environment variable is not set');
     }
     return keysStr.split(',').map((k) => k.trim());
   }
@@ -17,6 +16,99 @@ export class CryptoUtils {
       return 'blind-index-secret-demo-key-32-chars-!!';
     }
     return key;
+  }
+
+  // ─── RSA blind signatures (Chaum) ─────────────────────────────────────────────
+
+  // keypair per voting/survey; private key НІКОЛИ не покидає сервер
+  static generateVotingKeyPair(keySize = 2048): {
+    publicKey: string; // PEM
+    privateKey: string; // PEM (зберігати в env / vault, НЕ в БД)
+  } {
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+      modulusLength: keySize,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    return { publicKey, privateKey };
+  }
+
+  // Бібліотека: повертає { n, e } з PEM-публічного ключа (server-side)
+  static rsaPublicParams(publicKeyPem: string): { n: bigint; e: bigint } {
+    const key = crypto.createPublicKey(publicKeyPem);
+    const jwk = key.export({ format: 'jwk' }) as any;
+    return {
+      n: BigInt(`0x${Buffer.from(jwk.n!, 'base64url').toString('hex')}`),
+      e: BigInt(`0x${Buffer.from(jwk.e!, 'base64url').toString('hex')}`),
+    };
+  }
+
+  // КЛІЄНТ: blinded = T · r^e (mod n)
+  // tokenHex — 64 hex (256 bit), modulusHex — hex(n), exponentHex — hex(e)
+  static blindToken(tokenHex: string, r: bigint, modulusHex: string, exponentHex: string): string {
+    const n = BigInt(`0x${modulusHex}`);
+    const e = BigInt(`0x${exponentHex}`);
+    const T = BigInt(`0x${tokenHex}`);
+    const blinded = (T * this.modPow(r, e, n)) % n;
+    return blinded.toString(16).padStart(modulusHex.length, '0');
+  }
+
+  static signBlinded(blindedHex: string, privateKeyPem: string): string {
+    const privateKey = crypto.createPrivateKey(privateKeyPem);
+    const details = privateKey.asymmetricKeyDetails;
+    if (!details || !details.modulusLength) {
+      throw new Error('Unable to determine private key modulus length');
+    }
+    const size = details.modulusLength / 8;
+    const buf = Buffer.from(blindedHex.padStart(size * 2, '0'), 'hex');
+    const sig = crypto.privateDecrypt(
+      { key: privateKey, padding: crypto.constants.RSA_NO_PADDING },
+      buf,
+    );
+    return sig.toString('hex');
+  }
+
+  static unblind(blindSigHex: string, r: bigint, modulusHex: string): string {
+    const n = BigInt(`0x${modulusHex}`);
+    const s = (BigInt(`0x${blindSigHex}`) * this.modInverse(r, n)) % n;
+    return s.toString(16).padStart(modulusHex.length, '0');
+  }
+
+  // СЕРВЕР: verify: sig^e ≡ T (mod n)
+  static verifyBlindSignature(
+    tokenHex: string,
+    signatureHex: string,
+    publicKeyPem: string,
+  ): boolean {
+    const { n, e } = this.rsaPublicParams(publicKeyPem);
+    const T = BigInt(`0x${tokenHex}`);
+    const s = BigInt(`0x${signatureHex}`);
+    return this.modPow(s, e, n) === T;
+  }
+
+  // ─── утиліти ──────────────────────────────────────────────────────────────────
+
+  static modPow(base: bigint, exp: bigint, mod: bigint): bigint {
+    let result = 1n;
+    base %= mod;
+    while (exp > 0n) {
+      if (exp & 1n) result = (result * base) % mod;
+      base = (base * base) % mod;
+      exp >>= 1n;
+    }
+    return result;
+  }
+
+  static modInverse(a: bigint, m: bigint): bigint {
+    const [g, x] = this.egcd(a % m, m);
+    if (g !== 1n) throw new Error('r is not invertible mod n');
+    return ((x % m) + m) % m;
+  }
+
+  private static egcd(a: bigint, b: bigint): [bigint, bigint, bigint] {
+    if (b === 0n) return [a, 1n, 0n];
+    const [g, x1, y1] = this.egcd(b, a % b);
+    return [g, y1, x1 - (a / b) * y1];
   }
 
   /**
@@ -82,7 +174,7 @@ export class CryptoUtils {
     const secret = this.getBlindIndexKey();
     return crypto
       .createHmac('sha256', secret)
-      .update(text.toLowerCase()) // Case-insensitive lookup
+      .update(text.normalize('NFKC').trim().toLowerCase()) // Case-insensitive lookup
       .digest('hex');
   }
 
@@ -115,23 +207,24 @@ export class CryptoUtils {
 
   /**
    * Hashes a token for storage (e.g., RefreshToken, VotingToken).
+   * HMAC-SHA256 — resistant to rainbow-table attacks on low-entropy tokens.
    */
   static hashToken(token: string): string {
-    return this.hash(token);
+    const secret = process.env.TOKEN_HASH_SECRET;
+    if (!secret) {
+      throw new Error('TOKEN_HASH_SECRET environment variable is not set');
+    }
+    return crypto.createHmac('sha256', secret).update(token).digest('hex');
   }
 
-  static generateBallotReceipt(
-    votingId: string,
-    optionId: string,
-    tokenHashed: string,
-  ): string {
-    const secret = process.env.BALLOT_SECRET;
-    if (!secret) {
+  static generateBallotReceipt(votingId: string, optionId: string, secret: string): string {
+    const secretKey = process.env.BALLOT_SECRET;
+    if (!secretKey) {
       throw new Error('BALLOT_SECRET environment variable is not set');
     }
     return crypto
-      .createHmac('sha256', secret)
-      .update(`${votingId}:${optionId}:${tokenHashed}`)
+      .createHmac('sha256', secretKey)
+      .update(`${votingId}:${optionId}:${secret}`)
       .digest('hex');
   }
 }

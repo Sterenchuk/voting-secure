@@ -94,7 +94,7 @@ export default function SurveyDetailPage() {
     fetchResults,
     syncResults,
     getMyStatus,
-    requestToken,
+    submitWithSignature,
     practiceSubmit,
     finalizeSurvey,
     fetchParticipationStats,
@@ -108,9 +108,8 @@ export default function SurveyDetailPage() {
     receipts?: string[];
   } | null>(null);
   const [submitStep, setSubmitStep] = useState<
-    "idle" | "awaitingToken" | "submitting" | "done" | "error"
+    "idle" | "submitting" | "done" | "error"
   >("idle");
-  const [tokenRequested, setTokenRequested] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isAbstaining, setIsAbstaining] = useState(false);
   const [isPractice, setIsPractice] = useState(false);
@@ -185,34 +184,6 @@ export default function SurveyDetailPage() {
     });
   }, [getMyStatus, surveyId]);
 
-  useEffect(() => {
-    if (!tokenRequested || submitStep === "done" || !surveyId) return;
-
-    const interval = setInterval(async () => {
-      const res = await getMyStatus(surveyId);
-      if (res.data?.submitted) {
-        setMyStatus(res.data);
-        setSubmitStep("done");
-        setTokenRequested(false);
-        clearInterval(interval);
-        await fetchSurvey(surveyId);
-        await fetchResults(surveyId, true);
-        const statsRes = await fetchParticipationStats(surveyId);
-        if (statsRes.data) setParticipationStats(statsRes.data);
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [
-    tokenRequested,
-    submitStep,
-    surveyId,
-    getMyStatus,
-    fetchSurvey,
-    fetchResults,
-    fetchParticipationStats,
-  ]);
-
   const setAnswer = useCallback((answer: SurveyAnswer) => {
     setAnswers((prev) => {
       const next = new Map(prev);
@@ -249,17 +220,22 @@ export default function SurveyDetailPage() {
       return false;
     }) ?? [];
 
-  // ── Submit: real flow (email token) ──────────────────────────────────────
-  const handleRequestToken = async () => {
+  // ── Submit: real flow (blind signature) ───────────────────────────────────
+  const handleSubmit = async () => {
     setSubmitError(null);
     setIsAbstaining(false);
     setSubmitStep("submitting");
-    const res = await requestToken(surveyId, currentAnswers, false, false);
-    setSubmitStep("idle");
+    const res = await submitWithSignature(surveyId, currentAnswers, false, false);
     if (res.error) {
       setSubmitError(res.error.message ?? t.common.error);
+      setSubmitStep("idle");
     } else {
-      setTokenRequested(true);
+      setMyStatus({ submitted: true });
+      setSubmitStep("done");
+      await fetchSurvey(surveyId);
+      await fetchResults(surveyId, true);
+      const statsRes = await fetchParticipationStats(surveyId);
+      if (statsRes.data) setParticipationStats(statsRes.data);
     }
   };
 
@@ -282,17 +258,16 @@ export default function SurveyDetailPage() {
     setSubmitError(null);
     setIsAbstaining(true);
     setSubmitStep("submitting");
-    const res = await requestToken(surveyId, [], true, false);
-    setSubmitStep("idle");
+    const res = await submitWithSignature(surveyId, [], true, false);
     if (res.error) {
       setSubmitError(res.error.message ?? t.common.error);
+      setSubmitStep("idle");
       setIsAbstaining(false);
     } else {
-      setTokenRequested(true);
+      setMyStatus({ submitted: true });
+      setSubmitStep("done");
     }
   };
-
-  // ── Abstain ───────────────────────────────────────────────────────────────
 
   const breadcrumbs = [
     { label: t.common.dashboard, href: "/dashboard" },
@@ -525,54 +500,27 @@ export default function SurveyDetailPage() {
           {submitError && <p className={styles.errorMsg}>{submitError}</p>}
 
           <div className={styles.submitActions}>
-            {!tokenRequested ? (
-              <>
-                <Button
-                  onClick={handleRequestToken}
-                  disabled={missingRequired.length > 0}
-                  loading={isSubmitting}
-                >
-                  Submit Response
-                </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={missingRequired.length > 0}
+              loading={isSubmitting}
+            >
+              Submit Response
+            </Button>
 
-                <Button
-                  variant="outline"
-                  onClick={handlePracticeSubmit}
-                  disabled={missingRequired.length > 0}
-                  loading={isSubmitting}
-                >
-                  Practice Submit
-                </Button>
+            <Button
+              variant="outline"
+              onClick={handlePracticeSubmit}
+              disabled={missingRequired.length > 0}
+              loading={isSubmitting}
+            >
+              Practice Submit
+            </Button>
 
-                {survey.allowAbstain && (
-                  <Button variant="ghost" onClick={handleAbstain} disabled={isSubmitting}>
-                    Abstain
-                  </Button>
-                )}
-              </>
-            ) : (
-              <div className={styles.emailCheck}>
-                <div className={styles.emailCheckHeader}>
-                  <div className={styles.spinnerSmall} />
-                  <span>📧 Check your email to confirm</span>
-                </div>
-                <p className={styles.emailCheckText}>
-                  We've sent a confirmation link to your email. Please click it to finalize your response.
-                </p>
-                <div className={styles.emailCheckActions}>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleRequestToken}
-                    disabled={isSubmitting}
-                  >
-                    Resend Email
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setTokenRequested(false)}>
-                    Change Selection
-                  </Button>
-                </div>
-              </div>
+            {survey.allowAbstain && (
+              <Button variant="ghost" onClick={handleAbstain} disabled={isSubmitting}>
+                Abstain
+              </Button>
             )}
           </div>
         </div>

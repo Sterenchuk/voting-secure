@@ -28,7 +28,7 @@ import { VotingCreateDto } from './dto/voting.create.dto';
 import { VotingUpdateDto } from './dto/voting.update.dto';
 import { FindVotingQueryDto } from './dto/find.voting.query.dto';
 import { CastVoteDto } from './dto/cast.vote.dto';
-import { RequestTokenDto } from './dto/request-token.dto';
+import { SignTokenDto } from './dto/sign-token.dto';
 import { Audit, ChainAction } from '../audit/audit.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -183,61 +183,33 @@ export class VotingsController {
     await this.redisService.updateActiveVotingsCount(stats.length);
   }
 
-  // ─── Token ────────────────────────────────────────────────────────────────────
+  // ─── Blind-signature issuance ─────────────────────────────────────────────────
 
-  @Post(':id/token')
-  requestToken(
+  @Post(':id/sign')
+  signToken(
     @Param('id') votingId: string,
-    @Body() dto: RequestTokenDto,
+    @Body() dto: SignTokenDto,
     @CurrentUser() user: UserPayloadDto,
   ) {
-    return this.voteService.requestToken(
+    return this.voteService.signBlindedToken(
       votingId,
-      {
-        id: user.sub,
-        email: user.email,
-        language: user.language,
-        theme: user.theme,
-      },
-      {
-        optionIds: dto.optionIds,
-        otherText: dto.otherText,
-        isAbstention: dto.isAbstention,
-        isPractice: dto.isPractice,
-      },
+      { id: user.sub, email: user.email, language: user.language, theme: user.theme },
+      dto,
     );
   }
 
-  // ─── Vote casting ─────────────────────────────────────────────────────────────
-
-  @Get(':id/confirm-vote')
+  @Get(':id/signing-key')
   @Public()
-  async confirmVote(
-    @Param('id') votingId: string,
-    @Query('token') token: string,
-    @Query('lang') lang: string,
-    @Query('theme') theme: string,
-    @Res() res: Response,
-  ) {
-    const result = await this.voteService.confirmVoteFromEmail(votingId, token);
-
-    const finalTheme = theme ?? 'light';
-    const finalLang = lang ?? 'en';
-
-    const html = result.success
-      ? this.successHtml(
-          result.receipts ?? [],
-          finalTheme as 'light' | 'dark',
-          finalLang,
-        )
-      : this.errorHtml(
-          result.message ?? 'Verification failed.',
-          finalTheme as 'light' | 'dark',
-          finalLang,
-        );
-
-    res.status(HttpStatus.OK).type('text/html').send(html);
+  async signingKey(@Param('id') votingId: string) {
+    const key = await this.voteService.getSigningKey(votingId);
+    return {
+      modulus: key.modulusHex,
+      exponent: key.exponentHex,
+      keySize: key.keySize,
+    };
   }
+
+  // ─── Vote casting ─────────────────────────────────────────────────────────────
 
   @Post(':id/vote')
   vote(
@@ -255,6 +227,7 @@ export class VotingsController {
         theme: user.theme,
       },
       dto.token,
+      dto.signature,
       dto.otherText,
       dto.isAbstention,
       dto.isPractice,
@@ -379,214 +352,5 @@ export class VotingsController {
       missingHashes: missing.length > 0 ? missing : undefined,
       results,
     };
-  }
-
-  private successHtml(
-    receipts: string[],
-    theme: 'light' | 'dark' = 'light',
-    language: string = 'en',
-  ): string {
-    const isDark = theme === 'dark';
-    const labels = this.getLabels(language);
-
-    return `
-<!DOCTYPE html>
-<html lang="${language}">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>${labels.successTitle}</title>
-  <style>
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      margin: 0;
-      background: ${isDark ? '#111827' : '#f9fafb'};
-    }
-    .card {
-      background: ${isDark ? '#1f2937' : 'white'};
-      border-radius: 12px;
-      padding: 2.5rem;
-      max-width: 520px;
-      width: 90%;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,${isDark ? '0.4' : '0.1'}), 0 2px 4px -1px rgba(0,0,0,0.06);
-      text-align: center;
-    }
-    .icon { font-size: 3.5rem; margin-bottom: 1.5rem; }
-    h1 { color: ${isDark ? '#34d399' : '#059669'}; margin: 0 0 0.75rem; font-size: 1.75rem; }
-    p { color: ${isDark ? '#9ca3af' : '#4b5563'}; margin: 0 0 2rem; line-height: 1.5; }
-    .receipt-container { margin-top: 1.5rem; }
-    .receipt {
-      background: ${isDark ? '#111827' : '#f3f4f6'};
-      border: 1px solid ${isDark ? '#374151' : '#e5e7eb'};
-      border-radius: 8px;
-      padding: 1rem;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 12px;
-      word-break: break-all;
-      text-align: left;
-      margin-bottom: 0.5rem;
-      color: ${isDark ? '#e5e7eb' : '#111827'};
-    }
-    .label {
-      font-size: 11px;
-      font-weight: 700;
-      color: ${isDark ? '#6b7280' : '#6b7280'};
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 0.75rem;
-      text-align: left;
-    }
-    .btn {
-      display: inline-block;
-      margin-top: 1.5rem;
-      padding: 0.75rem 1.5rem;
-      background: #059669;
-      color: white;
-      text-decoration: none;
-      border-radius: 8px;
-      font-weight: 600;
-      cursor: pointer;
-      border: none;
-      font-size: 14px;
-      transition: background 0.2s;
-    }
-    .btn:hover { background: #047857; }
-    .footer {
-      font-size: 14px;
-      color: #9ca3af;
-      margin-top: 2rem;
-      padding-top: 1.5rem;
-      border-top: 1px solid ${isDark ? '#374151' : '#f3f4f6'};
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon">✅</div>
-    <h1>${labels.successHeading}</h1>
-    <p>${labels.successBody}</p>
-    <div class="receipt-container">
-      <div class="label">${labels.receiptsLabel}</div>
-      ${receipts.map((r) => `<div class="receipt">${r}</div>`).join('')}
-    </div>
-    <button class="btn" onclick="downloadReceipt()">${labels.downloadBtn}</button>
-    <div class="footer">
-      ${labels.successFooter}
-    </div>
-  </div>
-  <script>
-    function downloadReceipt() {
-      const data = {
-        votedAt: new Date().toISOString(),
-        receipts: ${JSON.stringify(receipts)},
-        disclaimer: "This is a cryptographic proof of your vote. Keep it secure and private."
-      };
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'vote-receipt-' + new Date().getTime() + '.json';
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-  </script>
-</body>
-</html>
-`;
-  }
-
-  private errorHtml(
-    message: string,
-    theme: 'light' | 'dark' = 'light',
-    language: string = 'en',
-  ): string {
-    const isDark = theme === 'dark';
-    const labels = this.getLabels(language);
-
-    return `
-<!DOCTYPE html>
-<html lang="${language}">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>${labels.errorTitle}</title>
-  <style>
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      margin: 0;
-      background: ${isDark ? '#1f0a0a' : '#fef2f2'};
-    }
-    .card {
-      background: ${isDark ? '#1f2937' : 'white'};
-      border-radius: 12px;
-      padding: 2.5rem;
-      max-width: 480px;
-      width: 90%;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,${isDark ? '0.4' : '0.1'});
-      text-align: center;
-      border: 1px solid ${isDark ? '#7f1d1d' : '#fee2e2'};
-    }
-    .icon { font-size: 3.5rem; margin-bottom: 1.5rem; }
-    h1 { color: ${isDark ? '#f87171' : '#dc2626'}; margin: 0 0 1rem; font-size: 1.75rem; }
-    p { color: ${isDark ? '#9ca3af' : '#4b5563'}; line-height: 1.6; margin: 0; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon">❌</div>
-    <h1>${labels.errorHeading}</h1>
-    <p>${message}</p>
-    <div style="margin-top: 2rem;">
-      <p style="font-size: 14px; color: ${isDark ? '#6b7280' : '#6b7280'}; margin-bottom: 1rem;">
-        ${labels.errorHint}
-      </p>
-    </div>
-  </div>
-</body>
-</html>
-`;
-  }
-
-  private getLabels(language: string): Record<string, string> {
-    const translations: Record<string, Record<string, string>> = {
-      en: {
-        successTitle: 'Vote Confirmed',
-        successHeading: 'Vote Confirmed',
-        successBody:
-          'Your choices have been securely recorded and added to the public audit chain.',
-        receiptsLabel: 'Digital Ballot Receipts',
-        downloadBtn: 'Download Receipt (JSON)',
-        successFooter:
-          'A copy has been sent to your email.<br/>You can safely close this window now.',
-        errorTitle: 'Vote Failed',
-        errorHeading: 'Verification Failed',
-        errorHint:
-          'Please return to the voting page and try requesting a new token.',
-      },
-      uk: {
-        successTitle: 'Голос підтверджено',
-        successHeading: 'Голос підтверджено',
-        successBody:
-          'Ваші вибори надійно зафіксовано та додано до публічного ланцюжка аудиту.',
-        receiptsLabel: 'Цифрові квитанції бюлетеня',
-        downloadBtn: 'Завантажити квитанцію (JSON)',
-        successFooter:
-          'Копію надіслано на вашу електронну пошту.<br/>Це вікно можна закрити.',
-        errorTitle: 'Помилка голосування',
-        errorHeading: 'Перевірка не пройдена',
-        errorHint:
-          'Поверніться на сторінку голосування та запросіть новий токен.',
-      },
-    };
-
-    return translations[language] ?? translations['en'];
   }
 }

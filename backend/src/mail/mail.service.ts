@@ -24,42 +24,6 @@ export class MailService {
     await this.mailQueue.add('password-reset', { email, token, lang, theme });
   }
 
-  async sendVotingToken(
-    email: string,
-    token: string,
-    votingTitle: string,
-    votingId: string,
-    lang: string = 'en',
-    theme: string = 'light',
-  ) {
-    await this.mailQueue.add('voting-token', {
-      email,
-      token,
-      votingTitle,
-      votingId,
-      lang,
-      theme,
-    });
-  }
-
-  async sendSurveyToken(
-    email: string,
-    token: string,
-    surveyTitle: string,
-    surveyId: string,
-    lang: string = 'en',
-    theme: string = 'light',
-  ) {
-    await this.mailQueue.add('survey-token', {
-      email,
-      token,
-      surveyTitle,
-      surveyId,
-      lang,
-      theme,
-    });
-  }
-
   async sendVoteReceipt(
     email: string,
     votingTitle: string,
@@ -73,6 +37,38 @@ export class MailService {
       votingTitle,
       votingId,
       receipts,
+      lang,
+      theme,
+    });
+  }
+
+  async sendVotingConfirmNotification(
+    email: string,
+    votingTitle: string,
+    votingId: string,
+    lang: string = 'en',
+    theme: string = 'light',
+  ) {
+    await this.mailQueue.add('voting-confirm', {
+      email,
+      votingTitle,
+      votingId,
+      lang,
+      theme,
+    });
+  }
+
+  async sendSurveyConfirmNotification(
+    email: string,
+    surveyTitle: string,
+    surveyId: string,
+    lang: string = 'en',
+    theme: string = 'light',
+  ) {
+    await this.mailQueue.add('survey-confirm', {
+      email,
+      surveyTitle,
+      surveyId,
       lang,
       theme,
     });

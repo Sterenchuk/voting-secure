@@ -14,6 +14,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BullModule } from '@nestjs/bullmq';
 import { BroadcastModule } from './broadcast/broadcast.module';
+import { SigningKeysModule } from './signing-keys/signing-keys.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { BroadcastModule } from './broadcast/broadcast.module';
     SurveysModule,
     AuditModule,
     BroadcastModule,
+    SigningKeysModule,
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

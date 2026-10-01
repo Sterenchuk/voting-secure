@@ -92,7 +92,7 @@ export function RealtimeChart() {
   // Global updates listener
   useEffect(() => {
     const { socketService } = require("@/lib/socket/socketService");
-    const unsubscribe = socketService.on<any>("global:stats", (data: any) => {
+    const unsubscribe = socketService.on("global:stats", (data: any) => {
       if (selectedVotingId === "global") {
         if (data.trends) {
           setParticipationData(data.trends.map((d: any) => ({

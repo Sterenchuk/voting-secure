@@ -36,10 +36,10 @@ export class MailProcessor extends WorkerHost {
         return this.sendVerificationEmail(job.data);
       case 'password-reset':
         return this.sendPasswordResetEmail(job.data);
-      case 'voting-token':
-        return this.sendVotingToken(job.data);
-      case 'survey-token':
-        return this.sendSurveyToken(job.data);
+      case 'voting-confirm':
+        return this.sendVotingConfirmNotification(job.data);
+      case 'survey-confirm':
+        return this.sendSurveyConfirmNotification(job.data);
       case 'vote-receipt':
         return this.sendVoteReceipt(job.data);
       default:
@@ -156,27 +156,24 @@ export class MailProcessor extends WorkerHost {
     });
   }
 
-  private async sendVotingToken({
+  private async sendVotingConfirmNotification({
     email,
-    token,
     votingTitle,
     votingId,
     lang = 'en',
     theme = 'light',
   }: {
     email: string;
-    token: string;
     votingTitle: string;
     votingId: string;
     lang?: string;
     theme?: string;
   }) {
     this.logger.log(
-      `Sending voting token email to ${lang} ${theme} for voting ${votingId}`,
+      `Sending voting confirmation notification to ${email} for voting ${votingId}`,
     );
-    const backendUrl =
-      this.configService.get<string>('BACKEND_URL') || 'http://localhost:3001';
-    const confirmUrl = `${backendUrl}/votings/${votingId}/confirm-vote?token=${token}&lang=${lang}&theme=${theme}`;
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
+    const pageUrl = `${frontendUrl}/votings/${votingId}`;
     const t = this.getTranslations(lang).votingToken;
     const s = this.getThemeStyles(theme);
 
@@ -195,7 +192,7 @@ export class MailProcessor extends WorkerHost {
         </p>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${confirmUrl}" style="${s.button}">
+          <a href="${pageUrl}" style="${s.button}">
             ${t.button}
           </a>
         </div>
@@ -206,31 +203,28 @@ export class MailProcessor extends WorkerHost {
 
         <p style="${s.small}">
           ${t.trouble}<br/>
-          <span style="word-break: break-all; color: #059669;">${confirmUrl}</span>
+          <span style="word-break: break-all; color: #059669;">${pageUrl}</span>
         </p>
       </div>
     `,
     });
   }
 
-  private async sendSurveyToken({
+  private async sendSurveyConfirmNotification({
     email,
-    token,
     surveyTitle,
     surveyId,
     lang = 'en',
     theme = 'light',
   }: {
     email: string;
-    token: string;
     surveyTitle: string;
     surveyId: string;
     lang?: string;
     theme?: string;
   }) {
-    const backendUrl =
-      this.configService.get<string>('BACKEND_URL') || 'http://localhost:3001';
-    const confirmUrl = `${backendUrl}/surveys/${surveyId}/confirm-survey?token=${token}&lang=${lang}&theme=${theme}`;
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
+    const pageUrl = `${frontendUrl}/surveys/${surveyId}`;
     const t = this.getTranslations(lang).surveyToken;
     const s = this.getThemeStyles(theme);
 
@@ -246,7 +240,7 @@ export class MailProcessor extends WorkerHost {
         </p>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${confirmUrl}" style="${s.button}">
+          <a href="${pageUrl}" style="${s.button}">
             ${t.button}
           </a>
         </div>
@@ -257,7 +251,7 @@ export class MailProcessor extends WorkerHost {
 
         <p style="${s.small}">
           ${t.trouble}<br/>
-          <span style="word-break: break-all; color: #059669;">${confirmUrl}</span>
+          <span style="word-break: break-all; color: #059669;">${pageUrl}</span>
         </p>
       </div>
     `,

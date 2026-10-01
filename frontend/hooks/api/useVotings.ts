@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { api, ApiError } from "./useApi";
 import { VotingType } from "@/types/voting";
 import { socketService } from "@/lib/socket/socketService";
+import { prepareBlind, finalizeBlind } from "@/lib/security/blindSign";
 
 export interface VotingOption {
   id: string;
@@ -66,6 +67,7 @@ export interface CreateVotingData {
 export interface CastVoteData {
   votingId: string;
   token: string;
+  signature: string;
   optionIds: string[];
   otherText?: string;
   isAbstention?: boolean;
@@ -260,7 +262,7 @@ export function useVotings() {
     return response;
   }, []);
 
-  const requestToken = useCallback(
+  const requestSignature = useCallback(
     async (
       votingId: string,
       optionIds: string[],
@@ -269,18 +271,51 @@ export function useVotings() {
       isPractice?: boolean,
     ) => {
       setState((prev) => ({ ...prev, loading: true, error: null }));
-      const response = await api.post<{
-        status: string;
-        message: string;
-        token?: string;
-      }>(`/votings/${votingId}/token`, {
-        optionIds,
-        otherText,
-        isAbstention,
-        isPractice,
-      });
-      setState((prev) => ({ ...prev, loading: false, error: response.error }));
-      return response;
+      try {
+        const keyRes = await api.get<{
+          modulus: string;
+          exponent: string;
+          keySize: number;
+        }>(`/votings/${votingId}/signing-key`);
+
+        if (!keyRes.data) {
+          throw new Error(keyRes.error?.message || "Failed to fetch signing key");
+        }
+
+        const { token, r, blinded } = prepareBlind(keyRes.data);
+
+        const signRes = await api.post<{
+          blindSig: string;
+          modulus: string;
+          exponent: string;
+        }>(`/votings/${votingId}/sign`, {
+          token,
+          blinded,
+          optionIds,
+          otherText,
+          isAbstention,
+          isPractice,
+        });
+
+        if (!signRes.data) {
+          throw new Error(signRes.error?.message || "Failed to request signature");
+        }
+
+        const signature = finalizeBlind(
+          signRes.data.blindSig,
+          r,
+          signRes.data.modulus,
+        );
+
+        setState((prev) => ({ ...prev, loading: false, error: null }));
+        return { token, signature, data: signRes.data };
+      } catch (err: any) {
+        const error: ApiError = {
+          message: err?.message || "Failed to request signature",
+        };
+        setState((prev) => ({ ...prev, loading: false, error }));
+        return { token: "", signature: "", error };
+      }
     },
     [],
   );
@@ -291,6 +326,7 @@ export function useVotings() {
         `/votings/${data.votingId}/vote`,
         {
           token: data.token,
+          signature: data.signature,
           optionIds: data.optionIds,
           otherText: data.otherText,
           isAbstention: data.isAbstention,
@@ -309,6 +345,42 @@ export function useVotings() {
       return { data: null, error, status: 500 };
     }
   }, []);
+
+  const castVoteWithSignature = useCallback(
+    async (
+      votingId: string,
+      optionIds: string[],
+      otherText?: string,
+      isAbstention?: boolean,
+      isPractice?: boolean,
+    ) => {
+      const sig = await requestSignature(
+        votingId,
+        optionIds,
+        otherText,
+        isAbstention,
+        isPractice,
+      );
+      if (sig.error || !sig.signature) {
+        return {
+          data: null as CastVoteResponse | null,
+          error: sig.error ?? { message: "Failed to request signature" },
+          status: 500,
+        };
+      }
+
+      return castVote({
+        votingId,
+        token: sig.token,
+        signature: sig.signature,
+        optionIds,
+        otherText,
+        isAbstention,
+        isPractice,
+      });
+    },
+    [requestSignature, castVote],
+  );
 
   const deleteVoting = useCallback(async (id: string) => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
@@ -466,8 +538,9 @@ export function useVotings() {
     fetchResults,
     fetchSealedResults,
     createVoting,
-    requestToken,
+    requestSignature,
     castVote,
+    castVoteWithSignature,
     finalizeVoting,
     deleteVoting,
     updateVotingResults,

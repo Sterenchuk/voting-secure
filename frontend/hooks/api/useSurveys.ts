@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { api, ApiError } from "./useApi";
 import { SurveyQuestionType } from "@/types/survey";
+import { prepareBlind, finalizeBlind } from "@/lib/security/blindSign";
 
 export interface SurveyChoiceConfig {
   id: string;
@@ -76,6 +77,7 @@ interface SurveyBallotInput {
 interface SubmitSurveyPayload {
   ballots: SurveyBallotInput[];
   token?: string;
+  signature?: string;
   isAbstention?: boolean;
   isPractice?: boolean;
 }
@@ -326,7 +328,7 @@ export function useSurveys() {
     return response;
   }, []);
 
-  const requestToken = useCallback(
+  const requestSignature = useCallback(
     async (
       surveyId: string,
       answers: SurveyAnswer[],
@@ -336,17 +338,50 @@ export function useSurveys() {
       setState((prev) => ({ ...prev, loading: true, error: null }));
       const ballots = buildBallots(surveyId, answers);
 
-      const response = await api.post<{ status: string; token?: string }>(
-        `/surveys/${surveyId}/token`,
-        { ballots, isAbstention, isPractice },
-      );
+      try {
+        const keyRes = await api.get<{
+          modulus: string;
+          exponent: string;
+          keySize: number;
+        }>(`/surveys/${surveyId}/signing-key`);
 
-      setState((prev) => ({
-        ...prev,
-        loading: false,
-        error: response.error ?? null,
-      }));
-      return response;
+        if (!keyRes.data) {
+          throw new Error(keyRes.error?.message || "Failed to fetch signing key");
+        }
+
+        const { token, r, blinded } = prepareBlind(keyRes.data);
+
+        const signRes = await api.post<{
+          blindSig: string;
+          modulus: string;
+          exponent: string;
+        }>(`/surveys/${surveyId}/sign`, {
+          token,
+          blinded,
+          ballots,
+          isAbstention,
+          isPractice,
+        });
+
+        if (!signRes.data) {
+          throw new Error(signRes.error?.message || "Failed to request signature");
+        }
+
+        const signature = finalizeBlind(
+          signRes.data.blindSig,
+          r,
+          signRes.data.modulus,
+        );
+
+        setState((prev) => ({ ...prev, loading: false, error: null }));
+        return { token, signature, data: signRes.data };
+      } catch (err: any) {
+        const error: ApiError = {
+          message: err?.message || "Failed to request signature",
+        };
+        setState((prev) => ({ ...prev, loading: false, error }));
+        return { token: "", signature: "", error };
+      }
     },
     [],
   );
@@ -357,25 +392,18 @@ export function useSurveys() {
 
       const ballots = buildBallots(surveyId, answers);
 
-      // Step 1: request token in practice mode
-      const tokenRes = await api.post<{ status: string; token?: string }>(
-        `/surveys/${surveyId}/token`,
-        { ballots, isPractice: true },
-      );
+      // Step 1: blind signature in practice mode
+      const sigRes = await requestSignature(surveyId, answers, false, true);
 
-      if (!tokenRes.data?.token) {
-        setState((prev) => ({
-          ...prev,
-          loading: false,
-          error: tokenRes.error ?? null,
-        }));
-        return tokenRes;
+      if (!sigRes.signature) {
+        return sigRes;
       }
 
-      // Step 2: submit immediately using the returned token
+      // Step 2: submit immediately using token + signature
       const payload: SubmitSurveyPayload = {
         ballots,
-        token: tokenRes.data.token,
+        token: sigRes.token,
+        signature: sigRes.signature,
         isAbstention: false,
         isPractice: true,
       };
@@ -443,6 +471,7 @@ export function useSurveys() {
       surveyId: string,
       answers: SurveyAnswer[],
       token?: string,
+      signature?: string,
       isAbstention = false,
       isPractice = false,
     ) => {
@@ -452,6 +481,7 @@ export function useSurveys() {
       const payload: SubmitSurveyPayload = {
         ballots,
         token,
+        signature,
         isAbstention,
         isPractice,
       };
@@ -507,6 +537,33 @@ export function useSurveys() {
     return response;
   }, []);
 
+  const submitWithSignature = useCallback(
+    async (
+      surveyId: string,
+      answers: SurveyAnswer[],
+      isAbstention = false,
+      isPractice = false,
+    ) => {
+      const sig = await requestSignature(
+        surveyId,
+        answers,
+        isAbstention,
+        isPractice,
+      );
+      if (!sig.signature) return sig;
+
+      return submitSurvey(
+        surveyId,
+        answers,
+        sig.token,
+        sig.signature,
+        isAbstention,
+        isPractice,
+      );
+    },
+    [requestSignature, submitSurvey],
+  );
+
   return {
     ...state,
     fetchSurveys,
@@ -514,8 +571,9 @@ export function useSurveys() {
     fetchResults,
     syncResults,
     createSurvey,
-    requestToken,
+    requestSignature,
     practiceSubmit,
+    submitWithSignature,
     getMyStatus,
     fetchParticipationStats,
     finalizeSurvey,
